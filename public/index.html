@@ -63,7 +63,7 @@
 
   /* ---------- stat tiles ---------- */
   .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 14px; }
-  .tile { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-card); padding: 15px 18px; }
+  .tile { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 15px 18px; }
   .tile .t-label { font-size: 12.5px; color: var(--muted); font-weight: 600; margin-bottom: 9px; display: flex; align-items: center; gap: 8px; }
   .t-ic { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .t-ic svg { width: 14px; height: 14px; }
@@ -185,15 +185,6 @@
     .camp-layout { flex-direction: column; }
     .camp-side { position: static; width: 100%; max-height: 280px; }
   }
-
-  /* ---------- กราฟแท่งหน้าแดชบอร์ด ---------- */
-  .chart-wrap { position: relative; height: 240px; }
-  .chart-grid { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--line-strong); }
-  .chart-grid span { position: absolute; right: 0; top: -17px; font-size: 10.5px; color: var(--muted); background: rgba(255,255,255,.85); padding: 1px 4px; border-radius: 4px; z-index: 2; }
-  .chart-bars { position: absolute; left: 0; right: 0; top: 10px; bottom: 26px; display: flex; align-items: flex-end; gap: 2px; }
-  .chart-bars .bar { flex: 1; min-width: 2px; background: var(--brand); border-radius: 4px 4px 0 0; transition: background 120ms var(--ease); }
-  .chart-bars .bar:hover { background: var(--brand-dark); }
-  .chart-x { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
 
   /* ปุ่มช่วงเวลาแบบ pill */
   .date-pill { background: #fff; border: 1px solid var(--line-strong); color: var(--muted); border-radius: 999px; height: 38px; padding: 0 16px; display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 600; transition: background 150ms var(--ease), color 150ms var(--ease), border-color 150ms var(--ease), transform 160ms var(--ease); }
@@ -590,26 +581,11 @@
           <div class="t-sub" id="dCprSub">ใช้จ่าย ÷ ผลลัพธ์รวม</div>
         </div>
         <div class="tile">
-          <div class="t-label"><span class="t-ic p"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></span>การเข้าถึง</div>
-          <div class="t-value" id="dReach">—</div>
-          <div class="t-sub" id="dReachSub">อิมเพรสชัน —</div>
-        </div>
-        <div class="tile">
-          <div class="t-label"><span class="t-ic o"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-5v12L3 13v-2z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg></span>CPM</div>
-          <div class="t-value" id="dCpm">—</div>
-          <div class="t-sub">ค่าใช้จ่ายต่อ 1,000 อิมเพรสชัน</div>
-        </div>
-        <div class="tile">
           <div class="t-label"><span class="t-ic g"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></span>แคมเปญที่เปิดอยู่</div>
           <div class="t-value" id="dActive">—</div>
           <div class="t-sub" id="dActiveSub">จากทั้งหมด —</div>
         </div>
       </div>
-      </div>
-
-      <div class="card">
-        <h2 style="margin-bottom:12px"><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></span>ใช้จ่ายรายวัน <span class="h-desc" id="dashChartSub"></span></h2>
-        <div class="chart-wrap" id="dashChart"><span class="hint">กำลังโหลด...</span></div>
       </div>
 
       <div class="card">
@@ -1136,14 +1112,11 @@ async function loadDashboard(force) {
   const tokenProfiles = profiles.filter(p => p.hasToken);
   const acctRows = document.getElementById('dashAcctRows');
   const topRows = document.getElementById('dashTopRows');
-  const chart = document.getElementById('dashChart');
   if (!tokenProfiles.length) {
-    chart.innerHTML = '<span class="hint">เพิ่มบัญชีในเมนู "บัญชี FB" ก่อน</span>';
     acctRows.innerHTML = topRows.innerHTML = '<tr><td colspan="8" class="tbl-msg">เพิ่มบัญชีในเมนู "บัญชี FB" ก่อน</td></tr>';
     return;
   }
   if (dashCache[dashDate] && !force) { renderDashboard(dashCache[dashDate]); return; }
-  chart.innerHTML = '<span class="hint"><span class="spin"></span> กำลังโหลด...</span>';
   acctRows.innerHTML = '<tr><td colspan="8" class="tbl-msg"><span class="spin"></span>กำลังโหลดข้อมูลทุกบัญชี...</td></tr>';
   topRows.innerHTML = '<tr><td colspan="6" class="tbl-msg"><span class="spin"></span>กำลังโหลด...</td></tr>';
 
@@ -1166,13 +1139,10 @@ async function loadDashboard(force) {
   const date = dashDate;
   const results = await Promise.all(targets.map(async (t) => {
     try {
-      const [c, dl] = await Promise.all([
-        fetch(`/api/campaigns?profile=${t.pid}&account=${t.acct}&date=${date}&_=${Date.now()}`, { cache: 'no-store' }).then(r => r.json()),
-        fetch(`/api/daily?profile=${t.pid}&account=${t.acct}&date=${date}&_=${Date.now()}`, { cache: 'no-store' }).then(r => r.json()),
-      ]);
-      return { ...t, error: c.error || null, campaigns: c.error ? [] : c.campaigns, currency: c.currency || t.currency, days: dl.error ? [] : dl.days };
+      const c = await fetch(`/api/campaigns?profile=${t.pid}&account=${t.acct}&date=${date}&_=${Date.now()}`, { cache: 'no-store' }).then(r => r.json());
+      return { ...t, error: c.error || null, campaigns: c.error ? [] : c.campaigns, currency: c.currency || t.currency };
     } catch (e) {
-      return { ...t, error: e.message, campaigns: [], days: [] };
+      return { ...t, error: e.message, campaigns: [] };
     }
   }));
   if (dashDate !== date) return; // ผู้ใช้เปลี่ยนช่วงเวลาไประหว่างโหลด
@@ -1203,33 +1173,14 @@ function renderDashboard(results) {
   }), { results: 0, impressions: 0, reach: 0, active: 0, nCamp: 0 });
   document.getElementById('dSpend').textContent = spendByCurText(ok);
   document.getElementById('dResults').textContent = num(tot.results);
-  document.getElementById('dReach').textContent = num(tot.reach);
-  document.getElementById('dReachSub').textContent = 'อิมเพรสชัน ' + num(tot.impressions);
   document.getElementById('dActive').textContent = num(tot.active);
   document.getElementById('dActiveSub').textContent = `จากทั้งหมด ${num(tot.nCamp)} แคมเปญ`;
-  // CPR/CPM คำนวณได้เฉพาะเมื่อทุกบัญชีเป็นสกุลเดียวกัน
+  // CPR คำนวณได้เฉพาะเมื่อทุกบัญชีเป็นสกุลเดียวกัน
   const curs = [...new Set(ok.map(a => a.currency || 'THB'))];
   const oneCur = curs.length === 1 ? curs[0] : null;
   const spendAll = ok.reduce((s, a) => s + a.spend, 0);
   document.getElementById('dCpr').textContent = (oneCur && tot.results > 0) ? money(oneCur, spendAll / tot.results) : '—';
   document.getElementById('dCprSub').textContent = oneCur ? 'ใช้จ่าย ÷ ผลลัพธ์รวม' : 'หลายสกุลเงิน — ดูรายบัญชีแทน';
-  document.getElementById('dCpm').textContent = (oneCur && tot.impressions > 0) ? money(oneCur, spendAll / tot.impressions * 1000) : '—';
-
-  // กราฟใช้จ่ายรายวัน — รวมเฉพาะบัญชีสกุลเงินหลัก (กันบวกข้ามสกุล)
-  const mainCur = oneCur || (() => {
-    const cnt = {};
-    ok.forEach(a => { const c = a.currency || 'THB'; cnt[c] = (cnt[c] || 0) + 1; });
-    return Object.entries(cnt).sort((a, b) => b[1] - a[1])[0]?.[0] || 'THB';
-  })();
-  const byDate = {};
-  ok.filter(a => (a.currency || 'THB') === mainCur).forEach(a => a.days.forEach(d => {
-    const x = byDate[d.date] || (byDate[d.date] = { date: d.date, spend: 0, impressions: 0 });
-    x.spend += d.spend; x.impressions += d.impressions;
-  }));
-  const days = Object.values(byDate).sort((a, b) => a.date < b.date ? -1 : 1);
-  document.getElementById('dashChartSub').textContent =
-    `— รวม ${ok.length} บัญชี` + (oneCur ? '' : ` (เฉพาะสกุล ${mainCur})`);
-  renderDashChart(days, mainCur === 'THB' ? '฿' : mainCur + ' ');
 
   // ตารางรายบัญชี (เรียงตามใช้จ่ายมาก → น้อย)
   const acctRows = document.getElementById('dashAcctRows');
@@ -1266,24 +1217,6 @@ function renderDashboard(results) {
       <td class="num-cell">${c.costPerResult != null ? money(c.currency, c.costPerResult) : '<span style="color:var(--muted)">—</span>'}</td>
       <td class="num-cell">${money(c.currency, c.spend)}</td>
     </tr>`).join('') : '<tr><td colspan="6" class="tbl-msg">ยังไม่มีแคมเปญในช่วงเวลานี้</td></tr>';
-}
-function renderDashChart(days, curSym) {
-  const el = document.getElementById('dashChart');
-  if (!days.length || days.every(d => !d.spend)) {
-    el.innerHTML = '<span class="hint">ไม่มีการใช้จ่ายในช่วงเวลานี้</span>';
-    return;
-  }
-  const max = Math.max(...days.map(d => d.spend));
-  const fd = (s) => new Date(s + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
-  const fm = (n) => curSym + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const bars = days.map(d =>
-    `<div class="bar" style="height:${Math.max(2, Math.round(d.spend / max * 100))}%" title="${fd(d.date)} • ${fm(d.spend)} • ${Number(d.impressions).toLocaleString()} อิมเพรสชัน"></div>`).join('');
-  const mid = days[Math.floor(days.length / 2)];
-  el.innerHTML = `
-    <div class="chart-grid" style="top:10px"><span>${fm(max)}</span></div>
-    <div class="chart-grid" style="top:112px"><span>${fm(max / 2)}</span></div>
-    <div class="chart-bars">${bars}</div>
-    <div class="chart-x"><span>${fd(days[0].date)}</span><span>${days.length > 2 ? fd(mid.date) : ''}</span><span>${days.length > 1 ? fd(days[days.length - 1].date) : ''}</span></div>`;
 }
 // ---------- คลังบัญชีโฆษณาแบบเต็ม (Pixel + บัตร) ใช้ร่วมทั้งหน้าขึ้นแอดและแคมเปญ ----------
 const fullAccountCache = {}; // pid -> {name, adAccounts:[{...,pixels,hasPayment}], pages}
