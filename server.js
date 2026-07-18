@@ -35,9 +35,10 @@ function saveConfig(cfg) {
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
 }
 function getProfile(cfg, id) {
-  return cfg.profiles.find((p) => p.id === id)
-    || cfg.profiles.find((p) => p.id === cfg.activeProfileId)
-    || cfg.profiles[0];
+  // ระบุ id มา = ต้องเจอตัวนั้นเท่านั้น (กันยิงผิดบัญชีเมื่อ id ไม่ตรง เช่นเพิ่งถูกลบ)
+  if (id) return cfg.profiles.find((p) => p.id === id) || null;
+  // ไม่ระบุ = ใช้บัญชีที่กำลังใช้งานอยู่
+  return cfg.profiles.find((p) => p.id === cfg.activeProfileId) || cfg.profiles[0] || null;
 }
 // ส่งข้อมูล profile ให้หน้าเว็บโดยไม่ส่ง token กลับไป
 function publicProfiles(cfg) {
@@ -76,6 +77,21 @@ async function fb(pathname, params, method, token, attempt = 0) {
     throw new Error(e.error_user_msg || e.message || 'FB API error');
   }
   return json;
+}
+
+// ดึงข้อมูลแบบแบ่งหน้า (ตาม paging.next ของ Graph API) กันข้อมูลถูกตัดเงียบๆ
+async function fbAll(pathname, params, token, maxPages = 25) {
+  let out = [];
+  let after;
+  for (let i = 0; i < maxPages; i++) {
+    const p = { ...params, limit: params.limit || 200 };
+    if (after) p.after = after;
+    const r = await fb(pathname, p, 'GET', token);
+    out = out.concat(r.data || []);
+    if (r.paging && r.paging.next && r.paging.cursors && r.paging.cursors.after) after = r.paging.cursors.after;
+    else break;
+  }
+  return out;
 }
 
 const REDIRECT_URI = `${PUBLIC_URL}/auth/callback`;
@@ -223,29 +239,29 @@ app.get('/api/campaigns', async (req, res) => {
   const datePreset = ['today', 'last_7d', 'last_30d', 'maximum'].includes(req.query.date) ? req.query.date : 'maximum';
   try {
     const acctInfo = await fb(acct, { fields: 'currency' }, 'GET', token);
-    const camps = await fb(`${acct}/campaigns`, {
+    const campData = await fbAll(`${acct}/campaigns`, {
       fields: 'name,objective,status,effective_status,daily_budget,lifetime_budget,created_time,stop_time',
-      limit: 50,
-    }, 'GET', token);
+      limit: 100,
+    }, token);
+    const camps = { data: campData };
 
     // insights ต่อแคมเปญ (ห่อ try เผื่อไม่มีข้อมูล/สิทธิ์)
     let insights = [];
     try {
-      const ins = await fb(`${acct}/insights`, {
+      insights = await fbAll(`${acct}/insights`, {
         level: 'campaign',
         fields: 'campaign_id,spend,impressions,reach,actions',
         date_preset: datePreset,
         limit: 200,
-      }, 'GET', token);
-      insights = ins.data || [];
+      }, token);
     } catch { /* ไม่มีข้อมูล */ }
     const insMap = Object.fromEntries(insights.map((r) => [r.campaign_id, r]));
 
     // งบรวมจาก ad set (กรณีตั้งงบระดับ ad set ไม่ใช่ระดับแคมเปญ)
     const adsetBudget = {};
     try {
-      const as = await fb(`${acct}/adsets`, { fields: 'campaign_id,daily_budget', limit: 500 }, 'GET', token);
-      for (const s of (as.data || [])) {
+      const as = await fbAll(`${acct}/adsets`, { fields: 'campaign_id,daily_budget', limit: 200 }, token);
+      for (const s of as) {
         if (s.daily_budget) adsetBudget[s.campaign_id] = (adsetBudget[s.campaign_id] || 0) + Number(s.daily_budget);
       }
     } catch { /* ข้าม */ }
@@ -253,8 +269,8 @@ app.get('/api/campaigns', async (req, res) => {
     // สถานะระดับ "แอด" — การโดนปฏิเสธ (DISAPPROVED) เกิดที่ระดับนี้ ไม่โผล่ในสถานะแคมเปญ
     const adStatus = {};
     try {
-      const ads = await fb(`${acct}/ads`, { fields: 'campaign_id,effective_status', limit: 1000 }, 'GET', token);
-      for (const a of (ads.data || [])) {
+      const ads = await fbAll(`${acct}/ads`, { fields: 'campaign_id,effective_status', limit: 200 }, token);
+      for (const a of ads) {
         const st = adStatus[a.campaign_id] || (adStatus[a.campaign_id] = { disapproved: 0, pending: 0, issues: 0, active: 0, total: 0 });
         st.total++;
         if (a.effective_status === 'DISAPPROVED') st.disapproved++;
@@ -303,6 +319,8 @@ app.get('/api/campaigns', async (req, res) => {
 app.post('/api/campaign-status', async (req, res) => {
   const cfg = loadConfig();
   const prof = getProfile(cfg, req.body.profile);
+  if (!prof || !prof.accessToken) return res.status(400).json({ error: 'ไม่พบบัญชี หรือยังไม่ได้เชื่อมต่อ' });
+  if (!['ACTIVE', 'PAUSED'].includes(req.body.status)) return res.status(400).json({ error: 'สถานะไม่ถูกต้อง' });
   try {
     await fb(req.body.id, { status: req.body.status }, 'POST', prof.accessToken);
     res.json({ ok: true });
@@ -315,6 +333,8 @@ app.post('/api/campaign-status', async (req, res) => {
 app.post('/api/campaign-delete', async (req, res) => {
   const cfg = loadConfig();
   const prof = getProfile(cfg, req.body.profile);
+  if (!prof || !prof.accessToken) return res.status(400).json({ error: 'ไม่พบบัญชี หรือยังไม่ได้เชื่อมต่อ' });
+  if (!/^\d+$/.test(String(req.body.id || ''))) return res.status(400).json({ error: 'campaign id ไม่ถูกต้อง' });
   try {
     await fb(req.body.id, { status: 'DELETED' }, 'POST', prof.accessToken);
     res.json({ ok: true });
@@ -345,19 +365,27 @@ app.post('/api/launch', upload.any(), async (req, res) => {
   res.flushHeaders();
   const send = (obj) => { res.write(JSON.stringify(obj) + '\n'); if (res.flush) res.flush(); };
 
-  const data = JSON.parse(req.body.data);
+  let data;
+  try { data = JSON.parse(req.body.data); }
+  catch { send({ type: 'fatal', error: 'ข้อมูลที่ส่งมาไม่ถูกต้อง' }); return res.end(); }
+
   const prof = getProfile(cfg, data.profileId);
-  if (!prof || !prof.accessToken || !prof.adAccountId || !prof.pageId) {
-    send({ type: 'fatal', error: `บัญชี "${prof ? prof.label : '?'}" ตั้งค่าไม่ครบ (token / บัญชีโฆษณา / เพจ)` });
+  if (!prof) { send({ type: 'fatal', error: 'ไม่พบบัญชีที่เลือก (อาจถูกลบไปแล้ว) — รีเฟรชหน้าแล้วลองใหม่' }); return res.end(); }
+  if (!prof.accessToken || !prof.adAccountId || !prof.pageId) {
+    send({ type: 'fatal', error: `บัญชี "${prof.label}" ตั้งค่าไม่ครบ (token / บัญชีโฆษณา / เพจ)` });
     return res.end();
   }
+  const objInfo = OBJECTIVES[data.campaign.objective];
+  if (!objInfo) { send({ type: 'fatal', error: `วัตถุประสงค์ไม่รองรับ: ${data.campaign.objective}` }); return res.end(); }
+  if (objInfo.needsPixel && !data.pixelId) { send({ type: 'fatal', error: 'วัตถุประสงค์นี้ต้องระบุ Pixel ID' }); return res.end(); }
 
   const status = data.active ? 'ACTIVE' : 'PAUSED';
   const acct = `act_${String(prof.adAccountId).replace(/^act_/, '')}`;
   const token = prof.accessToken;
   const files = Object.fromEntries((req.files || []).map((f) => [f.fieldname, f]));
-  const objInfo = OBJECTIVES[data.campaign.objective];
   const imageHashCache = {};
+  let aborted = false;
+  req.on('close', () => { aborted = true; }); // ผู้ใช้ปิดแท็บ/ยกเลิก = หยุดสร้างแอดที่เหลือ
 
   // รูปเดิมอัปโหลดครั้งเดียว — เก็บเป็น promise กันอัปโหลดซ้ำตอนวิ่งขนานกัน
   function getImageHash(file) {
@@ -387,6 +415,7 @@ app.post('/api/launch', upload.any(), async (req, res) => {
     const processAd = async (i) => {
       const ad = data.ads[i];
       try {
+        if (aborted) throw new Error('ยกเลิกแล้ว');
         send({ type: 'status', index: i, msg: 'กำลังสร้าง...' });
 
         const file = files[ad.imageField];
@@ -451,7 +480,7 @@ app.post('/api/launch', upload.any(), async (req, res) => {
     const CONCURRENCY = 4;
     let cursor = 0;
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, data.ads.length) }, async () => {
-      while (cursor < data.ads.length) {
+      while (cursor < data.ads.length && !aborted) {
         const i = cursor++;
         await processAd(i);
       }
