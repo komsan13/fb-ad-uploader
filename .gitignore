@@ -1,4 +1,6 @@
 node_modules/
 config.json
+config-backups/
+watch-state.json
 *.log
 .gstack/
