@@ -123,6 +123,15 @@
   .st-pill.on { background: #e3f5e8; color: var(--green); }
   .st-pill.off { background: #eceff3; color: var(--muted); }
   .st-pill.issue { background: #fdf3e0; color: var(--amber); }
+  td.num-cell { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  th.num-cell { text-align: right; }
+  .switch { position: relative; display: inline-block; width: 38px; height: 22px; }
+  .switch input { display: none; }
+  .switch .sl { position: absolute; inset: 0; background: #ccd0d5; border-radius: 22px; cursor: pointer; transition: .2s; }
+  .switch .sl:before { content: ""; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+  .switch input:checked + .sl { background: var(--green); }
+  .switch input:checked + .sl:before { transform: translateX(16px); }
+  .res-label { color: var(--muted); font-size: 11.5px; }
 
   /* ---------- แถบล่าง ---------- */
   #bottomBar { position: fixed; bottom: 0; left: var(--sidebar-w); right: 0; background: #fff; box-shadow: 0 -2px 12px rgba(0,0,0,.1); z-index: 80; }
@@ -296,16 +305,34 @@
     <section class="page" id="page-campaigns">
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px;flex-wrap:wrap">
-          <h2 style="margin:0">แคมเปญล่าสุดในบัญชี</h2>
-          <div style="display:flex;gap:8px;align-items:center">
-            <select id="campProfile" onchange="loadCampaigns()" style="min-width:160px"></select>
+          <h2 style="margin:0">แคมเปญในบัญชี <span class="h-desc" id="campSummary"></span></h2>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <select id="campProfile" onchange="loadCampaigns()" style="min-width:150px"></select>
+            <select id="campDate" onchange="loadCampaigns()" style="min-width:110px">
+              <option value="maximum">ทั้งหมด</option>
+              <option value="today">วันนี้</option>
+              <option value="last_7d">7 วันล่าสุด</option>
+              <option value="last_30d">30 วันล่าสุด</option>
+            </select>
             <button class="btn-light btn-sm" onclick="loadCampaigns()">⟳ รีเฟรช</button>
           </div>
         </div>
         <div class="tbl-wrap">
           <table>
-            <thead><tr><th>ชื่อแคมเปญ</th><th>วัตถุประสงค์</th><th>สถานะ</th><th>สร้างเมื่อ</th><th></th></tr></thead>
-            <tbody id="campaignRows"><tr><td colspan="5" style="color:var(--muted)">ยังไม่ได้โหลด</td></tr></tbody>
+            <thead><tr>
+              <th>เปิด/ปิด</th>
+              <th>แคมเปญ</th>
+              <th>การแสดงโฆษณา</th>
+              <th>ผลลัพธ์</th>
+              <th class="num-cell">ต้นทุน/ผลลัพธ์</th>
+              <th class="num-cell">งบ/วัน</th>
+              <th class="num-cell">ใช้จ่ายไป</th>
+              <th class="num-cell">อิมเพรสชัน</th>
+              <th class="num-cell">การเข้าถึง</th>
+              <th>สิ้นสุด</th>
+              <th></th>
+            </tr></thead>
+            <tbody id="campaignRows"><tr><td colspan="11" style="color:var(--muted)">ยังไม่ได้โหลด</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -561,44 +588,72 @@ function statusPill(c) {
 }
 async function loadCampaigns() {
   const pid = document.getElementById('campProfile').value;
+  const date = document.getElementById('campDate').value;
   const tbody = document.getElementById('campaignRows');
-  if (!pid) { tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">เพิ่มบัญชีในหน้า "บัญชี FB" ก่อน</td></tr>'; return; }
-  tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">กำลังโหลด...</td></tr>';
-  const res = await fetch('/api/campaigns?profile=' + pid);
+  document.getElementById('campSummary').textContent = '';
+  if (!pid) { tbody.innerHTML = '<tr><td colspan="11" style="color:var(--muted)">เพิ่มบัญชีในหน้า "บัญชี FB" ก่อน</td></tr>'; return; }
+  tbody.innerHTML = '<tr><td colspan="11" style="color:var(--muted)">กำลังโหลด...</td></tr>';
+  const res = await fetch(`/api/campaigns?profile=${pid}&date=${date}`);
   const data = await res.json();
   if (data.error) {
-    tbody.innerHTML = `<tr><td colspan="5" style="color:var(--red)">โหลดไม่สำเร็จ: ${esc(data.error)}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="11" style="color:var(--red)">โหลดไม่สำเร็จ: ${esc(data.error)}</td></tr>`;
     return;
   }
   if (!data.campaigns.length) {
-    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">ยังไม่มีแคมเปญในบัญชีนี้</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" style="color:var(--muted)">ยังไม่มีแคมเปญในบัญชีนี้</td></tr>';
     return;
   }
+  const cur = data.currency === 'THB' ? '฿' : (data.currency ? data.currency + ' ' : '฿');
+  const money = (n) => cur + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const num = (n) => Number(n || 0).toLocaleString();
+
+  // แถวสรุปรวมด้านบน
+  const tot = data.campaigns.reduce((a, c) => ({
+    spend: a.spend + c.spend, impressions: a.impressions + c.impressions,
+    reach: a.reach + c.reach, results: a.results + (c.results || 0),
+  }), { spend: 0, impressions: 0, reach: 0, results: 0 });
+  document.getElementById('campSummary').textContent =
+    `— ${data.campaigns.length} แคมเปญ • ใช้จ่ายรวม ${money(tot.spend)} • ผลลัพธ์รวม ${num(tot.results)}`;
+
   tbody.innerHTML = data.campaigns.map(c => {
-    const created = new Date(c.created_time).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
     const toggleable = c.status === 'ACTIVE' || c.status === 'PAUSED';
-    const btn = toggleable
-      ? `<button class="btn-light btn-sm" onclick="toggleCampaign('${c.id}', '${c.status}', '${pid}')">${c.status === 'ACTIVE' ? 'หยุด' : 'เปิด'}</button>`
+    const checked = c.status === 'ACTIVE' ? 'checked' : '';
+    const toggle = toggleable
+      ? `<label class="switch"><input type="checkbox" ${checked} onchange="toggleCampaign('${c.id}','${c.status}','${pid}')"><span class="sl"></span></label>`
       : '';
+    const results = c.results != null
+      ? `${num(c.results)}${c.resultLabel ? `<div class="res-label">${c.resultLabel}</div>` : ''}`
+      : '<span style="color:var(--muted)">—</span>';
+    const cpr = c.costPerResult != null ? money(c.costPerResult) : '<span style="color:var(--muted)">—</span>';
+    const budget = c.dailyBudget ? `${money(c.dailyBudget)}<div class="res-label">ต่อวัน</div>` : (c.lifetimeBudget ? money(c.lifetimeBudget) : '<span style="color:var(--muted)">—</span>');
+    const ends = c.stop_time
+      ? new Date(c.stop_time).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })
+      : '<span style="color:var(--muted)">ทำงานต่อเนื่อง</span>';
     const link = `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${data.account}&selected_campaign_ids=${c.id}`;
     return `<tr>
-      <td style="font-weight:600">${esc(c.name)}</td>
-      <td>${OBJ_TH[c.objective] || c.objective}</td>
+      <td>${toggle}</td>
+      <td style="font-weight:600;min-width:150px">${esc(c.name)}<div class="res-label">${OBJ_TH[c.objective] || c.objective}</div></td>
       <td>${statusPill(c)}</td>
-      <td>${created}</td>
-      <td style="white-space:nowrap">${btn} <a href="${link}" target="_blank" class="btn-light btn-sm" style="text-decoration:none;display:inline-block;padding:5px 11px">Ads Manager ↗</a></td>
+      <td>${results}</td>
+      <td class="num-cell">${cpr}</td>
+      <td class="num-cell">${budget}</td>
+      <td class="num-cell">${money(c.spend)}</td>
+      <td class="num-cell">${num(c.impressions)}</td>
+      <td class="num-cell">${num(c.reach)}</td>
+      <td style="white-space:nowrap">${ends}</td>
+      <td><a href="${link}" target="_blank" class="btn-light btn-sm" style="text-decoration:none;display:inline-block;padding:5px 11px">↗</a></td>
     </tr>`;
   }).join('');
 }
 async function toggleCampaign(id, cur, pid) {
   const to = cur === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
-  if (to === 'ACTIVE' && !confirm('เปิดแคมเปญนี้เลยไหม? งบจะเริ่มเดินทันที')) return;
+  if (to === 'ACTIVE' && !confirm('เปิดแคมเปญนี้เลยไหม? งบจะเริ่มเดินทันที')) return loadCampaigns();
   const res = await fetch('/api/campaign-status', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id, status: to, profile: pid }),
   });
   const data = await res.json();
-  if (data.error) return alert('เปลี่ยนสถานะไม่สำเร็จ: ' + data.error);
+  if (data.error) { alert('เปลี่ยนสถานะไม่สำเร็จ: ' + data.error); return loadCampaigns(); }
   loadCampaigns();
 }
 

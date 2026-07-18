@@ -192,19 +192,77 @@ app.get('/api/accounts', async (req, res) => {
   }
 });
 
-// รายการแคมเปญล่าสุดในบัญชี (โชว์ในหน้า "แคมเปญของฉัน")
+// map objective -> action_type ที่นับเป็น "ผลลัพธ์" ใน Ads Manager
+const RESULT_ACTION = {
+  OUTCOME_TRAFFIC: { type: 'link_click', label: 'คลิกลิงก์' },
+  OUTCOME_ENGAGEMENT: { type: 'post_engagement', label: 'การมีส่วนร่วม' },
+  OUTCOME_SALES: { type: 'offsite_conversion.fb_pixel_purchase', label: 'การซื้อ' },
+  OUTCOME_LEADS: { type: 'offsite_conversion.fb_pixel_lead', label: 'ลูกค้าเป้าหมาย' },
+};
+
+// รายการแคมเปญพร้อมสถิติ (Insights) แบบ Ads Manager
 app.get('/api/campaigns', async (req, res) => {
   const cfg = loadConfig();
   const prof = getProfile(cfg, req.query.profile);
   if (!prof || !prof.accessToken) return res.status(400).json({ error: 'ยังไม่ได้เชื่อมต่อบัญชี' });
   if (!prof.adAccountId) return res.status(400).json({ error: `บัญชี "${prof.label}" ยังไม่ได้เลือกบัญชีโฆษณา` });
   const acct = `act_${String(prof.adAccountId).replace(/^act_/, '')}`;
+  const token = prof.accessToken;
+  const datePreset = ['today', 'last_7d', 'last_30d', 'maximum'].includes(req.query.date) ? req.query.date : 'maximum';
   try {
-    const out = await fb(`${acct}/campaigns`, {
-      fields: 'name,objective,status,effective_status,created_time',
-      limit: 25,
-    }, 'GET', prof.accessToken);
-    res.json({ campaigns: out.data || [], account: acct.replace('act_', '') });
+    const acctInfo = await fb(acct, { fields: 'currency' }, 'GET', token);
+    const camps = await fb(`${acct}/campaigns`, {
+      fields: 'name,objective,status,effective_status,daily_budget,lifetime_budget,created_time,stop_time',
+      limit: 50,
+    }, 'GET', token);
+
+    // insights ต่อแคมเปญ (ห่อ try เผื่อไม่มีข้อมูล/สิทธิ์)
+    let insights = [];
+    try {
+      const ins = await fb(`${acct}/insights`, {
+        level: 'campaign',
+        fields: 'campaign_id,spend,impressions,reach,actions',
+        date_preset: datePreset,
+        limit: 200,
+      }, 'GET', token);
+      insights = ins.data || [];
+    } catch { /* ไม่มีข้อมูล */ }
+    const insMap = Object.fromEntries(insights.map((r) => [r.campaign_id, r]));
+
+    // งบรวมจาก ad set (กรณีตั้งงบระดับ ad set ไม่ใช่ระดับแคมเปญ)
+    const adsetBudget = {};
+    try {
+      const as = await fb(`${acct}/adsets`, { fields: 'campaign_id,daily_budget', limit: 500 }, 'GET', token);
+      for (const s of (as.data || [])) {
+        if (s.daily_budget) adsetBudget[s.campaign_id] = (adsetBudget[s.campaign_id] || 0) + Number(s.daily_budget);
+      }
+    } catch { /* ข้าม */ }
+
+    const rows = (camps.data || []).map((c) => {
+      const ins = insMap[c.id] || {};
+      const ra = RESULT_ACTION[c.objective];
+      let results = null;
+      if (ra && Array.isArray(ins.actions)) {
+        const hit = ins.actions.find((a) => a.action_type === ra.type);
+        if (hit) results = Number(hit.value);
+      }
+      const spend = ins.spend ? Number(ins.spend) : 0;
+      const dailyBudget = c.daily_budget ? Number(c.daily_budget) : (adsetBudget[c.id] || 0);
+      return {
+        id: c.id, name: c.name, objective: c.objective,
+        status: c.status, effective_status: c.effective_status,
+        created_time: c.created_time, stop_time: c.stop_time || null,
+        dailyBudget: dailyBudget / 100,
+        lifetimeBudget: c.lifetime_budget ? Number(c.lifetime_budget) / 100 : null,
+        spend,
+        impressions: ins.impressions ? Number(ins.impressions) : 0,
+        reach: ins.reach ? Number(ins.reach) : 0,
+        results,
+        resultLabel: ra ? ra.label : null,
+        costPerResult: (results && results > 0) ? spend / results : null,
+      };
+    });
+    res.json({ campaigns: rows, account: acct.replace('act_', ''), currency: acctInfo.currency || '', datePreset });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
