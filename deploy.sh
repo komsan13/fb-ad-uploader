@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# สคริปต์ deploy FB Ad Uploader ขึ้น VPS (Ubuntu/Debian)
-# ใช้: curl -fsSL <raw url>/deploy.sh | APP_PASS='รหัสของคุณ' bash
+# Deploy FB Ad Uploader เป็น Docker container เสียบเข้า Traefik ที่มีอยู่บนเซิร์ฟเวอร์
+# ใช้: curl -fsSL <raw>/deploy.sh | APP_PASS='รหัสของคุณ' bash
 set -euo pipefail
 
 DOMAIN="${DOMAIN:-ad.senball.com}"
@@ -8,76 +8,47 @@ APP_USER="${APP_USER:-admin}"
 APP_PASS="${APP_PASS:-}"
 REPO="${REPO:-https://github.com/komsan13/fb-ad-uploader.git}"
 APP_DIR="/opt/fb-ad-uploader"
+DATA_DIR="/opt/fbad-data"
+NET="${NET:-web}"          # Traefik docker network
+CERTRESOLVER="${CERTRESOLVER:-le}"
 
-if [ -z "$APP_PASS" ]; then
-  read -rsp "ตั้งรหัสผ่านสำหรับเข้าหน้าเว็บ (user: $APP_USER): " APP_PASS; echo
-fi
-[ -z "$APP_PASS" ] && { echo "ต้องตั้งรหัสผ่านก่อน"; exit 1; }
+command -v git >/dev/null || { apt-get update -y && apt-get install -y git; }
+command -v htpasswd >/dev/null || { apt-get update -y && apt-get install -y apache2-utils; }
 
-echo "==> [1/5] ติดตั้ง Node.js + git"
-export DEBIAN_FRONTEND=noninteractive
-apt-get update -y
-apt-get install -y git curl
-if ! command -v node >/dev/null || [ "$(node -v | cut -c2-3)" -lt 18 ]; then
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-  apt-get install -y nodejs
-fi
+GEN=0
+if [ -z "$APP_PASS" ]; then APP_PASS="$(openssl rand -base64 9)"; GEN=1; fi
 
-echo "==> [2/5] ติดตั้ง Caddy (HTTPS อัตโนมัติ)"
-if ! command -v caddy >/dev/null; then
-  apt-get install -y debian-keyring debian-archive-keyring apt-transport-https
-  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
-  apt-get update -y
-  apt-get install -y caddy
-fi
-
-echo "==> [3/5] ดึงโค้ดแอป"
-if [ -d "$APP_DIR/.git" ]; then
-  git -C "$APP_DIR" pull --ff-only
-else
-  git clone "$REPO" "$APP_DIR"
-fi
+echo "==> [1/3] ดึงโค้ด"
+if [ -d "$APP_DIR/.git" ]; then git -C "$APP_DIR" pull --ff-only; else git clone "$REPO" "$APP_DIR"; fi
 cd "$APP_DIR"
-npm install --omit=dev
+mkdir -p "$DATA_DIR"
 
-echo "==> [4/5] ตั้ง service ให้รันตลอด"
-cat >/etc/systemd/system/fbad.service <<EOF
-[Unit]
-Description=FB Ad Uploader
-After=network.target
+echo "==> [2/3] build image"
+docker build -t fbad:latest .
 
-[Service]
-Type=simple
-WorkingDirectory=$APP_DIR
-Environment=PORT=4000
-Environment=PUBLIC_URL=https://$DOMAIN
-ExecStart=$(command -v node) $APP_DIR/server.js
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-systemctl daemon-reload
-systemctl enable fbad >/dev/null 2>&1 || true
-systemctl restart fbad
-
-echo "==> [5/5] ตั้ง Caddy + รหัสผ่านหน้าเว็บ"
-command -v ufw >/dev/null && { ufw allow 80/tcp >/dev/null 2>&1 || true; ufw allow 443/tcp >/dev/null 2>&1 || true; }
-HASH=$(caddy hash-password --plaintext "$APP_PASS")
-cat >/etc/caddy/Caddyfile <<EOF
-$DOMAIN {
-    basic_auth {
-        $APP_USER $HASH
-    }
-    reverse_proxy localhost:4000
-}
-EOF
-systemctl reload caddy 2>/dev/null || systemctl restart caddy
+echo "==> [3/3] รัน container + เสียบ Traefik"
+HASH="$(htpasswd -nbB "$APP_USER" "$APP_PASS")"
+docker rm -f fbad 2>/dev/null || true
+docker run -d --name fbad --restart unless-stopped \
+  --network "$NET" \
+  -e PUBLIC_URL="https://$DOMAIN" \
+  -e PORT=4000 \
+  -e CONFIG_PATH=/data/config.json \
+  -v "$DATA_DIR:/data" \
+  --label traefik.enable=true \
+  --label traefik.docker.network="$NET" \
+  --label "traefik.http.routers.fbad.rule=Host(\`$DOMAIN\`)" \
+  --label traefik.http.routers.fbad.entrypoints=websecure \
+  --label "traefik.http.routers.fbad.tls.certresolver=$CERTRESOLVER" \
+  --label traefik.http.routers.fbad.middlewares=fbad-auth \
+  --label "traefik.http.middlewares.fbad-auth.basicauth.users=$HASH" \
+  --label traefik.http.services.fbad.loadbalancer.server.port=4000 \
+  fbad:latest
 
 echo ""
 echo "======================================================"
-echo " ✅ เสร็จแล้ว! เปิด  https://$DOMAIN"
-echo "    เข้าเว็บด้วย user: $APP_USER  (รหัสที่ตั้งไว้)"
-echo " * รอ 30-60 วิ ให้ Caddy ออกใบรับรอง HTTPS รอบแรก"
+echo " ✅ deploy สำเร็จ! เปิด  https://$DOMAIN"
+echo "    เข้าเว็บด้วย user: $APP_USER"
+[ "$GEN" = 1 ] && echo "    🔑 รหัสผ่าน (สุ่มให้): $APP_PASS"
+echo " * รอ 30-60 วิ ให้ Traefik ออกใบรับรอง HTTPS รอบแรก"
 echo "======================================================"

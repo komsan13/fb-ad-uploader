@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const CONFIG_PATH = path.join(__dirname, 'config.json');
+const CONFIG_PATH = process.env.CONFIG_PATH || path.join(__dirname, 'config.json');
 const API = 'https://graph.facebook.com/v23.0';
 const PORT = process.env.PORT || 4000;
 // URL สาธารณะของแอป (ตั้งผ่าน env ตอน deploy) — ใช้สร้าง redirect URI ของ OAuth
