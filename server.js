@@ -321,6 +321,130 @@ app.get('/api/library/thumb/:id', (req, res) => {
   res.sendFile(libThumb(req.params.id), (err) => { if (err && !res.headersSent) res.status(404).end(); });
 });
 
+// ---------- คลังแคปชั่น (ผู้ใช้เตรียมข้อความไว้เอง แล้วให้ตัวจัดแผนหยิบไปใช้) ----------
+const CAPTION_PATH = path.join(path.dirname(CONFIG_PATH), 'captions.json');
+function loadCaptions() {
+  try { const a = JSON.parse(fs.readFileSync(CAPTION_PATH, 'utf8')); return Array.isArray(a) ? a : []; }
+  catch { return []; }
+}
+function saveCaptions(items) { fs.writeFileSync(CAPTION_PATH, JSON.stringify(items, null, 2)); }
+
+app.get('/api/captions', (req, res) => res.json(loadCaptions()));
+
+app.post('/api/captions', (req, res) => {
+  const message = String(req.body.message || '').trim();
+  if (!message) return res.status(400).json({ error: 'ต้องมีข้อความหลัก' });
+  const item = {
+    id: 'c' + crypto.randomUUID(),
+    message: message.slice(0, 5000),
+    headline: String(req.body.headline || '').trim().slice(0, 255),
+    ts: Date.now(),
+  };
+  const items = loadCaptions();
+  items.unshift(item);
+  saveCaptions(items);
+  res.json(item);
+});
+
+app.post('/api/captions/update', (req, res) => {
+  const items = loadCaptions();
+  const item = items.find((x) => x.id === String(req.body.id));
+  if (!item) return res.status(404).json({ error: 'ไม่พบแคปชั่นนี้' });
+  const message = String(req.body.message || '').trim();
+  if (!message) return res.status(400).json({ error: 'ข้อความหลักว่างไม่ได้' });
+  item.message = message.slice(0, 5000);
+  item.headline = String(req.body.headline || '').trim().slice(0, 255);
+  saveCaptions(items);
+  res.json({ ok: true });
+});
+
+app.post('/api/captions/delete', (req, res) => {
+  const items = loadCaptions();
+  const i = items.findIndex((x) => x.id === String(req.body.id));
+  if (i < 0) return res.status(404).json({ error: 'ไม่พบแคปชั่นนี้' });
+  items.splice(i, 1);
+  saveCaptions(items);
+  res.json({ ok: true });
+});
+
+// ---------- ตัวจัดแผนขึ้นแอด: จับคู่วิดีโอ+แคปชั่นให้แต่ละบัญชี ----------
+// ตรรกะธรรมดา ไม่ใช้ AI — ผลลัพธ์คาดเดาได้ ทำงานทันที ไม่มีค่า token
+// กติกา: (1) เลี่ยงวิดีโอที่บัญชีนั้นเคยขึ้นไปแล้ว (2) ในรอบเดียวกันห้ามบัญชีอื่นได้ตัวซ้ำ
+app.post('/api/autoplan', (req, res) => {
+  const accounts = Array.isArray(req.body.accounts) ? req.body.accounts : [];
+  const perAccount = Math.max(1, Math.min(10, Number(req.body.perAccount) || 3));
+  if (!accounts.length) return res.status(400).json({ error: 'ยังไม่ได้เลือกบัญชี' });
+
+  const videos = loadLib();
+  const captions = loadCaptions();
+  if (!videos.length) return res.status(400).json({ error: 'คลังวิดีโอยังว่าง — อัปวิดีโอเข้าคลังก่อน' });
+  if (!captions.length) return res.status(400).json({ error: 'คลังแคปชั่นยังว่าง — เพิ่มแคปชั่นก่อน' });
+
+  const usedThisRound = new Set();
+  let captionCursor = 0;
+  const warnings = [];
+
+  const plan = accounts.map((acct) => {
+    const acctId = String(acct.acctId || '');
+    // เรียงลำดับความน่าหยิบ: ยังไม่เคยใช้กับบัญชีนี้ และยังไม่ถูกจองในรอบนี้ มาก่อน
+    const ranked = videos.slice().sort((a, b) => {
+      const score = (v) => (v.usedOn && v.usedOn.includes(acctId) ? 2 : 0) + (usedThisRound.has(v.id) ? 1 : 0);
+      return score(a) - score(b) || b.ts - a.ts;
+    });
+    const picked = ranked.slice(0, perAccount);
+    // เตือนก่อนที่ usedThisRound จะถูกอัปเดต ไม่งั้นจะนับตัวของตัวเองเป็นตัวซ้ำ
+    const label = acct.name || acctId;
+    if (picked.length < perAccount) {
+      warnings.push(`${label}: คลังมีวิดีโอไม่พอ ได้ ${picked.length} จาก ${perAccount} ตัว`);
+    }
+    const dupInRound = picked.filter((v) => usedThisRound.has(v.id));
+    if (dupInRound.length) {
+      warnings.push(`${label}: วิดีโอในคลังไม่พอ ${dupInRound.length} ตัวจึงซ้ำกับบัญชีอื่นในรอบนี้ (${dupInRound.map((v) => v.name).join(', ')})`);
+    }
+    const reused = picked.filter((v) => v.usedOn && v.usedOn.includes(acctId));
+    if (reused.length) {
+      warnings.push(`${label}: ต้องใช้วิดีโอที่เคยขึ้นในบัญชีนี้แล้ว ${reused.length} ตัว (${reused.map((v) => v.name).join(', ')})`);
+    }
+    picked.forEach((v) => usedThisRound.add(v.id));
+
+    return {
+      pid: acct.pid,
+      acctId,
+      name: acct.name,
+      ads: picked.map((v) => {
+        const cap = captions[captionCursor++ % captions.length];
+        return {
+          mediaId: v.id,
+          videoName: v.name,
+          name: v.name,
+          message: cap.message,
+          headline: cap.headline,
+          captionId: cap.id,
+        };
+      }),
+    };
+  });
+
+  const totalAds = plan.reduce((s, a) => s + a.ads.length, 0);
+  if (captions.length < totalAds) {
+    warnings.push(`คลังแคปชั่นมี ${captions.length} อัน แต่ต้องใช้ ${totalAds} แอด — แคปชั่นจะวนซ้ำ`);
+  }
+  res.json({ plan, warnings, stats: { videos: videos.length, captions: captions.length, totalAds } });
+});
+
+// บันทึกว่าวิดีโอตัวนี้ถูกใช้กับบัญชีไหนไปแล้ว (เรียกหลังขึ้นแอดสำเร็จ)
+function markVideoUsed(mediaId, acctId) {
+  try {
+    const items = loadLib();
+    const item = items.find((x) => x.id === String(mediaId));
+    if (!item) return;
+    if (!Array.isArray(item.usedOn)) item.usedOn = [];
+    if (item.usedOn.includes(acctId)) return;
+    item.usedOn.push(acctId);
+    saveLib(items);
+  } catch { /* บันทึกประวัติไม่สำเร็จ ไม่ควรทำให้การขึ้นแอดพัง */ }
+}
+
 // หา media จาก id: คลังถาวรก่อน แล้วค่อยตกไปที่ไฟล์ชั่วคราวของรอบขึ้นแอดปัจจุบัน
 function resolveMedia(id) {
   const key = String(id);
@@ -328,6 +452,112 @@ function resolveMedia(id) {
   if (item) return { path: libFile(key), mimetype: item.mimetype, originalname: item.filename };
   return mediaStore.get(key) || null;
 }
+
+// ---------- AI วิเคราะห์ผลแคมเปญ แล้วเสนอว่าควรทำอะไรต่อ ----------
+const Anthropic = require('@anthropic-ai/sdk');
+
+const ADVICE_SCHEMA = {
+  type: 'object',
+  properties: {
+    summary: { type: 'string', description: 'สรุปภาพรวมสั้นๆ 2-3 ประโยค เป็นภาษาไทย' },
+    actions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          campaignId: { type: 'string' },
+          campaignName: { type: 'string' },
+          action: { type: 'string', enum: ['scale', 'pause', 'watch', 'keep'] },
+          reason: { type: 'string', description: 'เหตุผลสั้นๆ อ้างตัวเลขจริง เป็นภาษาไทย' },
+        },
+        required: ['campaignId', 'campaignName', 'action', 'reason'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['summary', 'actions'],
+  additionalProperties: false,
+};
+
+const ADVICE_SYSTEM = `คุณคือคนดูแลบัญชีโฆษณา Facebook ให้เจ้าของธุรกิจไทย หน้าที่คือดูตัวเลขแคมเปญแล้วบอกตรงๆ ว่าควรทำอะไรกับแต่ละตัว
+
+เกณฑ์ตัดสิน:
+- scale = ต้นทุนต่อผลลัพธ์ต่ำกว่าค่าเฉลี่ยชัดเจน และใช้จ่ายมากพอจะเชื่อตัวเลขได้ → ควรเพิ่มงบ
+- pause = ใช้จ่ายไปพอสมควรแล้วแต่ยังไม่มีผลลัพธ์ หรือต้นทุนต่อผลลัพธ์แพงกว่าค่าเฉลี่ยมาก → ควรหยุด
+- watch = ตัวเลขยังน้อยเกินจะตัดสิน หรือมีสัญญาณผิดปกติ (แอดโดนปฏิเสธ/ค้างรีวิว) → ต้องจับตา
+- keep = ปกติดี ปล่อยไว้
+
+กฎ:
+- ห้ามแนะนำ pause หรือ scale จากตัวเลขที่ยังน้อยเกินไป ถ้าใช้จ่ายยังน้อยมากให้ตอบ watch
+- เหตุผลต้องอ้างตัวเลขจริงจากข้อมูลที่ให้ ห้ามแต่งตัวเลขเอง
+- ตอบเป็นภาษาไทย กระชับ ตรงประเด็น ไม่ต้องเกริ่น
+- ทุกแคมเปญที่ได้รับต้องมีคำแนะนำครบทุกตัว`;
+
+app.post('/api/ai-advice', async (req, res) => {
+  const cfg = loadConfig();
+  const apiKey = cfg.anthropicKey || process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return res.status(400).json({ error: 'ยังไม่ได้ใส่ Anthropic API key (ไปที่เมนู "บัญชี FB" → ส่วน AI)' });
+
+  const campaigns = Array.isArray(req.body.campaigns) ? req.body.campaigns : [];
+  if (!campaigns.length) return res.status(400).json({ error: 'ไม่มีแคมเปญให้วิเคราะห์' });
+
+  // ส่งเฉพาะฟิลด์ที่ใช้ตัดสินจริง — ไม่เทข้อมูลทั้งก้อนเข้าไปเปลืองโทเคน
+  const slim = campaigns.slice(0, 120).map((c) => ({
+    id: String(c.id),
+    name: String(c.name || '').slice(0, 120),
+    บัญชี: c.accountName || undefined,
+    สถานะ: c.effective_status || c.status,
+    งบต่อวัน: c.dailyBudget || 0,
+    ใช้จ่าย: Math.round(Number(c.spend) || 0),
+    ผลลัพธ์: c.results || 0,
+    ชื่อผลลัพธ์: c.resultLabel || undefined,
+    ต้นทุนต่อผลลัพธ์: c.costPerResult != null ? Math.round(c.costPerResult) : null,
+    แอดโดนปฏิเสธ: c.adsDisapproved || 0,
+    แอดรอรีวิว: c.adsPending || 0,
+    แอดที่ยิงอยู่: c.adsActive || 0,
+  }));
+
+  try {
+    const client = new Anthropic({ apiKey });
+    const msg = await client.messages.create({
+      model: 'claude-opus-4-8',
+      max_tokens: 16000,
+      thinking: { type: 'adaptive' },
+      output_config: { effort: 'high', format: { type: 'json_schema', schema: ADVICE_SCHEMA } },
+      system: ADVICE_SYSTEM,
+      messages: [{
+        role: 'user',
+        content: `ข้อมูลแคมเปญช่วง "${req.body.datePreset || 'ไม่ระบุช่วง'}" สกุลเงิน ${req.body.currency || 'THB'}\n\n${JSON.stringify(slim, null, 1)}`,
+      }],
+    });
+
+    if (msg.stop_reason === 'refusal') return res.status(400).json({ error: 'AI ปฏิเสธคำขอนี้' });
+    const block = msg.content.find((b) => b.type === 'text');
+    if (!block) return res.status(502).json({ error: 'AI ตอบกลับว่างเปล่า' });
+    let out;
+    try { out = JSON.parse(block.text); }
+    catch { return res.status(502).json({ error: 'AI ตอบกลับผิดรูปแบบ' }); }
+    res.json({ ...out, usage: { input: msg.usage.input_tokens, output: msg.usage.output_tokens } });
+  } catch (e) {
+    // ข้อความจาก SDK อ่านไม่รู้เรื่องสำหรับผู้ใช้ทั่วไป — แปลเคสที่เจอบ่อย
+    const m = e.status === 401 ? 'API key ไม่ถูกต้อง'
+      : e.status === 429 ? 'ใช้เกินโควตา/เร็วเกินไป — รอสักครู่แล้วลองใหม่'
+      : e.status === 400 ? `คำขอไม่ถูกต้อง: ${e.message}`
+      : `เรียก AI ไม่สำเร็จ: ${e.message}`;
+    res.status(502).json({ error: m });
+  }
+});
+
+app.get('/api/ai-key', (req, res) => {
+  const cfg = loadConfig();
+  res.json({ hasKey: !!(cfg.anthropicKey || process.env.ANTHROPIC_API_KEY), fromEnv: !cfg.anthropicKey && !!process.env.ANTHROPIC_API_KEY });
+});
+app.post('/api/ai-key', (req, res) => {
+  const cfg = loadConfig();
+  cfg.anthropicKey = String(req.body.key || '').trim();
+  saveConfig(cfg);
+  res.json({ ok: true, hasKey: !!cfg.anthropicKey });
+});
 
 // ---------- จัดการบัญชี FB (profiles) ----------
 app.get('/api/profiles', (req, res) => res.json(publicProfiles(loadConfig())));
@@ -1080,6 +1310,9 @@ app.post('/api/launch', upload.any(), async (req, res) => {
           creative: { creative_id: creative.id },
           status,
         }, 'POST', token);
+
+        // จดไว้ว่าวิดีโอตัวนี้ขึ้นบัญชีนี้แล้ว — รอบหน้าตัวจัดแผนจะได้เลี่ยงไปหยิบตัวอื่น
+        if (ad.mediaId) markVideoUsed(ad.mediaId, acctId);
 
         send({ type: 'result', index: i, ok: true, adId: adRes.id, adsetId: adset.id });
       } catch (e) {
