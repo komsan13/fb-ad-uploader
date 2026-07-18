@@ -1786,6 +1786,37 @@ function removeAd(id) {
   card.remove();
   updateStats();
 }
+// ---------- อัปโหลดวิดีโอขึ้น server ทันทีที่เลือกไฟล์ (ไม่ต้องรอตอนกดขึ้นแอด) ----------
+let mediaUploadsInFlight = 0;
+function updateLaunchGate() {
+  const btn = document.getElementById('launchBtn');
+  if (btn.dataset.launching === '1') return;
+  btn.disabled = mediaUploadsInFlight > 0;
+  btn.textContent = mediaUploadsInFlight > 0 ? `⏫ รออัปโหลดวิดีโอให้เสร็จก่อน (${mediaUploadsInFlight} ไฟล์)...` : '🚀 ขึ้นแอดทั้งหมด';
+}
+function uploadMedia(card, file) {
+  card.dataset.mediaId = '';
+  card.dataset.uploading = '1';
+  mediaUploadsInFlight++;
+  updateLaunchGate();
+  const done = () => { delete card.dataset.uploading; mediaUploadsInFlight--; updateLaunchGate(); };
+  const form = new FormData();
+  form.append('file', file);
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', '/api/media');
+  xhr.upload.onprogress = (e) => {
+    if (e.lengthComputable) setBadge(card, 'run', `⏫ อัปโหลดวิดีโอ ${Math.round(e.loaded / e.total * 100)}%`);
+  };
+  xhr.onload = () => {
+    done();
+    let d = null;
+    try { d = JSON.parse(xhr.responseText); } catch { /* ตอบไม่เป็น JSON */ }
+    if (d && d.id) { card.dataset.mediaId = d.id; setBadge(card, 'wait', '🎬 วิดีโอพร้อมขึ้น'); }
+    else setBadge(card, 'err', 'อัปโหลดวิดีโอไม่สำเร็จ — จะลองส่งอีกทีตอนกดขึ้นแอด');
+  };
+  xhr.onerror = () => { done(); setBadge(card, 'err', 'อัปโหลดวิดีโอไม่สำเร็จ — จะลองส่งอีกทีตอนกดขึ้นแอด'); };
+  xhr.send(form);
+}
 function imgChanged(input) {
   const card = input.closest('.ad-card');
   const img = card.querySelector('.thumb');
@@ -1794,6 +1825,8 @@ function imgChanged(input) {
   if (!f) return;
   const isVideo = f.type.startsWith('video/');
   tag.style.display = isVideo ? 'block' : 'none';
+  if (isVideo) uploadMedia(card, f);
+  else card.dataset.mediaId = '';
   if (isVideo) {
     // ทำ thumbnail จากเฟรมแรกของวิดีโอ
     const url = URL.createObjectURL(f);
@@ -1904,6 +1937,7 @@ function aggregateBadge(card, selected) {
 async function launch() {
   const allCards = [...document.querySelectorAll('.ad-card')];
   if (!allCards.length) return alert('ยังไม่มีแอด — ลากรูป/วิดีโอมาวางก่อนครับ');
+  if (mediaUploadsInFlight > 0) return alert('รออัปโหลดวิดีโอขึ้นเซิร์ฟเวอร์ให้เสร็จก่อนครับ (ดู % ที่มุมการ์ด)');
   const campaignName = document.getElementById('campaignName').value.trim();
   if (!campaignName) return alert('กรุณาใส่ชื่อแคมเปญ (ขั้นตอนที่ 1)');
   const objective = document.getElementById('objective').value;
@@ -1934,6 +1968,7 @@ async function launch() {
   const doneLinks = [];
 
   const btn = document.getElementById('launchBtn');
+  btn.dataset.launching = '1';
   btn.disabled = true;
   btn.textContent = 'กำลังขึ้นแอด...';
   document.getElementById('doneBanner').style.display = 'none';
@@ -1957,8 +1992,10 @@ async function launch() {
       cards.forEach((c, i) => {
         const num = allCards.indexOf(c) + 1;
         const field = `img_${i}`;
-        form.append(field, c.querySelector('.f-image').files[0]);
+        // วิดีโอที่อัปโหลดขึ้น server ไว้แล้ว = ส่งแค่ mediaId ไม่ต้องส่งไฟล์ซ้ำ
+        if (!c.dataset.mediaId) form.append(field, c.querySelector('.f-image').files[0]);
         ads.push({
+          mediaId: c.dataset.mediaId || undefined,
           name: c.querySelector('.f-name').value.trim() || `Ad-${num}`,
           message: c.querySelector('.f-message').value.trim(),
           link: c.querySelector('.f-link').value.trim(),
@@ -2075,8 +2112,10 @@ async function launch() {
   }
 
   pw.style.display = 'none';
+  delete btn.dataset.launching;
   btn.disabled = false;
   btn.textContent = '🚀 ขึ้นแอดทั้งหมด';
+  updateLaunchGate();
 }
 </script>
 </body>

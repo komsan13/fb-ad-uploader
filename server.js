@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 
@@ -116,8 +117,11 @@ async function uploadVideo(acct, file, token, attempt = 0) {
     const res = await fetch(`${API}/${acct}/advideos`, { method: 'POST', body: form });
     json = JSON.parse(await res.text());
   } catch {
-    // การเชื่อมต่อสะดุด/FB ตอบไม่เป็น JSON — อัปโหลดใหม่ได้อีก 1 รอบ
-    if (attempt < 1) return uploadVideo(acct, file, token, attempt + 1);
+    // การเชื่อมต่อสะดุด/FB ตอบไม่เป็น JSON — รอแล้วอัปโหลดใหม่ได้อีก 2 รอบ
+    if (attempt < 2) {
+      await new Promise((r) => setTimeout(r, (attempt + 1) * 5000));
+      return uploadVideo(acct, file, token, attempt + 1);
+    }
     throw new Error('อัปโหลดวิดีโอไป FB ไม่สำเร็จ (การเชื่อมต่อสะดุด) — กดขึ้นอีกครั้งได้เลย');
   }
   if (json.error) throw new Error(json.error.error_user_msg || json.error.message);
@@ -166,6 +170,26 @@ const OBJECTIVES = {
   OUTCOME_SALES: { optimization_goal: 'OFFSITE_CONVERSIONS', event: 'PURCHASE', needsPixel: true },
   OUTCOME_LEADS: { optimization_goal: 'OFFSITE_CONVERSIONS', event: 'LEAD', needsPixel: true },
 };
+
+// ---------- คลังวิดีโอที่อัปโหลดล่วงหน้า (ลากไฟล์ปุ๊บอัปขึ้น server เลย ไม่ต้องรอตอนกดขึ้นแอด) ----------
+const MEDIA_DIR = path.join(os.tmpdir(), 'fbad-media');
+fs.mkdirSync(MEDIA_DIR, { recursive: true });
+const mediaStore = new Map(); // id -> {path, mimetype, originalname, ts}
+setInterval(() => {
+  const cutoff = Date.now() - 24 * 3600 * 1000;
+  for (const [id, m] of mediaStore) {
+    if (m.ts < cutoff) { try { fs.unlinkSync(m.path); } catch { /* ข้าม */ } mediaStore.delete(id); }
+  }
+}, 3600 * 1000).unref();
+
+app.post('/api/media', upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'ไม่ได้แนบไฟล์' });
+  const id = crypto.randomUUID();
+  const p = path.join(MEDIA_DIR, id);
+  fs.writeFileSync(p, req.file.buffer);
+  mediaStore.set(id, { path: p, mimetype: req.file.mimetype, originalname: req.file.originalname, ts: Date.now() });
+  res.json({ id });
+});
 
 // ---------- จัดการบัญชี FB (profiles) ----------
 app.get('/api/profiles', (req, res) => res.json(publicProfiles(loadConfig())));
@@ -657,7 +681,13 @@ app.post('/api/launch', upload.any(), async (req, res) => {
       const ad = data.ads[i];
       try {
         if (aborted) throw new Error('ยกเลิกแล้ว');
-        const file = files[ad.imageField];
+        let file = files[ad.imageField];
+        if (!file && ad.mediaId) {
+          const m = mediaStore.get(String(ad.mediaId));
+          try { if (m) file = { buffer: fs.readFileSync(m.path), mimetype: m.mimetype, originalname: m.originalname }; }
+          catch { /* ไฟล์หาย */ }
+          if (!file) throw new Error('ไฟล์วิดีโอที่อัปโหลดไว้หายจากเซิร์ฟเวอร์ (เช่น server เพิ่งรีสตาร์ท) — ลากไฟล์ใส่การ์ดนี้ใหม่แล้วกดขึ้นอีกครั้ง');
+        }
         if (!file) throw new Error('ไม่ได้แนบไฟล์สื่อ');
         const isVideo = (file.mimetype || '').startsWith('video/');
 
