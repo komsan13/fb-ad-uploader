@@ -90,7 +90,14 @@ async function fb(pathname, params, method, token, attempt = 0) {
       return fb(pathname, params, method, token, attempt + 1);
     }
     // error_user_msg เป็นภาษาตาม locale ของ token — เก็บ message อังกฤษดิบไว้ให้โค้ดที่ต้องจับ pattern ใช้ด้วย
-    const err = new Error(e.error_user_msg || e.message || 'FB API error');
+    let msg = e.error_user_msg || e.message || 'FB API error';
+    // แปล error ระดับระบบให้เป็นคำแนะนำที่ทำตามได้จริง
+    if (e.code === 200 && /API access blocked/i.test(e.message || '')) {
+      msg = 'Meta บล็อกการเข้า API ของ "แอป" ที่ใช้เชื่อม (ไม่ใช่ตัวบัญชี FB) — เปิด developers.facebook.com/apps เพื่อดูประกาศ/กดอุทธรณ์ หรือสร้างแอปใหม่แล้วใส่ App ID/Secret ในหน้า "บัญชี FB" แล้วล็อกอินใหม่';
+    } else if (e.code === 190) {
+      msg = 'token หมดอายุหรือถูกยกเลิก — ไปหน้า "บัญชี FB" แล้วกด "เข้าสู่ระบบด้วย Facebook" ใหม่' + (e.message ? ` (${e.message})` : '');
+    }
+    const err = new Error(msg);
     err.fbMessage = e.message || '';
     throw err;
   }
