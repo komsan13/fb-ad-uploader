@@ -44,7 +44,7 @@
   .side-foot .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #c3c8d1; margin-right: 7px; }
   .side-foot .dot.on { background: var(--green); }
 
-  main { flex: 1; margin-left: var(--sidebar-w); padding: 0 28px 150px; min-width: 0; }
+  main { flex: 1; margin-left: var(--sidebar-w); padding: 0 28px 40px; min-width: 0; }
 
   /* แถบบนสีเขียว */
   .topstrip { margin: 0 -28px; background: var(--brand); color: #fff; height: var(--header-h); padding: 0 28px; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
@@ -143,7 +143,9 @@
   /* panel เลือกบัญชีโฆษณาฝั่งซ้ายของหน้าแคมเปญ */
   .camp-layout { display: flex; gap: 14px; align-items: flex-start; }
   .camp-side { width: 264px; flex-shrink: 0; position: sticky; top: 14px; max-height: calc(100vh - 110px); overflow-y: auto; padding: 16px; }
-  #page-upload .camp-side { max-height: calc(100vh - 180px); } /* เผื่อ #bottomBar fixed ด้านล่าง */
+  /* modal ขึ้นแอด */
+  .modal-box.upload-modal { max-width: 1100px; }
+  #uploadModal .camp-side { top: 0; max-height: calc(88vh - 160px); border: 1px solid var(--line); }
   .camp-main { flex: 1; min-width: 0; }
   .cs-head { display: flex; justify-content: space-between; align-items: center; font-size: 13.5px; font-weight: 700; margin-bottom: 10px; }
   .cs-actions { font-size: 12px; font-weight: 600; color: var(--muted); }
@@ -284,7 +286,7 @@
   .res-label { color: var(--muted); font-size: 11px; font-weight: 400; }
 
   /* ---------- แถบล่าง ---------- */
-  #bottomBar { position: fixed; bottom: 0; left: var(--sidebar-w); right: 0; background: rgba(255,255,255,.94); backdrop-filter: blur(10px); border-top: 1px solid var(--line); z-index: 80; }
+  #bottomBar { border-top: 1px solid var(--line); background: #fff; flex-shrink: 0; }
   #bottomBar .inner { padding: 11px 28px 13px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
   #launchProfiles { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12.5px; }
   #launchProfiles .lp-title { color: var(--muted); font-weight: 600; }
@@ -342,10 +344,9 @@
     nav a .num { display: none; }
     .side-foot { display: none; }
     .app { flex-direction: column; }
-    main { margin-left: 0; padding: 0 14px 170px; }
+    main { margin-left: 0; padding: 0 14px 40px; }
     .topstrip { margin: 0 -14px; padding: 0 14px; height: auto; min-height: 52px; }
     .logo { height: auto; min-height: 52px; }
-    #bottomBar { left: 0; }
   }
 </style>
 </head>
@@ -358,9 +359,8 @@
       <div>FB Ad Uploader<small>Marketing API • Multi-Account</small></div>
     </div>
     <nav>
-      <a data-page="upload" class="active" onclick="showPage('upload')"><span class="num">1</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M3 15v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4"/></svg><span class="lbl">ขึ้นแอด</span></a>
-      <a data-page="campaigns" onclick="showPage('campaigns')"><span class="num">2</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg><span class="lbl">แคมเปญของฉัน</span></a>
-      <a data-page="settings" onclick="showPage('settings')"><span class="num">3</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span class="lbl">บัญชี FB</span></a>
+      <a data-page="campaigns" class="active" onclick="showPage('campaigns')"><span class="num">1</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg><span class="lbl">แคมเปญของฉัน</span></a>
+      <a data-page="settings" onclick="showPage('settings')"><span class="num">2</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span class="lbl">บัญชี FB</span></a>
     </nav>
     <div class="side-foot" id="sideConn"><span class="dot"></span>ยังไม่มีบัญชี</div>
   </aside>
@@ -377,12 +377,18 @@
       </div>
     </div>
     <div class="page-banner">
-      <h1 id="pageTitle">ขึ้นแอด</h1>
-      <div class="desc" id="pageDesc">สร้างแอดหลายตัวพร้อมกัน ขึ้นได้หลายบัญชี FB ในคลิกเดียว</div>
+      <h1 id="pageTitle">แคมเปญของฉัน</h1>
+      <div class="desc" id="pageDesc">ดูสถานะและเปิด/ปิดแคมเปญ แยกตามบัญชี</div>
     </div>
 
-    <!-- ========== PAGE: ขึ้นแอด ========== -->
-    <section class="page active" id="page-upload">
+    <!-- ========== MODAL: ขึ้นแอด ========== -->
+    <div class="modal-overlay" id="uploadModal" style="display:none">
+    <div class="modal-box upload-modal">
+      <div class="modal-head">
+        <h3>🚀 ขึ้นแอด <span class="h-desc">— สร้างแอดหลายตัวพร้อมกัน ขึ้นได้หลายบัญชีในคลิกเดียว</span></h3>
+        <button class="btn-light icon-btn" onclick="closeUploadModal()" title="ปิด">✕</button>
+      </div>
+      <div class="modal-body">
       <div class="camp-layout">
       <aside class="camp-side card">
         <div class="cs-head">
@@ -393,29 +399,6 @@
         <div id="launchAccounts"><span class="hint">กำลังโหลด...</span></div>
       </aside>
       <div class="camp-main">
-      <div class="kpi-row">
-        <div class="tile">
-          <div class="t-label"><span class="t-ic g"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 8.5 5-8.5 5L3.5 8 12 3z"/><path d="m3.5 13 8.5 5 8.5-5"/></svg></span>แอดในคิว</div>
-          <div class="t-value" id="statCount">0</div>
-          <div class="t-sub">ตัวที่พร้อมขึ้นในรอบนี้</div>
-        </div>
-        <div class="tile">
-          <div class="t-label"><span class="t-ic o"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5h3.75a1.75 1.75 0 0 1 0 3.5h-2.5a1.75 1.75 0 0 0 0 3.5H14.5"/></svg></span>งบรวมต่อวัน</div>
-          <div class="t-value" id="statBudget">฿0</div>
-          <div class="t-sub" id="statBudgetSub">ต่อ 1 บัญชี เมื่อเปิดใช้งาน</div>
-        </div>
-        <div class="tile">
-          <div class="t-label"><span class="t-ic b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>บัญชีที่จะขึ้น</div>
-          <div class="t-value" id="statProfiles">0</div>
-          <div class="t-sub">เลือกได้ที่แผงด้านซ้าย</div>
-        </div>
-        <div class="tile">
-          <div class="t-label"><span class="t-ic g"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg></span>ผลการขึ้นรอบล่าสุด</div>
-          <div class="t-value" id="statResult">—</div>
-          <div class="t-sub" id="statResultSub">ยังไม่มีการขึ้นแอดในเซสชันนี้</div>
-        </div>
-      </div>
-
       <div class="card">
         <div class="pc-step"><span class="pc-step-num">1</span> ตั้งค่าแคมเปญ <span class="h-desc">— สร้างชื่อเดียวกันในทุกบัญชีที่เลือก</span></div>
         <div class="row">
@@ -526,10 +509,23 @@
 
       </div>
       </div>
-    </section>
+      </div>
+      <div id="bottomBar">
+        <div class="inner">
+          <div id="barStats"><b id="barCount">0</b> แอด <span class="muted" id="barBudget"></span> <span class="muted" id="barAccts"></span></div>
+          <div id="progressWrap">
+            <div id="progressText"></div>
+            <div id="progressTrack"><div id="progressFill"></div></div>
+          </div>
+          <div id="doneBanner"></div>
+          <button id="launchBtn" onclick="launch()">🚀 ขึ้นแอดทั้งหมด</button>
+        </div>
+      </div>
+    </div>
+    </div>
 
     <!-- ========== PAGE: แคมเปญของฉัน ========== -->
-    <section class="page" id="page-campaigns">
+    <section class="page active" id="page-campaigns">
       <div class="camp-layout">
       <aside class="camp-side card">
         <div class="cs-head">
@@ -556,7 +552,8 @@
               <button class="date-pill" onclick="setCampDate('maximum', this)">ทั้งหมด</button>
             </div>
           </div>
-          <button class="btn-primary" onclick="loadCampaigns()" style="display:inline-flex;align-items:center;gap:7px"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>รีเฟรชข้อมูล</button>
+          <button class="btn-light" onclick="loadCampaigns()" style="display:inline-flex;align-items:center;gap:7px"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>รีเฟรชข้อมูล</button>
+          <button class="btn-primary" onclick="openUploadModal()" style="margin-left:0;display:inline-flex;align-items:center;gap:7px"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M3 15v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4"/></svg>ขึ้นแอด</button>
         </div>
       </div>
 
@@ -641,19 +638,6 @@
   </div>
 </div>
 
-<!-- ========== แถบขึ้นแอด (เฉพาะหน้าขึ้นแอด) ========== -->
-<div id="bottomBar">
-  <div class="inner">
-    <div id="barStats"><b id="barCount">0</b> แอด <span class="muted" id="barBudget"></span> <span class="muted" id="barAccts"></span></div>
-    <div id="progressWrap">
-      <div id="progressText"></div>
-      <div id="progressTrack"><div id="progressFill"></div></div>
-    </div>
-    <div id="doneBanner"></div>
-    <button id="launchBtn" onclick="launch()">🚀 ขึ้นแอดทั้งหมด</button>
-  </div>
-</div>
-
 <script>
 let adRowSeq = 0;
 let profiles = [];            // [{id, label, adAccountId, pageId, hasToken}]
@@ -668,7 +652,6 @@ function esc(s) {
 
 // ---------- สลับหน้า ----------
 const PAGE_META = {
-  upload: ['ขึ้นแอด', 'สร้างแอดหลายตัวพร้อมกัน ขึ้นได้หลายบัญชี FB ในคลิกเดียว'],
   campaigns: ['แคมเปญของฉัน', 'ดูสถานะและเปิด/ปิดแคมเปญ แยกตามบัญชี'],
   settings: ['บัญชี FB', 'เพิ่ม/จัดการบัญชี FB, บัญชีโฆษณา และเพจ'],
 };
@@ -678,10 +661,18 @@ function showPage(name) {
   document.querySelectorAll('nav a').forEach(a => a.classList.toggle('active', a.dataset.page === name));
   document.getElementById('pageTitle').textContent = PAGE_META[name][0];
   document.getElementById('pageDesc').textContent = PAGE_META[name][1];
-  document.getElementById('bottomBar').style.display = name === 'upload' ? 'block' : 'none';
   if (name === 'settings') renderSettings();
   if (name === 'campaigns') buildCampFilters().then(loadCampaigns);
-  if (name === 'upload') loadLaunchAccounts();
+}
+
+// ---------- modal ขึ้นแอด ----------
+function openUploadModal() {
+  document.getElementById('uploadModal').style.display = 'flex';
+  loadLaunchAccounts();
+  updateStats();
+}
+function closeUploadModal() {
+  document.getElementById('uploadModal').style.display = 'none';
 }
 
 // ---------- บัญชี FB (profiles) ----------
@@ -936,8 +927,7 @@ setInterval(tickClock, 1000);
     const env = await (await fetch('/api/env')).json();
     if (env.redirectUri) document.getElementById('redirectUriText').textContent = env.redirectUri;
   } catch {}
-  if (!profiles.length) showPage('settings');
-  else loadLaunchAccounts();
+  showPage(profiles.length ? 'campaigns' : 'settings');
 })();
 
 function togglePixel() {
@@ -1421,14 +1411,10 @@ function updateTargetSummary(card) {
 function updateStats() {
   const cards = document.querySelectorAll('.ad-card');
   document.getElementById('adCount').textContent = `(${cards.length} ตัว)`;
-  document.getElementById('statCount').textContent = cards.length;
   document.getElementById('barCount').textContent = cards.length;
   const cb = Number((document.getElementById('campaignBudget') || {}).value) || 0;
-  document.getElementById('statBudget').textContent = '฿' + cb.toLocaleString();
   document.getElementById('barBudget').textContent = cb ? `• งบแคมเปญ ${cb.toLocaleString()} บาท/วัน/บัญชี` : '';
-  document.getElementById('statBudgetSub').textContent = 'งบแคมเปญ (CBO) ต่อ 1 บัญชี';
   const nAcc = document.querySelectorAll('#launchAccounts input:checked').length;
-  document.getElementById('statProfiles').textContent = nAcc;
   document.getElementById('barAccts').textContent = nAcc ? `• ขึ้น ${nAcc} บัญชี` : '';
 }
 
@@ -1652,10 +1638,7 @@ async function launch() {
   banner.innerHTML = failCount
     ? `⚠ สำเร็จ ${okCount} • ล้มเหลว ${failCount} รายการ — แก้ตามข้อความสีแดงแล้วกดขึ้นอีกครั้ง (ที่สำเร็จแล้วไม่ขึ้นซ้ำ) &nbsp;${links}`
     : `🎉 สำเร็จทั้งหมด ${okCount} รายการ ใน ${plan.length} บัญชี &nbsp;${links}`;
-  document.getElementById('statResult').innerHTML = failCount
-    ? `${okCount} <span style="font-size:14px;color:var(--muted)">สำเร็จ</span> / ${failCount} <span style="font-size:14px;color:var(--muted)">ล้มเหลว</span>`
-    : `${okCount} <span style="font-size:14px;color:var(--muted)">สำเร็จ</span>`;
-  document.getElementById('statResultSub').innerHTML = links || 'ยังไม่มีการขึ้นแอดในเซสชันนี้';
+  if (okCount) loadCampaigns(); // รีเฟรชตารางแคมเปญเบื้องหลังให้เห็นแคมเปญใหม่
 
   pw.style.display = 'none';
   btn.disabled = false;
