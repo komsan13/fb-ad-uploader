@@ -468,6 +468,7 @@
           <span class="switch"><input type="checkbox" id="activeNow"><span class="sl"></span></span>
           <span><b>เปิดแอดทันที (ACTIVE)</b> — ปิดไว้ = ขึ้นเป็น PAUSED ให้เข้าไปตรวจใน Ads Manager ก่อนเปิดเอง (แนะนำ)</span>
         </label>
+        <div class="hint" style="margin-top:9px">ตั้งให้อัตโนมัติทุกครั้ง: ภาษาไทย • เฉพาะ Facebook บนมือถือ • กลยุทธ์วงจรลูกค้า = รับคอนเวอร์ชั่นจากกลุ่มเป้าหมายทั้งหมด • ไม่จำกัดวงเงินใช้จ่ายชุดโฆษณา — <b>หลังขึ้นเสร็จระบบอ่านค่าจริงจาก FB กลับมาแสดงยืนยันที่แถบล่าง</b></div>
       </div>
 
       <div class="card">
@@ -1288,10 +1289,10 @@ async function loadFullAccounts(force) {
         currency: a.currency, status: a.account_status,
         hasPayment: !!a.hasPayment, pixels, chosenPixel: pixels[0] ? pixels[0].id : null,
         pages, chosenPage: (pages.some(g => g.id === p.pageId) ? p.pageId : (pages[0] || {}).id) || null,
-        dsaOptions: a.dsaOptions || [],
-        savedBeneficiary: a.savedBeneficiary || '',
-        // default: ค่าที่เคยตั้งเอง (จำถาวร) > ตัวที่ FB แนะนำ
-        beneficiary: a.savedBeneficiary || (a.dsaOptions || [])[0] || '',
+        beneficiaryOptions: a.beneficiaryOptions || [],
+        // default: ค่าที่เคยตั้ง (จำถาวร) > ธุรกิจเจ้าของบัญชี (ถ้ายืนยันแล้ว)
+        beneficiaryId: ((a.beneficiaryOptions || []).some(b => b.id === a.savedBeneficiaryId) ? a.savedBeneficiaryId : '')
+          || ((a.business && (a.beneficiaryOptions || []).some(b => b.id === a.business.id)) ? a.business.id : ''),
       });
     }
   }
@@ -1352,10 +1353,10 @@ function renderLaunchAccounts() {
             ? a.pages.map(g => `<option value="${g.id}" ${g.id === a.chosenPage ? 'selected' : ''}>📄 ${esc(g.name)}</option>`).join('')
             : '<option value="">— ไม่พบเพจ —</option>'}
         </select>
-        <input list="bl-${v}" value="${esc(a.beneficiary || '')}" placeholder="ผู้ลงโฆษณา (ไม่บังคับ)"
-          title="เลือกจากรายการหรือพิมพ์ชื่อตามที่เห็นใน Ads Manager (เช่น CROSS CURRENT PRODUCTIONS) — จำค่าให้ถาวรต่อบัญชี เว้นว่างได้"
-          onchange="launchSetBeneficiary('${v}', this.value)">
-        <datalist id="bl-${v}">${[...new Set([a.savedBeneficiary, ...a.dsaOptions].filter(Boolean))].map(o => `<option value="${esc(o)}"></option>`).join('')}</datalist>
+        <select onchange="launchSetBeneficiary('${v}', this.value)" title="ผู้ลงโฆษณา (ธุรกิจที่ยืนยันตัวตนกับ FB แล้ว) — จำค่าให้ถาวรต่อบัญชี ไม่บังคับ">
+          <option value="">— ผู้ลงโฆษณา: ไม่ระบุ —</option>
+          ${a.beneficiaryOptions.map(b => `<option value="${b.id}" ${b.id === a.beneficiaryId ? 'selected' : ''}>✅ ${esc(b.name)}</option>`).join('')}
+        </select>
       </div>` : '';
       return `<label class="acct-row ${r.ready ? '' : 'row-off'}" title="${esc(tip)}">
         <input type="checkbox" value="${v}" ${isChecked ? 'checked' : ''} ${r.ready ? '' : 'disabled'} onchange="launchRowToggled()">
@@ -1376,20 +1377,18 @@ function launchRowToggled() { renderLaunchAccounts(); }
 function launchAcct(v) { return launchAccounts.find(a => `${a.pid}:${a.acctId}` === v); }
 function launchSetPixel(v, id) { const a = launchAcct(v); if (a) a.chosenPixel = id || null; }
 function launchSetPage(v, id) { const a = launchAcct(v); if (a) a.chosenPage = id || null; }
-function launchSetBeneficiary(v, name) {
+function launchSetBeneficiary(v, id) {
   const a = launchAcct(v);
   if (!a) return;
-  a.beneficiary = name.trim();
-  a.savedBeneficiary = a.beneficiary;
-  // จำถาวรฝั่งเซิร์ฟเวอร์ ครั้งหน้าไม่ต้องพิมพ์ใหม่
+  a.beneficiaryId = id;
+  // จำถาวรฝั่งเซิร์ฟเวอร์ ครั้งหน้าไม่ต้องเลือกใหม่
   fetch('/api/beneficiary', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ account: a.acctId, name: a.beneficiary }),
+    body: JSON.stringify({ account: a.acctId, id }),
   });
-  // อัปเดตแคชด้วย ไม่งั้นโหลดหน้าใหม่ก่อน server ตอบจะได้ค่าเก่า
   const d = fullAccountCache[a.pid];
   const cached = d && d.adAccounts.find(x => x.account_id === a.acctId);
-  if (cached) cached.savedBeneficiary = a.beneficiary;
+  if (cached) cached.savedBeneficiaryId = id;
 }
 function launchSelectReady() {
   document.querySelectorAll('#launchAccounts input[type=checkbox]').forEach(i => { i.checked = !i.disabled; });
@@ -1988,6 +1987,7 @@ async function launch() {
   const selected = plan.map(x => x.key);
   const totalUnits = plan.reduce((s, x) => s + x.cards.length, 0);
   let doneUnits = 0, okCount = 0, failCount = 0;
+  let launchVerify = null; // ผลตรวจค่าจริงจาก FB (event 'verify')
   const doneLinks = [];
 
   const btn = document.getElementById('launchBtn');
@@ -2037,7 +2037,8 @@ async function launch() {
         profileId: t.pid,
         accountId: t.acctId,
         pageId: t.chosenPage || t.pageId,
-        beneficiary: t.beneficiary || '',
+        beneficiaryId: t.beneficiaryId || '',
+        beneficiaryName: ((t.beneficiaryOptions || []).find(b => b.id === t.beneficiaryId) || {}).name || '',
         campaign: { name: campaignName, objective },
         campaignId: (reuse && reuse.name === campaignName && reuse.objective === objective) ? reuse.id : undefined,
         campaignBudget: Number(document.getElementById('campaignBudget').value) || 300,
@@ -2073,6 +2074,7 @@ async function launch() {
             setProgress(`${label} • เสร็จ ${doneUnits}/${totalUnits} รายการ`);
           }
           if (ev.type === 'campaign') lastCampaignByAcct[key] = { id: ev.id, name: campaignName, objective };
+          if (ev.type === 'verify') launchVerify = ev.items;
           if (ev.type === 'warn') {
             const em = cards[ev.index].querySelector('.ad-err-msg');
             em.innerHTML += `<div style="color:#b7791f">⚠ ${esc(label)}: ${esc(ev.msg)}</div>`;
@@ -2129,6 +2131,11 @@ async function launch() {
   banner.innerHTML = failCount
     ? `⚠ สำเร็จ ${okCount} • ล้มเหลว ${failCount} รายการ — แก้ตามข้อความสีแดงแล้วกดขึ้นอีกครั้ง (ที่สำเร็จแล้วไม่ขึ้นซ้ำ) &nbsp;${links}`
     : `🎉 สำเร็จทั้งหมด ${okCount} รายการ ใน ${plan.length} บัญชี &nbsp;${links}`;
+  if (launchVerify) {
+    banner.innerHTML += `<div style="margin-top:6px;font-weight:400;font-size:12.5px;color:var(--muted)">ตรวจค่าจริงจาก FB: ${
+      launchVerify.map(x => `<span style="margin-right:12px;color:${x.ok ? 'var(--green)' : 'var(--red)'}">${x.ok ? '✓' : '✗'} ${esc(x.label)}</span>`).join('')
+    }</div>`;
+  }
   if (okCount) {
     loadCampaigns(); // รีเฟรชตารางแคมเปญเบื้องหลังให้เห็นแคมเปญใหม่
     Object.keys(dashCache).forEach(k => delete dashCache[k]); // แดชบอร์ดโหลดใหม่รอบหน้า

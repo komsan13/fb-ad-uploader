@@ -301,6 +301,14 @@ app.get('/api/accounts', async (req, res) => {
       : 'name,account_id,currency,account_status,business{id,name}';
     const adAccounts = await fbAll('me/adaccounts', { fields: acctFields, limit: 100 }, prof.accessToken);
     const pages = await fb('me/accounts', { fields: 'name,id', limit: 200 }, 'GET', prof.accessToken);
+    // ธุรกิจที่ยืนยันตัวตนแล้ว = ตัวเลือก "ผู้ลงโฆษณา" (ส่งเป็น id ใน regional_regulation_identities)
+    let verifiedBiz = [];
+    if (full) {
+      try {
+        const vb = await fbAll('me/businesses', { fields: 'name,verification_status', limit: 100 }, prof.accessToken);
+        verifiedBiz = vb.filter((b) => b.verification_status === 'verified').map((b) => ({ id: b.id, name: b.name }));
+      } catch { /* ไม่มีสิทธิ์ก็ข้าม */ }
+    }
     const accounts = adAccounts.map((a) => {
       const out = {
         name: a.name, account_id: a.account_id, currency: a.currency,
@@ -310,11 +318,9 @@ app.get('/api/accounts', async (req, res) => {
         const fsd = a.funding_source_details || {};
         out.hasPayment = !!(fsd.id || fsd.display_string);
         out.pixels = (a.adspixels && a.adspixels.data) ? a.adspixels.data : [];
-        // รายชื่อ "ผู้ลงโฆษณา" ที่ FB แนะนำสำหรับบัญชีนี้ (ธุรกิจ/บุคคลที่ยืนยันตัวตนแล้ว)
-        out.dsaOptions = ((a.dsa_recommendations && a.dsa_recommendations.data) || [])
-          .flatMap((r) => r.recommendations || []);
-        // ค่าที่ผู้ใช้เคยตั้งเอง (จำถาวรต่อบัญชี — ชื่อยืนยันธุรกิจจริงดึงจาก API ไม่ได้)
-        out.savedBeneficiary = (cfg.beneficiaries || {})[a.account_id] || '';
+        // ตัวเลือก "ผู้ลงโฆษณา" = ธุรกิจที่ยืนยันตัวตนแล้ว (ใช้ id จริงตั้งบน ad set ได้ — พิสูจน์แล้ว)
+        out.beneficiaryOptions = verifiedBiz;
+        out.savedBeneficiaryId = String((cfg.beneficiaries || {})[a.account_id] || '');
       }
       return out;
     });
@@ -330,8 +336,8 @@ app.post('/api/beneficiary', (req, res) => {
   if (!acctId) return res.status(400).json({ error: 'ไม่ได้ระบุบัญชีโฆษณา' });
   const cfg = loadConfig();
   cfg.beneficiaries = cfg.beneficiaries || {};
-  const name = String(req.body.name || '').trim();
-  if (name) cfg.beneficiaries[acctId] = name;
+  const id = String(req.body.id || '').replace(/[^0-9]/g, '');
+  if (id) cfg.beneficiaries[acctId] = id;
   else delete cfg.beneficiaries[acctId];
   saveConfig(cfg);
   res.json({ ok: true });
@@ -674,15 +680,7 @@ app.post('/api/launch', upload.any(), async (req, res) => {
     send({ type: 'campaign', id: campaignId });
     const thaiLocale = await getThaiLocale();
 
-    // ผู้ลงโฆษณา: ตั้ง default ระดับบัญชีด้วย (ตัวนี้ FB บันทึกจริง — adset-level ยังไม่รับสำหรับบัญชีไทย)
-    if ((data.beneficiary || '').trim()) {
-      try {
-        await fb(acct, {
-          default_dsa_beneficiary: data.beneficiary.trim(),
-          default_dsa_payor: data.beneficiary.trim(),
-        }, 'POST', token);
-      } catch { /* บางบัญชีไม่รองรับ — ข้าม */ }
-    }
+    let verifyDone = false;
 
     const processAd = async (i) => {
       const ad = data.ads[i];
@@ -750,11 +748,13 @@ app.post('/api/launch', upload.any(), async (req, res) => {
           // กลยุทธ์วงจรลูกค้า = "รับคอนเวอร์ชั่นจากกลุ่มเป้าหมายทั้งหมด" (งบไปหาลูกค้าเดิมได้เต็ม 100%)
           adsetParams.existing_customer_budget_percentage = 100;
         }
-        // ผู้ลงโฆษณา (ชื่อธุรกิจที่ยืนยันตัวตน) — ใส่เป็น beneficiary/payor ของ ad set
-        const beneficiary = (data.beneficiary || '').trim();
-        if (beneficiary) {
-          adsetParams.dsa_beneficiary = beneficiary;
-          adsetParams.dsa_payor = beneficiary;
+        // ผู้ลงโฆษณา = id ธุรกิจที่ยืนยันตัวตนแล้ว (regional_regulation_identities — พิสูจน์แล้วว่า FB บันทึกจริง)
+        const beneficiaryId = String(data.beneficiaryId || '').replace(/[^0-9]/g, '');
+        if (beneficiaryId) {
+          adsetParams.regional_regulation_identities = {
+            universal_beneficiary: beneficiaryId,
+            universal_payer: beneficiaryId,
+          };
         }
         // สร้างชุดโฆษณา — field เสริมตัวไหน FB ไม่รับ ให้ถอดออกแล้วลองใหม่ (ไม่ให้ล้มทั้งแอด)
         let adset;
@@ -763,10 +763,9 @@ app.post('/api/launch', upload.any(), async (req, res) => {
             adset = await fb(`${acct}/adsets`, adsetParams, 'POST', token);
             break;
           } catch (e) {
-            if (tryNo < 2 && adsetParams.dsa_beneficiary && /dsa|beneficiary|payor/i.test(e.message)) {
-              send({ type: 'warn', index: i, msg: `FB ไม่ยอมรับผู้ลงโฆษณา "${beneficiary}" (${e.message}) — ขึ้นต่อโดยไม่ระบุ` });
-              delete adsetParams.dsa_beneficiary;
-              delete adsetParams.dsa_payor;
+            if (tryNo < 2 && adsetParams.regional_regulation_identities && /regional_regulation|beneficiary|payer|payor/i.test(e.message)) {
+              send({ type: 'warn', index: i, msg: `FB ไม่ยอมรับผู้ลงโฆษณาของบัญชีนี้ (${e.message}) — ขึ้นต่อโดยไม่ระบุ` });
+              delete adsetParams.regional_regulation_identities;
               continue;
             }
             if (tryNo < 2 && adsetParams.existing_customer_budget_percentage !== undefined && /existing_customer/i.test(e.message)) {
@@ -775,6 +774,28 @@ app.post('/api/launch', upload.any(), async (req, res) => {
             }
             throw e;
           }
+        }
+        // ตรวจค่าจริงจาก FB ครั้งเดียวต่อบัญชี แล้วรายงานให้หน้าเว็บโชว์ (ให้มั่นใจว่าตั้งติดจริง)
+        if (!verifyDone) {
+          verifyDone = true;
+          try {
+            const [sent, av] = await Promise.all([
+              fb(`${adset.id}/targetingsentencelines`, {}, 'GET', token),
+              fb(adset.id, { fields: 'existing_customer_budget_percentage,daily_min_spend_target,daily_spend_cap,regional_regulation_identities' }, 'GET', token),
+            ]);
+            const langLine = ((sent.targetingsentencelines || []).find((t) => (t.content || '').includes('ภาษา')) || {});
+            const lang = (langLine.children || []).join(', ') || 'ทุกภาษา';
+            const rri = av.regional_regulation_identities || {};
+            const items = [{ ok: /ไทย|Thai/.test(lang), label: `ภาษา: ${lang}` }];
+            if (objInfo.needsPixel) {
+              items.push({ ok: Number(av.existing_customer_budget_percentage) === 100, label: 'กลยุทธ์วงจรลูกค้า: รับคอนเวอร์ชั่นจากกลุ่มเป้าหมายทั้งหมด' });
+            }
+            items.push({ ok: !av.daily_min_spend_target && !av.daily_spend_cap, label: 'วงเงินใช้จ่ายชุดโฆษณา: ไม่จำกัด' });
+            items.push(beneficiaryId
+              ? { ok: String(rri.universal_beneficiary || '') === beneficiaryId, label: `ผู้ลงโฆษณา: ${data.beneficiaryName || beneficiaryId}` }
+              : { ok: true, label: 'ผู้ลงโฆษณา: ไม่ระบุ (ตามที่เลือก)' });
+            send({ type: 'verify', items });
+          } catch { /* ตรวจไม่ได้ก็ข้าม ไม่กระทบการขึ้นแอด */ }
         }
 
         // ครีเอทีฟ: วิดีโอใช้ video_data, รูปใช้ link_data
