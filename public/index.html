@@ -654,7 +654,7 @@
               <button class="date-pill" onclick="setCampDate('maximum', this)">ทั้งหมด</button>
             </div>
           </div>
-          <button class="btn-light" onclick="loadCampaigns()" style="display:inline-flex;align-items:center;gap:7px"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>รีเฟรชข้อมูล</button>
+          <button class="btn-light" onclick="loadCampaigns(true)" style="display:inline-flex;align-items:center;gap:7px"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>รีเฟรชข้อมูล</button>
           <button class="btn-primary" onclick="openUploadModal()" style="margin-left:0;display:inline-flex;align-items:center;gap:7px"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M3 15v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4"/></svg>ขึ้นแอด</button>
         </div>
       </div>
@@ -838,17 +838,25 @@ const PAGE_META = {
   health: ['สุขภาพบัญชี & เพจ', 'เพจไหนใช้ได้/บิน • บัญชีไหนยังไม่มี Pixel หรือยังไม่เชื่อมบัตร'],
   settings: ['บัญชี FB', 'เพิ่ม/จัดการบัญชี FB, บัญชีโฆษณา และเพจ'],
 };
-function showPage(name) {
+function showPage(name, fromRoute) {
+  if (!PAGE_META[name]) name = 'dashboard';
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
   document.querySelectorAll('nav a').forEach(a => a.classList.toggle('active', a.dataset.page === name));
   document.getElementById('pageTitle').textContent = PAGE_META[name][0];
   document.getElementById('pageDesc').textContent = PAGE_META[name][1];
+  // route: เก็บหน้าปัจจุบันไว้ใน URL (#ชื่อหน้า) — รีเฟรช/ปุ่ม back-forward กลับมาหน้าเดิมได้
+  if (!fromRoute && location.hash !== '#' + name) history.pushState(null, '', '#' + name);
   if (name === 'settings') renderSettings();
-  if (name === 'campaigns') buildCampFilters().then(loadCampaigns);
+  if (name === 'campaigns') buildCampFilters().then(() => loadCampaigns());
   if (name === 'dashboard') loadDashboard();
   if (name === 'health') loadHealthPage();
 }
+window.addEventListener('hashchange', () => {
+  const h = location.hash.replace(/^#/, '');
+  // hash ว่าง (เช่นกด back จนสุด) = หน้าแรกตามสภาพบัญชี ไม่ใช่เมิน event
+  showPage(PAGE_META[h] ? h : (profiles.length ? 'dashboard' : 'settings'), true);
+});
 
 // ---------- modal ขึ้นแอด ----------
 function openUploadModal() {
@@ -883,6 +891,8 @@ function renderProfileUI() {
   campFiltersBuilt = false;
   launchAccountsBuilt = false;
   Object.keys(dashCache).forEach(k => delete dashCache[k]);
+  Object.keys(campCache).forEach(k => delete campCache[k]);
+  Object.keys(healthCache).forEach(k => delete healthCache[k]);
   updateStats();
 }
 async function setActiveProfile(id) {
@@ -1114,7 +1124,11 @@ setInterval(tickClock, 1000);
     const env = await (await fetch('/api/env')).json();
     if (env.redirectUri) document.getElementById('redirectUriText').textContent = env.redirectUri;
   } catch {}
-  showPage(profiles.length ? 'dashboard' : 'settings');
+  const route = location.hash.replace(/^#/, '');
+  // ไม่มีบัญชี = บังคับหน้าตั้งค่าเสมอ (hash ค้างจาก session เก่าห้ามชนะ), มีบัญชีค่อยเคารพ hash
+  const startPage = profiles.length ? (PAGE_META[route] ? route : 'dashboard') : 'settings';
+  history.replaceState(null, '', '#' + startPage); // เขียน hash ตั้งแต่แรก ให้ back ครั้งแรกทำงานถูก
+  showPage(startPage, true);
 })();
 
 function togglePixel() {
@@ -1616,12 +1630,17 @@ function setCampKpis(count, spend, results, reach, imp) {
   document.getElementById('kReach').textContent = reach;
   document.getElementById('kReachSub').textContent = 'อิมเพรสชัน ' + imp;
 }
-async function loadCampaigns() {
+const campCache = {}; // "sels|date" -> {ts, results} — กันโหลดซ้ำตอนสลับหน้าไปมา
+const CAMP_CACHE_MS = 60000;
+async function loadCampaigns(force) {
   const sels = [...document.querySelectorAll('#campProfiles input:checked')].map(i => i.value);
   const date = document.getElementById('campDate').value;
   const tbody = document.getElementById('campaignRows');
   document.getElementById('campSummary').textContent = '';
   if (!sels.length) { tbody.innerHTML = '<tr><td colspan="12" class="tbl-msg">ติ๊กเลือกอย่างน้อย 1 บัญชีโฆษณาด้านบน</td></tr>'; setCampKpis('—', '—', '—', '—', '—'); return; }
+  const key = sels.join(',') + '|' + date;
+  const hit = campCache[key];
+  if (!force && hit && Date.now() - hit.ts < CAMP_CACHE_MS) { renderCampaignRows(hit.results, sels); return; }
   tbody.innerHTML = `<tr><td colspan="12" class="tbl-msg"><span class="spin"></span>กำลังโหลดข้อมูลจาก ${sels.length} บัญชีโฆษณา...</td></tr>`;
 
   // โหลดทุกบัญชีโฆษณาที่ติ๊กพร้อมกัน (v = "profileId:adAccountId")
@@ -1634,10 +1653,16 @@ async function loadCampaigns() {
       return { pid, acct, error: e.message };
     }
   }));
-  // กันผลรอบเก่ามาทับ ถ้าผู้ใช้เปลี่ยนติ๊กระหว่างโหลด
+  // กันผลรอบเก่ามาทับ ถ้าผู้ใช้เปลี่ยนติ๊ก "หรือช่วงเวลา" ระหว่างโหลด (เทียบ key เต็ม)
   const nowSels = [...document.querySelectorAll('#campProfiles input:checked')].map(i => i.value);
-  if (nowSels.join(',') !== sels.join(',')) return;
-
+  const nowKey = nowSels.join(',') + '|' + document.getElementById('campDate').value;
+  if (nowKey !== key) return;
+  // มี error สักบัญชี = ไม่ cache — ให้เข้าหน้ารอบถัดไปได้ลองใหม่ ไม่ใช่เห็น error ค้าง 60 วิ
+  if (!results.some(r => r.error)) campCache[key] = { ts: Date.now(), results };
+  renderCampaignRows(results, sels);
+}
+function renderCampaignRows(results, sels) {
+  const tbody = document.getElementById('campaignRows');
   const errs = results.filter(r => r.error);
   const rows = [];
   for (const r of results) {
@@ -1774,7 +1799,10 @@ async function toggleDetailObj(id, cur) {
     body: JSON.stringify({ id, status: to, profile: detailCtx.pid }),
   })).json();
   if (r.error) alert('เปลี่ยนสถานะไม่สำเร็จ: ' + r.error);
-  else Object.keys(dashCache).forEach(k => delete dashCache[k]); // สถานะเปลี่ยน → เลขแดชบอร์ดที่ cache ไว้ไม่จริงแล้ว
+  else { // สถานะเปลี่ยน → เลขที่ cache ไว้ทั้งแดชบอร์ดและหน้าแคมเปญไม่จริงแล้ว
+    Object.keys(dashCache).forEach(k => delete dashCache[k]);
+    Object.keys(campCache).forEach(k => delete campCache[k]);
+  }
   renderCampaignDetail();
 }
 
@@ -1787,7 +1815,8 @@ async function deleteCampaign(id, name, pid) {
   const data = await res.json();
   if (data.error) return alert('ลบไม่สำเร็จ: ' + data.error);
   Object.keys(dashCache).forEach(k => delete dashCache[k]);
-  loadCampaigns();
+  Object.keys(campCache).forEach(k => delete campCache[k]); // ทุกช่วงเวลา/ทุกชุดบัญชีต้องโหลดใหม่ ไม่ให้แคมเปญที่ลบแล้วหลอนกลับมา
+  loadCampaigns(true);
 }
 async function toggleCampaign(id, cur, pid) {
   const to = cur === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
@@ -1797,9 +1826,10 @@ async function toggleCampaign(id, cur, pid) {
     body: JSON.stringify({ id, status: to, profile: pid }),
   });
   const data = await res.json();
-  if (data.error) { alert('เปลี่ยนสถานะไม่สำเร็จ: ' + data.error); return loadCampaigns(); }
+  if (data.error) { alert('เปลี่ยนสถานะไม่สำเร็จ: ' + data.error); return loadCampaigns(true); }
   Object.keys(dashCache).forEach(k => delete dashCache[k]);
-  loadCampaigns();
+  Object.keys(campCache).forEach(k => delete campCache[k]);
+  loadCampaigns(true);
 }
 
 // ---------- dropzone ----------
@@ -2299,7 +2329,8 @@ async function launch() {
     }</div>`;
   }
   if (okCount) {
-    loadCampaigns(); // รีเฟรชตารางแคมเปญเบื้องหลังให้เห็นแคมเปญใหม่
+    Object.keys(campCache).forEach(k => delete campCache[k]); // แคมเปญใหม่ต้องโผล่ทุกช่วงเวลา
+    loadCampaigns(true); // รีเฟรชตารางแคมเปญเบื้องหลังให้เห็นแคมเปญใหม่
     Object.keys(dashCache).forEach(k => delete dashCache[k]); // แดชบอร์ดโหลดใหม่รอบหน้า
   }
 
