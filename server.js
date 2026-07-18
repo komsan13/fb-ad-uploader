@@ -1726,6 +1726,93 @@ async function apRefill(cfg, prof, a, ads, s, alerts) {
   }
 }
 
+// ---------- ขยายงบตัวชนะ ----------
+// เพิ่มทีละ 20% เท่านั้น — ขยับแรงกว่านี้ FB รีเซ็ต learning phase แล้วผลตกทันที
+// และต้องมีเพดานเสมอ ไม่งั้น +20% ทบทุกวัน 30 วันคือ 237 เท่า
+const AP_SCALE_STEP = 1.2;
+const AP_SCALE_COOLDOWN = 20 * 3600 * 1000;   // ขยับแคมเปญเดิมได้วันละครั้ง
+
+async function apScale(cfg, prof, a, s, alerts) {
+  const ap = cfg.autopilot || {};
+  const ceiling = Math.max(0, Number(ap.scaleMaxBudget) || 0);
+  if (!ceiling) return;                        // ไม่ตั้งเพดาน = ไม่ขยาย
+
+  const d = cfg.launchDefaults || {};
+  const targetCpa = Number(d.ruleCpr) || 0;
+  if (!targetCpa) {
+    if (s.warned['scale:' + a.account_id] !== 'nocpa') {
+      const m = `⚠️ ${a.name}: ขยายงบไม่ได้ — ยังไม่ได้ตั้ง "หยุดเมื่อต้นทุน/ผลลัพธ์เกิน" ในหน้าขึ้นแอด ระบบใช้ค่านั้นเป็นเกณฑ์ตัดสินตัวชนะ`;
+      alerts.push(m); apLog(s, 'warn', m, a.account_id); s.warned['scale:' + a.account_id] = 'nocpa';
+    }
+    return;
+  }
+
+  const acct = `act_${a.account_id}`;
+  const token = prof.accessToken;
+  let camps = [], ins = [];
+  try {
+    camps = await fbAll(`${acct}/campaigns`, { fields: 'id,name,status,daily_budget,objective', limit: 200 }, token);
+    ins = await fbAll(`${acct}/insights`, {
+      level: 'campaign', fields: 'campaign_id,spend,actions', date_preset: 'last_3d', limit: 200,
+    }, token);
+  } catch { return; }
+  const insMap = Object.fromEntries(ins.map((r) => [r.campaign_id, r]));
+
+  s.scaled = s.scaled || {};
+  for (const c of camps) {
+    if (c.status !== 'ACTIVE' || !c.daily_budget) continue;
+    if (s.scaled[c.id] && Date.now() - s.scaled[c.id] < AP_SCALE_COOLDOWN) continue;
+
+    const r = insMap[c.id];
+    if (!r) continue;
+    const spend = Number(r.spend) || 0;
+    const results = pickResult(resultSpec(c.objective, null), r.actions);
+    // ต้องมีข้อมูลพอถึงจะเชื่อได้ — ไม่งั้นเจอฟลุ๊ค 1 ออร์เดอร์แล้วอัดงบ
+    if (!results || results < 3 || spend < targetCpa * 2) continue;
+
+    const cpa = spend / results;
+    if (cpa > targetCpa * 0.7) continue;       // ต้องถูกกว่าเพดาน 30% ขึ้นไปถึงนับเป็นตัวชนะ
+
+    const cur = Number(c.daily_budget) / 100;
+    if (cur >= ceiling) continue;
+    const next = Math.min(Math.round(cur * AP_SCALE_STEP), ceiling);
+    if (next <= cur) continue;
+
+    try {
+      await fb(c.id, { daily_budget: Math.round(next * 100) }, 'POST', token);
+      s.scaled[c.id] = Date.now();
+      const m = `📈 ${a.name}: "${c.name}" ต้นทุน ${Math.round(cpa)} บาท/ผล (เพดาน ${targetCpa}) — ขยายงบ ${cur.toLocaleString()} → ${next.toLocaleString()} บาท/วัน`;
+      alerts.push(m); apLog(s, 'scale', m, a.account_id);
+    } catch (e) {
+      apLog(s, 'warn', `${a.name}: ขยายงบ "${c.name}" ไม่สำเร็จ (${e.message})`, a.account_id);
+    }
+  }
+}
+
+// ---------- เตือนก่อนคลังแห้ง ----------
+function apStockCheck(cfg, s, alerts, acctCount) {
+  const ap = cfg.autopilot || {};
+  const perDay = Math.max(1, Number(ap.minAds) || 0) * Math.max(1, acctCount);
+  if (!Number(ap.minAds)) return;
+  if (s.warned.stock && Date.now() - s.warned.stock < 20 * 3600 * 1000) return;  // เตือนวันละครั้งพอ
+
+  const videos = loadLib();
+  const captions = loadCaptions();
+  const fresh = videos.filter((v) => !(v.usedOn || []).length).length;
+  const msgs = [];
+  // เหลือของใหม่ไม่ถึง 2 วัน = เตือนล่วงหน้า ไม่ใช่รอจนแห้ง
+  if (fresh < perDay * 2) {
+    msgs.push(`🎬 คลังวิดีโอเหลือตัวที่ยังไม่เคยใช้ ${fresh} ตัว — ใช้วันละประมาณ ${perDay} ตัว (พออีกราว ${(fresh / perDay).toFixed(1)} วัน) อัปเพิ่มได้แล้ว`);
+  }
+  if (captions.length < perDay) {
+    msgs.push(`💬 คลังแคปชั่นมี ${captions.length} อัน แต่ใช้วันละประมาณ ${perDay} — แคปชั่นจะวนซ้ำ เพิ่มอีกหน่อยดีกว่า`);
+  }
+  if (msgs.length) {
+    msgs.forEach((m) => { alerts.push(m); apLog(s, 'stock', m); });
+    s.warned.stock = Date.now();
+  }
+}
+
 async function autopilotTick() {
   const cfg = loadConfig();
   const ap = cfg.autopilot || {};
@@ -1736,6 +1823,7 @@ async function autopilotTick() {
 
   const apiKey = cfg.anthropicKey || process.env.ANTHROPIC_API_KEY;
   const alerts = [];
+  let liveAccounts = 0;
   s.fixes = apRecent(s.fixes, 24 * 3600 * 1000);
 
   for (const prof of cfg.profiles || []) {
@@ -1845,9 +1933,13 @@ async function autopilotTick() {
       if (!s.frozen[acctId]) {
         try { await apRefill(cfg, prof, a, ads, s, alerts); }
         catch (e) { apLog(s, 'warn', `เติมแอดให้ ${a.name} ไม่สำเร็จ: ${e.message}`, acctId); }
+        try { await apScale(cfg, prof, a, s, alerts); }
+        catch (e) { apLog(s, 'warn', `ขยายงบใน ${a.name} ไม่สำเร็จ: ${e.message}`, acctId); }
+        liveAccounts++;
       }
     }
   }
+  apStockCheck(cfg, s, alerts, liveAccounts);
 
   saveAp(s);
   if (alerts.length) await tgSend(cfg, '🤖 ระบบอัตโนมัติ\n\n' + alerts.join('\n\n'));
@@ -1859,6 +1951,8 @@ app.get('/api/autopilot', (req, res) => {
   res.json({
     enabled: !!(cfg.autopilot || {}).enabled,
     minAds: Number((cfg.autopilot || {}).minAds) || 0,
+    scaleMaxBudget: Number((cfg.autopilot || {}).scaleMaxBudget) || 0,
+    scaledToday: Object.values(s.scaled || {}).filter((t) => Date.now() - t < 24 * 3600 * 1000).length,
     killSwitch: !!s.killSwitch,
     frozen: s.frozen,
     fixesToday: apRecent(s.fixes, 24 * 3600 * 1000).length,
@@ -1873,6 +1967,9 @@ app.post('/api/autopilot', (req, res) => {
   cfg.autopilot = { ...(cfg.autopilot || {}), enabled: !!req.body.enabled };
   if (req.body.minAds !== undefined) {
     cfg.autopilot.minAds = Math.max(0, Math.min(50, Number(req.body.minAds) || 0));
+  }
+  if (req.body.scaleMaxBudget !== undefined) {
+    cfg.autopilot.scaleMaxBudget = Math.max(0, Number(req.body.scaleMaxBudget) || 0);
   }
   saveConfig(cfg);
   const s = loadAp();

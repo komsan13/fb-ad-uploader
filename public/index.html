@@ -889,6 +889,13 @@
             <label>เติมแอดให้แต่ละบัญชีมีแอดยิงอยู่อย่างน้อย (ตัว)</label>
             <input id="apMinAds" type="number" min="0" max="50" value="0" onchange="saveAutopilot()">
           </div>
+          <div class="field" style="max-width:340px">
+            <label>ขยายงบตัวชนะได้สูงสุดถึง (บาท/วัน/แคมเปญ)</label>
+            <input id="apScaleMax" type="number" min="0" value="0" onchange="saveAutopilot()">
+          </div>
+        </div>
+        <div class="hint" style="margin-bottom:10px">
+          <b>ขยายงบ:</b> ใส่ <b>0</b> = ไม่ขยาย • ถ้าใส่เลข แคมเปญที่ต้นทุน/ผลลัพธ์ถูกกว่าเพดานที่ตั้งไว้ 30%+ (และมีผลลัพธ์อย่างน้อย 3 ครั้ง) จะถูกเพิ่มงบ <b>+20% วันละครั้ง</b> จนถึงเลขนี้แล้วหยุด — เพิ่มทีละน้อยเพราะขยับแรงกว่านี้ FB รีเซ็ต learning phase แล้วผลตก
         </div>
         <div class="hint" style="margin-bottom:10px">ใส่ <b>0</b> = ไม่เติมให้ • ถ้าใส่เลข มันจะหยิบวิดีโอ+แคปชั่นจากคลังขึ้นแอดเองจนครบ <b>เปิดยิงทันที</b> โดยใช้ค่าตั้งต้นในหน้าขึ้นแอด (งบ/ลิงก์/วัตถุประสงค์/กลุ่มเป้าหมาย) — งบอยู่ระดับแคมเปญ (CBO) เพิ่มแอดกี่ตัวก็ไม่ใช้จ่ายเกินงบที่ตั้งไว้</div>
         <div class="hint" style="margin-bottom:10px">
@@ -2345,6 +2352,7 @@ async function loadAutopilot() {
   document.getElementById('apKill').checked = d.killSwitch;
   document.getElementById('apCap').textContent = d.maxPerDay;
   document.getElementById('apMinAds').value = d.minAds || 0;
+  document.getElementById('apScaleMax').value = d.scaleMaxBudget || 0;
 
   const frozen = Object.entries(d.frozen || {});
   const st = [];
@@ -2353,6 +2361,7 @@ async function loadAutopilot() {
     : '<span class="muted">⏸️ ปิดอยู่</span>');
   st.push(`แก้ข้อความไปแล้ววันนี้ ${d.fixesToday}/${d.maxPerDay} ครั้ง`);
   if (d.minAds) st.push(`เติมแอดไปแล้ววันนี้ ${d.createdToday} ตัว (เพดาน ${d.maxNewPerAcct}/บัญชี)`);
+  if (d.scaleMaxBudget) st.push(`ขยายงบไปแล้ววันนี้ ${d.scaledToday} แคมเปญ`);
   if (frozen.length) {
     st.push('<b style="color:var(--red)">บัญชีที่ถูกหยุด:</b> ' + frozen.map(([id, f]) =>
       `${esc(id)} (${esc(f.reason)}) <button class="btn-light btn-sm" onclick="apUnfreeze(${jsStr(id)})">ปลดล็อก</button>`).join(' • '));
@@ -2372,6 +2381,7 @@ async function saveAutopilot() {
         enabled: document.getElementById('apEnabled').checked,
         killSwitch: document.getElementById('apKill').checked,
         minAds: Number(document.getElementById('apMinAds').value) || 0,
+        scaleMaxBudget: Number(document.getElementById('apScaleMax').value) || 0,
       }),
     });
   } catch (e) { alert('บันทึกไม่สำเร็จ: ' + e.message); }
