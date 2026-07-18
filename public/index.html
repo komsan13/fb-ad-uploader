@@ -34,10 +34,13 @@
   .logo .mark { width: 36px; height: 36px; border-radius: 11px; background: #fff; color: var(--brand); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .logo small { display: block; font-size: 10.5px; font-weight: 500; color: rgba(255,255,255,.78); letter-spacing: 0; }
   nav { padding: 12px 10px; flex: 1; display: flex; flex-direction: column; gap: 2px; }
-  nav a { display: flex; align-items: center; gap: 11px; padding: 10px 12px; border-radius: var(--r-md); color: var(--muted); text-decoration: none; font-size: 13.5px; font-weight: 600; cursor: pointer; transition: background 150ms var(--ease), color 150ms var(--ease); }
-  nav a svg { width: 18px; height: 18px; flex-shrink: 0; }
-  nav a:hover { background: #f3f5f7; color: var(--text); }
+  nav a { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: var(--r-md); color: var(--text); text-decoration: none; font-size: 13.5px; font-weight: 600; cursor: pointer; transition: background 150ms var(--ease), color 150ms var(--ease); }
+  nav a .num { width: 24px; height: 24px; border-radius: 7px; background: #f0f2f5; color: var(--muted); font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; transition: background 150ms var(--ease), color 150ms var(--ease); }
+  nav a svg { width: 17px; height: 17px; flex-shrink: 0; color: var(--muted); transition: color 150ms var(--ease); }
+  nav a:hover { background: #f3f5f7; }
   nav a.active { background: var(--brand-soft); color: var(--brand-dark); }
+  nav a.active .num { background: var(--brand); color: #fff; }
+  nav a.active svg { color: var(--brand-dark); }
   .side-foot { padding: 14px 16px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); }
   .side-foot .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #c3c8d1; margin-right: 7px; }
   .side-foot .dot.on { background: var(--green); }
@@ -61,20 +64,23 @@
   /* ---------- stat tiles ---------- */
   .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 14px; }
   .tile { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-card); padding: 15px 18px; }
-  .tile .t-label { font-size: 12.5px; color: var(--muted); font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 7px; }
-  .t-ic { width: 20px; height: 20px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-  .t-ic svg { width: 13px; height: 13px; }
+  .tile .t-label { font-size: 12.5px; color: var(--muted); font-weight: 600; margin-bottom: 9px; display: flex; align-items: center; gap: 8px; }
+  .t-ic { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .t-ic svg { width: 14px; height: 14px; }
   .t-ic.g { background: var(--green-soft); color: var(--green); }
   .t-ic.b { background: var(--blue-soft); color: var(--blue); }
   .t-ic.o { background: var(--amber-soft); color: var(--amber); }
   .t-ic.r { background: var(--red-soft); color: var(--red); }
-  .tile .t-value { font-size: 24px; font-weight: 700; line-height: 1.15; letter-spacing: -.02em; color: var(--text); font-variant-numeric: tabular-nums; }
+  .t-ic.p { background: #f1edfd; color: #7c3aed; }
+  .tile .t-value { font-size: 24px; font-weight: 700; line-height: 1.15; letter-spacing: -.02em; color: var(--blue); font-variant-numeric: tabular-nums; }
   .tile .t-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
 
   /* ---------- การ์ด ---------- */
   .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-card); padding: 20px; margin-bottom: 14px; }
-  .card h2 { font-size: 15px; font-weight: 700; margin-bottom: 14px; }
+  .card h2 { font-size: 15px; font-weight: 700; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .card .h-desc { font-weight: 400; font-size: 12.5px; color: var(--muted); }
+  .sec-ic { display: inline-flex; color: var(--brand); flex-shrink: 0; }
+  .sec-ic svg { width: 17px; height: 17px; }
 
   label { display: block; font-size: 12px; font-weight: 600; color: #4c5058; margin-bottom: 5px; }
   input, select, textarea { width: 100%; padding: 8px 11px; border: 1px solid var(--line-strong); border-radius: var(--r-md); font-size: 13.5px; font-family: inherit; background: #fff; color: var(--text); transition: border-color 150ms var(--ease), box-shadow 150ms var(--ease); }
@@ -359,6 +365,7 @@
     nav a { padding: 10px 10px; border-left: none; border-radius: var(--r-md); }
     nav a.active { background: var(--brand-soft); }
     nav a .lbl { display: none; }
+    nav a .num { display: none; }
     .side-foot { display: none; }
     .app { flex-direction: column; }
     main { margin-left: 0; padding: 0 14px 40px; }
@@ -376,9 +383,9 @@
       <div>FB Ad Uploader<small>Marketing API • Multi-Account</small></div>
     </div>
     <nav>
-      <a data-page="dashboard" class="active" onclick="showPage('dashboard')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg><span class="lbl">แดชบอร์ด</span></a>
-      <a data-page="campaigns" onclick="showPage('campaigns')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg><span class="lbl">แคมเปญของฉัน</span></a>
-      <a data-page="settings" onclick="showPage('settings')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span class="lbl">บัญชี FB</span></a>
+      <a data-page="dashboard" class="active" onclick="showPage('dashboard')"><span class="num">1</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg><span class="lbl">แดชบอร์ด</span></a>
+      <a data-page="campaigns" onclick="showPage('campaigns')"><span class="num">2</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg><span class="lbl">แคมเปญของฉัน</span></a>
+      <a data-page="settings" onclick="showPage('settings')"><span class="num">3</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span class="lbl">บัญชี FB</span></a>
     </nav>
     <div class="side-foot" id="sideConn"><span class="dot"></span>ยังไม่มีบัญชี</div>
   </aside>
@@ -564,7 +571,9 @@
         </div>
       </div>
 
-      <div class="kpi-row">
+      <div class="card">
+        <h2><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg></span>ภาพรวม <span class="h-desc">— รวมทุกบัญชีตามช่วงเวลาที่เลือก</span></h2>
+      <div class="kpi-row" style="margin-bottom:0">
         <div class="tile">
           <div class="t-label"><span class="t-ic o"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5h3.75a1.75 1.75 0 0 1 0 3.5h-2.5a1.75 1.75 0 0 0 0 3.5H14.5"/></svg></span>ใช้จ่ายรวม</div>
           <div class="t-value" id="dSpend">—</div>
@@ -581,7 +590,7 @@
           <div class="t-sub" id="dCprSub">ใช้จ่าย ÷ ผลลัพธ์รวม</div>
         </div>
         <div class="tile">
-          <div class="t-label"><span class="t-ic b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></span>การเข้าถึง</div>
+          <div class="t-label"><span class="t-ic p"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></span>การเข้าถึง</div>
           <div class="t-value" id="dReach">—</div>
           <div class="t-sub" id="dReachSub">อิมเพรสชัน —</div>
         </div>
@@ -596,14 +605,15 @@
           <div class="t-sub" id="dActiveSub">จากทั้งหมด —</div>
         </div>
       </div>
+      </div>
 
       <div class="card">
-        <h2 style="margin-bottom:12px">ใช้จ่ายรายวัน <span class="h-desc" id="dashChartSub"></span></h2>
+        <h2 style="margin-bottom:12px"><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></span>ใช้จ่ายรายวัน <span class="h-desc" id="dashChartSub"></span></h2>
         <div class="chart-wrap" id="dashChart"><span class="hint">กำลังโหลด...</span></div>
       </div>
 
       <div class="card">
-        <h2 style="margin-bottom:12px">สรุปรายบัญชีโฆษณา <span class="h-desc" id="dashAcctSub"></span></h2>
+        <h2 style="margin-bottom:12px"><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>สรุปรายบัญชีโฆษณา <span class="h-desc" id="dashAcctSub"></span></h2>
         <div class="tbl-wrap">
           <table>
             <thead><tr>
@@ -622,7 +632,7 @@
       </div>
 
       <div class="card">
-        <h2 style="margin-bottom:12px">แคมเปญที่ใช้จ่ายสูงสุด <span class="h-desc">— 10 อันดับตามช่วงเวลาที่เลือก</span></h2>
+        <h2 style="margin-bottom:12px"><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-5v12L3 13v-2z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg></span>แคมเปญที่ใช้จ่ายสูงสุด <span class="h-desc">— 10 อันดับตามช่วงเวลาที่เลือก</span></h2>
         <div class="tbl-wrap">
           <table>
             <thead><tr>
@@ -672,9 +682,11 @@
         </div>
       </div>
 
-      <div class="kpi-row">
+      <div class="card">
+        <h2><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg></span>สรุปผลรวม <span class="h-desc">— บัญชีที่เลือกตามช่วงเวลา</span></h2>
+      <div class="kpi-row" style="margin-bottom:0">
         <div class="tile">
-          <div class="t-label"><span class="t-ic b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></span>แคมเปญ</div>
+          <div class="t-label"><span class="t-ic p"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></span>แคมเปญ</div>
           <div class="t-value" id="kCount">—</div>
           <div class="t-sub" id="kCountSub">ในบัญชีที่เลือก</div>
         </div>
@@ -694,9 +706,10 @@
           <div class="t-sub" id="kReachSub">อิมเพรสชัน —</div>
         </div>
       </div>
+      </div>
 
       <div class="card">
-        <h2 style="margin-bottom:12px">แคมเปญในบัญชี <span class="h-desc" id="campSummary"></span></h2>
+        <h2 style="margin-bottom:12px"><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-5v12L3 13v-2z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg></span>แคมเปญในบัญชี <span class="h-desc" id="campSummary"></span></h2>
         <div class="tbl-wrap">
           <table>
             <thead><tr>
