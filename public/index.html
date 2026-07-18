@@ -348,10 +348,10 @@
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <select id="campProfile" onchange="loadCampaigns()" style="min-width:150px"></select>
             <select id="campDate" onchange="loadCampaigns()" style="min-width:110px">
-              <option value="maximum">ทั้งหมด</option>
-              <option value="today">วันนี้</option>
+              <option value="today" selected>วันนี้</option>
               <option value="last_7d">7 วันล่าสุด</option>
               <option value="last_30d">30 วันล่าสุด</option>
+              <option value="maximum">ทั้งหมด</option>
             </select>
             <button class="btn-light btn-sm" onclick="loadCampaigns()">⟳ รีเฟรช</button>
           </div>
@@ -626,7 +626,12 @@ const EFF_TH = {
 };
 function statusPill(c) {
   let pills;
-  if (c.effective_status === 'ACTIVE') pills = '<span class="st-pill on">● เปิดอยู่</span>';
+  if (c.effective_status === 'ACTIVE') {
+    // แคมเปญเปิดอยู่ แต่ถ้าไม่มีแอดตัวไหนนำส่งได้เลย = ไม่ได้นำส่ง (ตรงกับ Ads Manager)
+    pills = (c.adsTotal > 0 && c.adsActive === 0)
+      ? '<span class="st-pill issue">⚠ ไม่ได้นำส่งอยู่ตอนนี้</span>'
+      : '<span class="st-pill on">● เปิดอยู่</span>';
+  }
   else if (c.effective_status === 'PAUSED') pills = '<span class="st-pill off">⏸ หยุดชั่วคราว</span>';
   else pills = `<span class="st-pill issue">⚠ ${EFF_TH[c.effective_status] || c.effective_status}</span>`;
   if (c.adsDisapproved) pills += `<div style="margin-top:4px"><span class="st-pill rejected">✕ โดนปฏิเสธ ${c.adsDisapproved} แอด</span></div>`;
@@ -661,7 +666,7 @@ async function loadCampaigns() {
     reach: a.reach + c.reach, results: a.results + (c.results || 0),
   }), { spend: 0, impressions: 0, reach: 0, results: 0 });
   document.getElementById('campSummary').textContent =
-    `— ${data.campaigns.length} แคมเปญ • ใช้จ่ายรวม ${money(tot.spend)} • ผลลัพธ์รวม ${num(tot.results)}`;
+    `— ${data.campaigns.length} แคมเปญ • ใช้จ่ายรวม ${money(tot.spend)} • ผลลัพธ์รวม ${num(tot.results)} • act_${data.account} • ตัวเลขจาก FB API อาจช้ากว่าหน้า Ads Manager ~15-60 นาที`;
 
   tbody.innerHTML = data.campaigns.map(c => {
     const toggleable = c.status === 'ACTIVE' || c.status === 'PAUSED';

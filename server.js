@@ -246,10 +246,12 @@ app.get('/api/campaigns', async (req, res) => {
     try {
       const ads = await fb(`${acct}/ads`, { fields: 'campaign_id,effective_status', limit: 1000 }, 'GET', token);
       for (const a of (ads.data || [])) {
-        const st = adStatus[a.campaign_id] || (adStatus[a.campaign_id] = { disapproved: 0, pending: 0, issues: 0 });
+        const st = adStatus[a.campaign_id] || (adStatus[a.campaign_id] = { disapproved: 0, pending: 0, issues: 0, active: 0, total: 0 });
+        st.total++;
         if (a.effective_status === 'DISAPPROVED') st.disapproved++;
         else if (a.effective_status === 'PENDING_REVIEW' || a.effective_status === 'IN_PROCESS' || a.effective_status === 'PREAPPROVED') st.pending++;
         else if (a.effective_status === 'WITH_ISSUES') st.issues++;
+        else if (a.effective_status === 'ACTIVE') st.active++;
       }
     } catch { /* ข้าม */ }
 
@@ -278,6 +280,8 @@ app.get('/api/campaigns', async (req, res) => {
         adsDisapproved: (adStatus[c.id] || {}).disapproved || 0,
         adsPending: (adStatus[c.id] || {}).pending || 0,
         adsIssues: (adStatus[c.id] || {}).issues || 0,
+        adsActive: (adStatus[c.id] || {}).active || 0,
+        adsTotal: (adStatus[c.id] || {}).total || 0,
       };
     });
     res.json({ campaigns: rows, account: acct.replace('act_', ''), currency: acctInfo.currency || '', datePreset });
