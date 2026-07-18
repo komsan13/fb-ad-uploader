@@ -1327,7 +1327,7 @@ function renderHealthPage(results) {
   const acctHtml = rows.map(a => {
     const warn = WARN[a.status] ? ` <span class="st-pill issue">⚠ ${WARN[a.status]}</span>` : '';
     const px = a.pixels.length
-      ? `<span class="st-pill on">✓ ${esc(a.pixels.map(x => x.name).join(', '))}</span>`
+      ? a.pixels.map(x => `<span style="white-space:nowrap"><span class="st-pill on" title="Pixel ID: ${esc(x.id)}">✓ ${esc(x.name)}</span> <button class="btn-light btn-sm" title="คัดลอก Pixel ID ${esc(x.id)}" onclick="copyPixel('${x.id}');this.textContent='✓ คัดลอกแล้ว';setTimeout(()=>this.textContent='คัดลอก ID',1200)">คัดลอก ID</button></span>`).join(' ')
       : `<button class="btn-primary btn-sm" onclick="createPixelHealth('${a.pid}','${a.id}','${esc(a.name).replace(/'/g, '&#39;')}')">+ สร้าง Pixel เลย</button>`;
     const card = a.funding
       ? `<span class="st-pill on">✓ ${esc(a.funding)}</span>`
