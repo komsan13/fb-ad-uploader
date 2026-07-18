@@ -152,17 +152,11 @@ async function videoThumb(videoId, token) {
   } catch { return null; }
 }
 
-// locale id ของภาษาไทยใน FB targeting (cache ไว้ใช้ซ้ำ)
-let thaiLocaleId = null;
-async function getThaiLocale(token) {
-  if (thaiLocaleId) return thaiLocaleId; // ครั้งก่อนล้มเหลว (0/null) = ลองใหม่
-  try {
-    const r = await fb('search', { type: 'adlocale', q: 'Thai', limit: 25 }, 'GET', token);
-    const hit = (r.data || []).find((x) => /^thai$/i.test(x.name));
-    thaiLocaleId = hit ? hit.key : 24; // 24 = รหัสภาษาไทยของ FB (ค่าคงที่)
-  } catch { thaiLocaleId = 24; }
-  return thaiLocaleId;
-}
+// locale id ของภาษาไทยใน FB targeting
+// ค่าคงที่ 35 — ยืนยันกับ FB จริงผ่าน targetingsentencelines ("ภาษา: ภาษาไทย")
+// ห้ามใช้ search type=adlocale q=Thai (คืนค่าว่าง) และห้ามใช้ 24 (= English UK)
+const THAI_LOCALE = 35;
+async function getThaiLocale() { return THAI_LOCALE; }
 
 const REDIRECT_URI = `${PUBLIC_URL}/auth/callback`;
 const LOGIN_SCOPES = 'ads_management,ads_read,business_management,pages_show_list,pages_read_engagement';
@@ -678,7 +672,17 @@ app.post('/api/launch', upload.any(), async (req, res) => {
       campaignId = campaign.id;
     }
     send({ type: 'campaign', id: campaignId });
-    const thaiLocale = await getThaiLocale(token);
+    const thaiLocale = await getThaiLocale();
+
+    // ผู้ลงโฆษณา: ตั้ง default ระดับบัญชีด้วย (ตัวนี้ FB บันทึกจริง — adset-level ยังไม่รับสำหรับบัญชีไทย)
+    if ((data.beneficiary || '').trim()) {
+      try {
+        await fb(acct, {
+          default_dsa_beneficiary: data.beneficiary.trim(),
+          default_dsa_payor: data.beneficiary.trim(),
+        }, 'POST', token);
+      } catch { /* บางบัญชีไม่รองรับ — ข้าม */ }
+    }
 
     const processAd = async (i) => {
       const ad = data.ads[i];
@@ -743,6 +747,8 @@ app.post('/api/launch', upload.any(), async (req, res) => {
             custom_event_type: data.conversionEvent || objInfo.event,
           };
           adsetParams.destination_type = 'WEBSITE';
+          // กลยุทธ์วงจรลูกค้า = "รับคอนเวอร์ชั่นจากกลุ่มเป้าหมายทั้งหมด" (งบไปหาลูกค้าเดิมได้เต็ม 100%)
+          adsetParams.existing_customer_budget_percentage = 100;
         }
         // ผู้ลงโฆษณา (ชื่อธุรกิจที่ยืนยันตัวตน) — ใส่เป็น beneficiary/payor ของ ad set
         const beneficiary = (data.beneficiary || '').trim();
@@ -750,17 +756,25 @@ app.post('/api/launch', upload.any(), async (req, res) => {
           adsetParams.dsa_beneficiary = beneficiary;
           adsetParams.dsa_payor = beneficiary;
         }
+        // สร้างชุดโฆษณา — field เสริมตัวไหน FB ไม่รับ ให้ถอดออกแล้วลองใหม่ (ไม่ให้ล้มทั้งแอด)
         let adset;
-        try {
-          adset = await fb(`${acct}/adsets`, adsetParams, 'POST', token);
-        } catch (e) {
-          // บางบัญชีไม่รองรับ dsa_beneficiary/dsa_payor — ถอดออกแล้วลองใหม่
-          if (beneficiary && /dsa|beneficiary|payor/i.test(e.message)) {
-            send({ type: 'warn', index: i, msg: `FB ไม่ยอมรับผู้ลงโฆษณา "${beneficiary}" (${e.message}) — ขึ้นต่อโดยไม่ระบุ ตรวจชื่อให้ตรงกับธุรกิจที่ยืนยันตัวตนใน Ads Manager เป๊ะๆ` });
-            delete adsetParams.dsa_beneficiary;
-            delete adsetParams.dsa_payor;
+        for (let tryNo = 0; ; tryNo++) {
+          try {
             adset = await fb(`${acct}/adsets`, adsetParams, 'POST', token);
-          } else throw e;
+            break;
+          } catch (e) {
+            if (tryNo < 2 && adsetParams.dsa_beneficiary && /dsa|beneficiary|payor/i.test(e.message)) {
+              send({ type: 'warn', index: i, msg: `FB ไม่ยอมรับผู้ลงโฆษณา "${beneficiary}" (${e.message}) — ขึ้นต่อโดยไม่ระบุ` });
+              delete adsetParams.dsa_beneficiary;
+              delete adsetParams.dsa_payor;
+              continue;
+            }
+            if (tryNo < 2 && adsetParams.existing_customer_budget_percentage !== undefined && /existing_customer/i.test(e.message)) {
+              delete adsetParams.existing_customer_budget_percentage;
+              continue;
+            }
+            throw e;
+          }
         }
 
         // ครีเอทีฟ: วิดีโอใช้ video_data, รูปใช้ link_data
