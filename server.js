@@ -21,9 +21,25 @@ app.use('/api', (req, res, next) => { res.set('Cache-Control', 'no-store'); next
 app.use(express.static(path.join(__dirname, 'public')));
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 512 * 1024 * 1024 } });
 
+const BACKUP_DIR = path.join(path.dirname(CONFIG_PATH), 'config-backups');
 function loadConfig() {
-  let cfg;
-  try { cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')); } catch { cfg = {}; }
+  let cfg = null;
+  try { cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')); }
+  catch {
+    // ไฟล์หาย/พัง — กู้จาก backup ล่าสุดก่อน ห้ามเริ่มค่าว่างทับ (token ทุกบัญชีอยู่ในนี้)
+    try {
+      const files = fs.readdirSync(BACKUP_DIR).filter((f) => f.startsWith('config-')).sort().reverse();
+      for (const f of files) {
+        try {
+          cfg = JSON.parse(fs.readFileSync(path.join(BACKUP_DIR, f), 'utf8'));
+          console.log(`config.json พัง — กู้จาก backup ${f}`);
+          try { fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2)); } catch { /* เขียนซ่อมไม่ได้ก็ใช้ค่าที่กู้ในหน่วยความจำไปก่อน */ }
+          break;
+        } catch { /* ไฟล์นี้ก็พัง ลองตัวถัดไป */ }
+      }
+    } catch { /* ไม่มีโฟลเดอร์ backup */ }
+    if (!cfg) cfg = {};
+  }
   if (!cfg.profiles) {
     // migrate จาก config เวอร์ชันเก่า (บัญชีเดียว)
     const profiles = cfg.accessToken
@@ -35,6 +51,19 @@ function loadConfig() {
   return cfg;
 }
 function saveConfig(cfg) {
+  // สำรองของเดิมวันละชุดก่อนเขียนทับ (เก็บ 14 วันล่าสุด) — backup พลาดต้องไม่ขวางการบันทึก
+  try {
+    if (fs.existsSync(CONFIG_PATH)) {
+      fs.mkdirSync(BACKUP_DIR, { recursive: true });
+      const day = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10); // วันตามเวลาไทย
+      const bak = path.join(BACKUP_DIR, `config-${day}.json`);
+      if (!fs.existsSync(bak)) {
+        fs.copyFileSync(CONFIG_PATH, bak);
+        const files = fs.readdirSync(BACKUP_DIR).filter((f) => f.startsWith('config-')).sort();
+        while (files.length > 14) fs.unlinkSync(path.join(BACKUP_DIR, files.shift()));
+      }
+    }
+  } catch { /* ข้าม */ }
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
 }
 function getProfile(cfg, id) {
@@ -916,6 +945,132 @@ app.post('/api/launch', upload.any(), async (req, res) => {
     send({ type: 'fatal', error: e.message });
   }
   res.end();
+});
+
+// ---------- ระบบเฝ้าระวัง: แจ้งเตือน Telegram + ต่ออายุ token อัตโนมัติ ----------
+const WATCH_STATE_PATH = path.join(path.dirname(CONFIG_PATH), 'watch-state.json');
+function loadWatchState() { try { return JSON.parse(fs.readFileSync(WATCH_STATE_PATH, 'utf8')); } catch { return {}; } }
+function saveWatchState(s) { try { fs.writeFileSync(WATCH_STATE_PATH, JSON.stringify(s)); } catch { /* ข้าม */ } }
+
+async function tgSend(cfg, text) {
+  const t = cfg.telegram || {};
+  if (!t.botToken || !t.chatId) return false;
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${t.botToken}/sendMessage`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: t.chatId, text, disable_web_page_preview: true }),
+    });
+    return !!(await r.json()).ok;
+  } catch { return false; }
+}
+
+const ACCT_ST_TXT = { 2: 'ถูกปิดใช้งาน', 3: 'ค้างชำระ', 7: 'รอตรวจความเสี่ยง', 8: 'รอชำระ', 9: 'ช่วงผ่อนผัน', 100: 'กำลังปิด', 101: 'ปิดแล้ว' };
+
+// รอบตรวจรายชั่วโมง: token ตาย/ใกล้หมด (ต่ออายุให้เอง), บัญชีเปลี่ยนสถานะ, แอดโดนปฏิเสธเพิ่ม
+async function watchTick() {
+  const cfg = loadConfig();
+  const state = loadWatchState();
+  const alerts = [];
+  for (const prof of cfg.profiles || []) {
+    if (!prof.accessToken) continue;
+    // 1) token ยังใช้ได้ไหม
+    try { await fb('me', { fields: 'id' }, 'GET', prof.accessToken); state['tok:' + prof.id] = 'ok'; }
+    catch (e) {
+      if (state['tok:' + prof.id] !== 'bad') { alerts.push(`🔴 ${prof.label}: เชื่อม FB ไม่ได้ — ${e.message}`); state['tok:' + prof.id] = 'bad'; }
+      continue; // token ตาย ตรวจอย่างอื่นต่อไม่ได้
+    }
+    // 2) ใกล้หมดอายุ (<14 วัน) → ต่ออายุอัตโนมัติ (ต้องมี appId+appSecret ของโปรไฟล์)
+    if (prof.appId && prof.appSecret) {
+      try {
+        const appTok = `${prof.appId}|${prof.appSecret}`;
+        const dbg = await (await fetch(`${API}/debug_token?input_token=${encodeURIComponent(prof.accessToken)}&access_token=${encodeURIComponent(appTok)}`)).json();
+        const exp = dbg.data && dbg.data.expires_at; // 0 = ไม่หมดอายุ
+        if (exp && exp * 1000 - Date.now() < 14 * 864e5) {
+          const l = await (await fetch(`${API}/oauth/access_token?grant_type=fb_exchange_token&client_id=${encodeURIComponent(prof.appId)}&client_secret=${encodeURIComponent(prof.appSecret)}&fb_exchange_token=${encodeURIComponent(prof.accessToken)}`)).json();
+          if (l.access_token) {
+            const cfg2 = loadConfig(); // โหลดสดกันทับค่าที่เพิ่งแก้ระหว่างรอบ
+            const p2 = cfg2.profiles.find((x) => x.id === prof.id);
+            if (p2) { p2.accessToken = l.access_token; saveConfig(cfg2); alerts.push(`🔁 ${prof.label}: ต่ออายุ token ให้แล้ว (+60 วัน)`); }
+          } else if (state['exp:' + prof.id] !== 'warned') {
+            alerts.push(`🟠 ${prof.label}: token จะหมดอายุใน ${Math.max(1, Math.round((exp * 1000 - Date.now()) / 864e5))} วัน และต่ออัตโนมัติไม่ได้ — เข้าเว็บแล้วกดล็อกอินใหม่`);
+            state['exp:' + prof.id] = 'warned';
+          }
+        } else state['exp:' + prof.id] = '';
+      } catch { /* ตรวจอายุไม่ได้ก็ข้าม */ }
+    }
+    // 3) สถานะบัญชีโฆษณาเปลี่ยน + แอดโดนปฏิเสธเพิ่ม
+    try {
+      const accts = await fbAll('me/adaccounts', { fields: 'name,account_id,account_status', limit: 100 }, prof.accessToken);
+      for (const a of accts) {
+        const k = 'st:' + a.account_id;
+        if (state[k] !== undefined && state[k] !== a.account_status && a.account_status !== 1) {
+          alerts.push(`⚠️ บัญชี ${a.name}: ${ACCT_ST_TXT[a.account_status] || 'สถานะ ' + a.account_status}`);
+        }
+        if (state[k] !== undefined && state[k] !== 1 && a.account_status === 1) alerts.push(`🟢 บัญชี ${a.name}: กลับมาใช้ได้แล้ว`);
+        state[k] = a.account_status;
+      }
+      for (const a of accts.filter((x) => x.account_status === 1)) {
+        try {
+          const ads = await fbAll(`act_${a.account_id}/ads`, { fields: 'effective_status', limit: 200 }, prof.accessToken);
+          const n = ads.filter((x) => x.effective_status === 'DISAPPROVED').length;
+          const k = 'dis:' + a.account_id;
+          if (state[k] !== undefined && n > state[k]) alerts.push(`✕ ${a.name}: แอดโดนปฏิเสธเพิ่ม ${n - state[k]} ตัว (รวม ${n})`);
+          state[k] = n;
+        } catch { /* บัญชีนี้อ่านไม่ได้ ข้าม */ }
+      }
+    } catch { /* ข้ามรอบนี้ */ }
+  }
+  saveWatchState(state);
+  if (alerts.length) await tgSend(cfg, '📣 FB Ad Uploader แจ้งเตือน\n\n' + alerts.join('\n'));
+}
+
+// สรุปยอดเมื่อวานทุกเช้า 08:00 เวลาไทย
+async function dailySummary() {
+  const cfg = loadConfig();
+  if (!(cfg.telegram || {}).botToken) return;
+  const lines = [];
+  for (const prof of cfg.profiles || []) {
+    if (!prof.accessToken) continue;
+    try {
+      const accts = await fbAll('me/adaccounts', { fields: 'name,account_id,account_status,currency', limit: 100 }, prof.accessToken);
+      for (const a of accts.filter((x) => x.account_status === 1)) {
+        try {
+          const ins = await fb(`act_${a.account_id}/insights`, { fields: 'spend,impressions', date_preset: 'yesterday' }, 'GET', prof.accessToken);
+          const row = (ins.data || [])[0];
+          if (row && Number(row.spend) > 0) lines.push(`• ${a.name}: ${Number(row.spend).toLocaleString(undefined, { minimumFractionDigits: 2 })} ${a.currency} • ${Number(row.impressions || 0).toLocaleString()} อิมเพรสชัน`);
+        } catch { /* ข้าม */ }
+      }
+    } catch { /* ข้าม */ }
+  }
+  await tgSend(cfg, `🌅 สรุปการใช้จ่ายเมื่อวาน\n\n${lines.length ? lines.join('\n') : 'ไม่มีการใช้จ่าย'}`);
+}
+
+setTimeout(() => watchTick().catch(() => {}), 30 * 1000);           // รอบแรกหลังบูต 30 วิ
+setInterval(() => watchTick().catch(() => {}), 60 * 60 * 1000);     // แล้วทุก 1 ชม.
+let lastSummaryDay = '';
+setInterval(() => {
+  const th = new Date(Date.now() + 7 * 3600 * 1000);
+  const day = th.toISOString().slice(0, 10);
+  if (th.getUTCHours() === 8 && lastSummaryDay !== day) { lastSummaryDay = day; dailySummary().catch(() => {}); }
+}, 5 * 60 * 1000);
+
+// ตั้งค่า Telegram จากหน้าเว็บ
+app.get('/api/telegram', (req, res) => {
+  const t = loadConfig().telegram || {};
+  res.json({ hasToken: !!t.botToken, botTokenMasked: t.botToken ? '••••••' + String(t.botToken).slice(-4) : '', chatId: t.chatId || '' });
+});
+app.post('/api/telegram', (req, res) => {
+  const cfg = loadConfig();
+  const cur = cfg.telegram || {};
+  let botToken = String(req.body.botToken || '').trim();
+  if (!botToken || botToken.startsWith('••••')) botToken = cur.botToken || ''; // ช่องโชว์ masked = ไม่เปลี่ยน
+  cfg.telegram = { botToken, chatId: String(req.body.chatId || '').trim() };
+  saveConfig(cfg);
+  res.json({ ok: true });
+});
+app.post('/api/telegram-test', async (req, res) => {
+  const ok = await tgSend(loadConfig(), '✅ ทดสอบแจ้งเตือนจาก FB Ad Uploader สำเร็จ! ระบบจะเตือนเมื่อ: แอดโดนปฏิเสธ • บัญชีถูกปิด/ค้างชำระ • token มีปัญหา และสรุปยอดทุกเช้า 8 โมง');
+  res.json(ok ? { ok: true } : { error: 'ส่งไม่สำเร็จ — เช็ค Bot Token / Chat ID และต้องกด Start ในแชทบอทของคุณก่อน' });
 });
 
 app.listen(PORT, () => {

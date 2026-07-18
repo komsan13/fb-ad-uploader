@@ -779,6 +779,20 @@
         <div id="profList"></div>
         <button class="btn-primary" onclick="addProfile()">+ เพิ่มบัญชี FB</button>
       </div>
+
+      <div class="card">
+        <h2><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></span>แจ้งเตือน Telegram <span class="h-desc">— เตือนทันทีเมื่อแอดโดนปฏิเสธ / บัญชีถูกปิด-ค้างชำระ / token มีปัญหา (ต่ออายุให้อัตโนมัติ) + สรุปยอดทุกเช้า 8 โมง</span></h2>
+        <div class="fgrid">
+          <div class="field"><label>Bot Token</label><input id="tgToken" placeholder="123456789:ABCdef..."></div>
+          <div class="field"><label>Chat ID</label><input id="tgChat" placeholder="เช่น 123456789"></div>
+          <div class="field" style="display:flex;align-items:flex-end;gap:8px">
+            <button class="btn-primary" onclick="saveTelegram()">บันทึก</button>
+            <button class="btn-light" onclick="testTelegram(this)">ส่งทดสอบ</button>
+          </div>
+        </div>
+        <div class="hint" style="margin-top:8px">วิธีตั้ง (ครั้งเดียว): ① ใน Telegram แชทกับ <b>@BotFather</b> → พิมพ์ /newbot → ได้ <b>Bot Token</b> มาวางช่องแรก ② แชทกับ <b>@userinfobot</b> → ได้เลข <b>Id</b> มาวางช่องสอง ③ เข้าไปกด <b>Start</b> ในแชทบอทที่เพิ่งสร้าง ④ กดบันทึก → ส่งทดสอบ</div>
+      </div>
+
       <div class="card">
         <h2>ตั้งค่า "เข้าสู่ระบบด้วย Facebook" <span class="h-desc">— ทำครั้งเดียวต่อแอป หลังจากนั้นกดปุ่มเดียวจบ</span></h2>
         <ol class="setup-list">
@@ -1051,6 +1065,35 @@ function renderSettings() {
         <div style="font-size:13px">กดปุ่ม "+ เพิ่มบัญชี FB" ด้านล่าง แล้วทำตามขั้นตอน 1-2 ในการ์ด</div>
       </div>`;
   profiles.filter(p => p.hasToken).forEach(p => populateProfileCard(p.id));
+  loadTelegramUI();
+}
+async function loadTelegramUI() {
+  try {
+    const t = await (await fetch('/api/telegram')).json();
+    const inp = document.getElementById('tgToken');
+    inp.value = t.botTokenMasked || '';
+    inp.dataset.masked = t.botTokenMasked || ''; // จำไว้เทียบตอนบันทึก — ไม่แก้ = ไม่ส่งทับ
+    document.getElementById('tgChat').value = t.chatId || '';
+  } catch { /* ข้าม */ }
+}
+async function saveTelegram() {
+  const inp = document.getElementById('tgToken');
+  const val = inp.value.trim();
+  const r = await (await fetch('/api/telegram', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      botToken: (val && val !== inp.dataset.masked) ? val : '', // ค่าว่าง = server คงของเดิม
+      chatId: document.getElementById('tgChat').value.trim(),
+    }),
+  })).json();
+  if (r.ok) { alert('บันทึกแล้ว — กด "ส่งทดสอบ" เพื่อยืนยันว่าถึงมือถือจริง'); loadTelegramUI(); }
+  else alert('บันทึกไม่สำเร็จ');
+}
+async function testTelegram(btn) {
+  btn.disabled = true; btn.textContent = 'กำลังส่ง...';
+  const r = await (await fetch('/api/telegram-test', { method: 'POST' })).json();
+  btn.disabled = false; btn.textContent = 'ส่งทดสอบ';
+  alert(r.ok ? '✅ ส่งสำเร็จ! เช็คข้อความในแชท Telegram' : '❌ ' + r.error);
 }
 async function connectProfile(pid) {
   const card = document.querySelector(`.prof-card[data-pid="${pid}"]`);
