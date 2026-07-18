@@ -539,11 +539,14 @@ app.post('/api/ai-advice', async (req, res) => {
     catch { return res.status(502).json({ error: 'AI ตอบกลับผิดรูปแบบ' }); }
     res.json({ ...out, usage: { input: msg.usage.input_tokens, output: msg.usage.output_tokens } });
   } catch (e) {
-    // ข้อความจาก SDK อ่านไม่รู้เรื่องสำหรับผู้ใช้ทั่วไป — แปลเคสที่เจอบ่อย
-    const m = e.status === 401 ? 'API key ไม่ถูกต้อง'
-      : e.status === 429 ? 'ใช้เกินโควตา/เร็วเกินไป — รอสักครู่แล้วลองใหม่'
-      : e.status === 400 ? `คำขอไม่ถูกต้อง: ${e.message}`
-      : `เรียก AI ไม่สำเร็จ: ${e.message}`;
+    // ข้อความจาก SDK เป็น JSON ดิบ ผู้ใช้อ่านไม่รู้เรื่อง — ดึงเฉพาะข้อความจริงแล้วแปลเคสที่เจอบ่อย
+    const apiMsg = (e && e.error && e.error.error && e.error.error.message) || e.message || '';
+    const m = e.status === 401 ? 'API key ไม่ถูกต้อง — เช็คที่เมนู "บัญชี FB" → ส่วน AI'
+      : /credit balance is too low/i.test(apiMsg)
+        ? 'เครดิต Anthropic หมด — เข้า console.anthropic.com → Plans & Billing → Add credits (ขั้นต่ำ $5) แล้วลองใหม่'
+      : e.status === 429 ? 'เรียกถี่เกินไป/เกินโควตา — รอสักครู่แล้วลองใหม่'
+      : e.status === 400 ? `คำขอไม่ถูกต้อง: ${apiMsg}`
+      : `เรียก AI ไม่สำเร็จ: ${apiMsg}`;
     res.status(502).json({ error: m });
   }
 });
