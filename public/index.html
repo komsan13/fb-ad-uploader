@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FB Ad Uploader</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --blue: #1877f2; --blue-dark: #166fe5; --green: #31a24c; --red: #e0245e; --amber: #b8860b;
+    --bg: #f2f4f7; --card: #fff; --line: #e3e7ec; --text: #1c1e21; --muted: #65676b;
+    --side-bg: #172033; --side-text: #aeb8ca; --side-active: #fff;
+    --sidebar-w: 240px;
+  }
+  body { font-family: 'Segoe UI', 'Leelawadee UI', sans-serif; background: var(--bg); color: var(--text); }
+
+  /* ---------- โครง layout ---------- */
+  .app { display: flex; min-height: 100vh; }
+  .sidebar { width: var(--sidebar-w); background: var(--side-bg); color: var(--side-text); position: fixed; top: 0; bottom: 0; left: 0; display: flex; flex-direction: column; z-index: 90; }
+  .logo { padding: 20px 18px 16px; color: #fff; font-size: 17px; font-weight: 700; display: flex; align-items: center; gap: 9px; border-bottom: 1px solid rgba(255,255,255,.08); }
+  .logo small { display: block; font-size: 11px; font-weight: 400; color: var(--side-text); }
+  nav { padding: 12px 10px; flex: 1; }
+  nav a { display: flex; align-items: center; gap: 11px; padding: 10px 12px; border-radius: 9px; color: var(--side-text); text-decoration: none; font-size: 14px; font-weight: 600; margin-bottom: 3px; cursor: pointer; transition: background .12s; }
+  nav a:hover { background: rgba(255,255,255,.07); color: #fff; }
+  nav a.active { background: var(--blue); color: var(--side-active); }
+  nav a .ic { width: 20px; text-align: center; }
+  .side-foot { padding: 14px 18px; font-size: 12px; border-top: 1px solid rgba(255,255,255,.08); }
+  .side-foot .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #7a869c; margin-right: 6px; }
+  .side-foot .dot.on { background: #3fd06a; }
+
+  main { flex: 1; margin-left: var(--sidebar-w); padding: 0 26px 150px; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 18px 0 14px; flex-wrap: wrap; }
+  .topbar h1 { font-size: 21px; }
+  .topbar .desc { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .top-profile { display: flex; align-items: center; gap: 8px; background: var(--card); border: 1.5px solid var(--line); border-radius: 20px; padding: 6px 8px 6px 14px; font-size: 13px; font-weight: 600; }
+  .top-profile select { border: none; font-weight: 600; padding: 2px 4px; background: transparent; min-width: 130px; }
+  .top-profile select:focus { outline: none; }
+
+  /* ---------- stat tiles ---------- */
+  .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 16px; }
+  .tile { background: var(--card); border-radius: 12px; box-shadow: 0 1px 2px rgba(16,24,40,.06); padding: 16px 18px; }
+  .tile .t-label { font-size: 12.5px; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
+  .tile .t-value { font-size: 28px; font-weight: 600; line-height: 1.1; }
+  .tile .t-sub { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+
+  /* ---------- การ์ด ---------- */
+  .card { background: var(--card); border-radius: 12px; box-shadow: 0 1px 2px rgba(16,24,40,.06); padding: 18px 20px; margin-bottom: 16px; }
+  .card h2 { font-size: 15.5px; margin-bottom: 13px; }
+  .card .h-desc { font-weight: 400; font-size: 12.5px; color: var(--muted); }
+
+  label { display: block; font-size: 12.5px; font-weight: 600; color: #4b4f56; margin-bottom: 4px; }
+  input, select, textarea { width: 100%; padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 8px; font-size: 14px; font-family: inherit; background: #fff; transition: border-color .15s; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--blue); }
+  textarea { resize: vertical; min-height: 56px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .row > div { flex: 1; min-width: 130px; }
+  .field { margin-bottom: 10px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+  button { cursor: pointer; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; font-family: inherit; padding: 9px 16px; transition: filter .15s; }
+  button:hover { filter: brightness(.95); }
+  .btn-primary { background: var(--blue); color: #fff; }
+  .btn-light { background: #eceff3; color: var(--text); }
+  .btn-danger-light { background: #fdeef2; color: var(--red); }
+  .btn-sm { padding: 5px 11px; font-size: 12.5px; }
+  .btn-fblogin { background: #1877f2; color: #fff; padding: 9px 16px; white-space: nowrap; }
+
+  /* ---------- บัญชี FB (profiles) ---------- */
+  .prof-card { border: 1.5px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
+  .prof-card.active-prof { border-color: var(--blue); background: #f7fbff; }
+  .prof-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+  .prof-star { cursor: pointer; font-size: 12.5px; font-weight: 700; padding: 4px 10px; border-radius: 12px; background: #eceff3; color: var(--muted); white-space: nowrap; }
+  .prof-star.on { background: #e7f3ff; color: var(--blue); }
+  .p-status.ok { color: var(--green); font-weight: 600; }
+  .p-status.err { color: var(--red); }
+
+  /* ---------- dropzone ---------- */
+  .dropzone { border: 2.5px dashed #b9c4d1; border-radius: 12px; padding: 26px 20px; text-align: center; cursor: pointer; transition: all .15s; background: #f8fafc; }
+  .dropzone:hover, .dropzone.over { border-color: var(--blue); background: #eaf3ff; }
+  .dropzone .big { font-size: 16px; font-weight: 700; margin-bottom: 3px; }
+  .dropzone .small { font-size: 13px; color: var(--muted); }
+
+  /* ---------- การ์ดแอด ---------- */
+  .ad-card { border: 1.5px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 12px; background: #fff; }
+  .ad-card.st-ok { border-color: var(--green); background: #f4faf6; }
+  .ad-card.st-err { border-color: var(--red); }
+  .ad-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .thumb { width: 62px; height: 62px; border-radius: 10px; object-fit: cover; border: 1px solid var(--line); background: #f0f2f5 center/26px no-repeat url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23b9c4d1"><path d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 13.5l2.5 3 3.5-4.5 4.5 6H5l3.5-4.5z"/></svg>'); cursor: pointer; flex-shrink: 0; }
+  .ad-head .name-wrap { flex: 1; min-width: 120px; }
+  .ad-head input.f-name { font-weight: 600; }
+  .badge { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 12px; white-space: nowrap; }
+  .badge.wait { background: #eceff3; color: var(--muted); }
+  .badge.run { background: #e7f3ff; color: var(--blue); animation: pulse 1s infinite; }
+  .badge.ok { background: #e3f5e8; color: var(--green); }
+  .badge.err { background: #fdeef2; color: var(--red); }
+  @keyframes pulse { 50% { opacity: .5; } }
+  .ad-err-msg { color: var(--red); font-size: 12.5px; margin-top: 6px; }
+  .grid { display: grid; grid-template-columns: 2.2fr 1.4fr .8fr; gap: 10px; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+
+  details.target { margin-top: 8px; border-top: 1px dashed var(--line); padding-top: 8px; }
+  details.target summary { cursor: pointer; font-size: 13px; color: var(--blue); font-weight: 600; list-style: none; }
+  details.target summary::before { content: '▸ '; }
+  details.target[open] summary::before { content: '▾ '; }
+  details.target .row { margin-top: 10px; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .chip { background: #e7f3ff; color: var(--blue); border-radius: 14px; padding: 3px 10px; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; }
+  .chip span { cursor: pointer; font-weight: 700; }
+  .interest-box { position: relative; }
+  .interest-results { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 16px rgba(0,0,0,.15); z-index: 50; max-height: 200px; overflow-y: auto; display: none; }
+  .interest-results div { padding: 8px 12px; cursor: pointer; font-size: 13.5px; }
+  .interest-results div:hover { background: #f0f2f5; }
+  .interest-results small { color: var(--muted); }
+
+  /* ---------- ตารางแคมเปญ ---------- */
+  .tbl-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th { text-align: left; color: var(--muted); font-size: 12px; font-weight: 700; padding: 8px 10px; border-bottom: 1.5px solid var(--line); white-space: nowrap; }
+  td { padding: 10px; border-bottom: 1px solid #eef1f4; vertical-align: middle; }
+  tr:hover td { background: #f8fafc; }
+  .st-pill { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 12px; white-space: nowrap; }
+  .st-pill.on { background: #e3f5e8; color: var(--green); }
+  .st-pill.off { background: #eceff3; color: var(--muted); }
+  .st-pill.issue { background: #fdf3e0; color: var(--amber); }
+
+  /* ---------- แถบล่าง ---------- */
+  #bottomBar { position: fixed; bottom: 0; left: var(--sidebar-w); right: 0; background: #fff; box-shadow: 0 -2px 12px rgba(0,0,0,.1); z-index: 80; }
+  #bottomBar .inner { padding: 10px 26px 12px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  #launchProfiles { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12.5px; }
+  #launchProfiles .lp-title { color: var(--muted); font-weight: 600; }
+  .lp-chip { display: inline-flex; align-items: center; gap: 5px; border: 1.5px solid var(--line); border-radius: 14px; padding: 4px 10px; cursor: pointer; font-weight: 600; user-select: none; }
+  .lp-chip input { width: auto; accent-color: var(--blue); }
+  .lp-chip:has(input:checked) { border-color: var(--blue); background: #e7f3ff; color: var(--blue); }
+  #barStats { font-size: 14px; white-space: nowrap; }
+  #barStats b { font-size: 16px; }
+  #barStats .muted { color: var(--muted); font-size: 12.5px; }
+  #progressWrap { flex: 1; min-width: 160px; display: none; }
+  #progressText { font-size: 12.5px; color: var(--muted); margin-bottom: 3px; }
+  #progressTrack { background: #eceff3; border-radius: 6px; height: 10px; overflow: hidden; }
+  #progressFill { background: var(--blue); height: 100%; width: 0%; transition: width .3s; }
+  #launchBtn { background: var(--green); color: #fff; font-size: 15.5px; padding: 12px 24px; margin-left: auto; }
+  #launchBtn:disabled { background: #bec3c9; cursor: not-allowed; }
+  #doneBanner { display: none; font-size: 13.5px; font-weight: 600; }
+  #doneBanner a { color: var(--blue); }
+
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* ---------- มือถือ ---------- */
+  @media (max-width: 860px) {
+    .sidebar { position: static; width: 100%; flex-direction: row; align-items: center; }
+    .logo { border: none; padding: 12px 14px; }
+    .logo small { display: none; }
+    nav { display: flex; padding: 8px; }
+    nav a { margin: 0 2px; padding: 8px 10px; }
+    nav a .lbl { display: none; }
+    .side-foot { display: none; }
+    .app { flex-direction: column; }
+    main { margin-left: 0; padding: 0 14px 170px; }
+    #bottomBar { left: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ========== SIDEBAR ========== -->
+  <aside class="sidebar">
+    <div class="logo">🚀 <div>FB Ad Uploader<small>Marketing API • Multi-Account</small></div></div>
+    <nav>
+      <a data-page="upload" class="active" onclick="showPage('upload')"><span class="ic">📤</span><span class="lbl">ขึ้นแอด</span></a>
+      <a data-page="campaigns" onclick="showPage('campaigns')"><span class="ic">📊</span><span class="lbl">แคมเปญของฉัน</span></a>
+      <a data-page="settings" onclick="showPage('settings')"><span class="ic">⚙️</span><span class="lbl">บัญชี FB</span></a>
+    </nav>
+    <div class="side-foot" id="sideConn"><span class="dot"></span>ยังไม่มีบัญชี</div>
+  </aside>
+
+  <main>
+    <div class="topbar">
+      <div>
+        <h1 id="pageTitle">ขึ้นแอด</h1>
+        <div class="desc" id="pageDesc">สร้างแอดหลายตัวพร้อมกัน ขึ้นได้หลายบัญชี FB ในคลิกเดียว</div>
+      </div>
+      <div class="top-profile" title="บัญชีที่ใช้งานอยู่ (ใช้กับการค้นหา interest และหน้าแคมเปญ)">
+        👤 <select id="topProfile" onchange="setActiveProfile(this.value)"></select>
+      </div>
+    </div>
+
+    <!-- ========== PAGE: ขึ้นแอด ========== -->
+    <section class="page active" id="page-upload">
+      <div class="kpi-row">
+        <div class="tile">
+          <div class="t-label">แอดในคิว</div>
+          <div class="t-value" id="statCount">0</div>
+          <div class="t-sub">ตัวที่พร้อมขึ้นในรอบนี้</div>
+        </div>
+        <div class="tile">
+          <div class="t-label">งบรวมต่อวัน</div>
+          <div class="t-value" id="statBudget">฿0</div>
+          <div class="t-sub" id="statBudgetSub">ต่อ 1 บัญชี เมื่อเปิดใช้งาน</div>
+        </div>
+        <div class="tile">
+          <div class="t-label">บัญชีที่จะขึ้น</div>
+          <div class="t-value" id="statProfiles">0</div>
+          <div class="t-sub">เลือกได้ที่แถบด้านล่าง</div>
+        </div>
+        <div class="tile">
+          <div class="t-label">ผลการขึ้นรอบล่าสุด</div>
+          <div class="t-value" id="statResult">—</div>
+          <div class="t-sub" id="statResultSub">ยังไม่มีการขึ้นแอดในเซสชันนี้</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>แคมเปญ <span class="h-desc">— สร้างชื่อเดียวกันในทุกบัญชีที่เลือก</span></h2>
+        <div class="row">
+          <div class="field" style="flex:2">
+            <label>ชื่อแคมเปญ</label>
+            <input id="campaignName" placeholder="เช่น โปรกรกฎาคม 2026">
+          </div>
+          <div class="field">
+            <label>วัตถุประสงค์</label>
+            <select id="objective" onchange="togglePixel()">
+              <option value="OUTCOME_TRAFFIC">การเข้าชม (Traffic)</option>
+              <option value="OUTCOME_ENGAGEMENT">การมีส่วนร่วม (Engagement)</option>
+              <option value="OUTCOME_SALES">ยอดขาย (ต้องมี Pixel)</option>
+              <option value="OUTCOME_LEADS">ลูกค้าเป้าหมาย (ต้องมี Pixel)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>ปุ่มบนแอด (CTA)</label>
+            <select id="cta">
+              <option value="LEARN_MORE">เรียนรู้เพิ่มเติม</option>
+              <option value="SHOP_NOW">ซื้อเลย</option>
+              <option value="SIGN_UP">สมัคร</option>
+              <option value="CONTACT_US">ติดต่อเรา</option>
+            </select>
+          </div>
+          <div class="field" id="pixelField" style="display:none">
+            <label>Pixel ID</label>
+            <input id="pixelId" placeholder="123456789012345">
+            <div class="hint">ใช้ pixel เดียวกันทุกบัญชีที่เลือก</div>
+          </div>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-weight:400;font-size:13.5px">
+          <input type="checkbox" id="activeNow" style="width:auto">
+          เปิดแอดทันที (ACTIVE) — ไม่ติ๊ก = ขึ้นเป็น PAUSED ให้ตรวจก่อนเปิดเอง (แนะนำ)
+        </label>
+      </div>
+
+      <div class="card">
+        <h2>ค่าเริ่มต้นของแอดใหม่ <span class="h-desc">— ตั้งครั้งเดียว แอดที่เพิ่มใหม่จะใช้ค่านี้อัตโนมัติ</span></h2>
+        <div class="grid">
+          <div class="field">
+            <label>ข้อความหลัก (Primary Text)</label>
+            <textarea id="tpl-message" placeholder="ข้อความโฆษณา..."></textarea>
+          </div>
+          <div>
+            <div class="field"><label>หัวข้อ (Headline)</label><input id="tpl-headline" placeholder="ไม่บังคับ"></div>
+            <div class="field"><label>ลิงก์ปลายทาง</label><input id="tpl-link" placeholder="https://..."></div>
+          </div>
+          <div>
+            <div class="field"><label>งบต่อวัน (บาท)</label><input id="tpl-budget" type="number" min="1" value="300"></div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="field"><label>อายุต่ำสุด</label><input id="tpl-agemin" type="number" min="18" max="65" value="20"></div>
+          <div class="field"><label>อายุสูงสุด</label><input id="tpl-agemax" type="number" min="18" max="65" value="55"></div>
+          <div class="field"><label>เพศ</label>
+            <select id="tpl-gender"><option value="all">ทั้งหมด</option><option value="male">ชาย</option><option value="female">หญิง</option></select>
+          </div>
+          <div class="field"><label>ประเทศ</label><input id="tpl-countries" value="TH"></div>
+          <div class="field interest-box" style="flex:2">
+            <label>ความสนใจ (Interests)</label>
+            <input id="tpl-interest-search" placeholder="พิมพ์ค้นหาแล้วคลิกเลือก..." oninput="searchInterests(this)">
+            <div class="interest-results"></div>
+            <div class="chips" id="tpl-chips"></div>
+          </div>
+        </div>
+        <button class="btn-light btn-sm" onclick="applyTemplateToAll()">↧ นำค่านี้ไปใส่แอดที่มีอยู่ทุกตัว</button>
+      </div>
+
+      <div class="card">
+        <h2>รายการแอด <span class="h-desc" id="adCount"></span></h2>
+        <div class="dropzone" id="dropzone" onclick="document.getElementById('multiFile').click()">
+          <div class="big">📷 ลากรูปมาวางที่นี่ หรือคลิกเลือก</div>
+          <div class="small">เลือกได้หลายรูปพร้อมกัน — 1 รูป = 1 แอด (เติมค่าเริ่มต้นให้อัตโนมัติ)</div>
+        </div>
+        <input type="file" id="multiFile" accept="image/*" multiple style="display:none" onchange="filesPicked(this.files); this.value=''">
+        <div id="adList" style="margin-top:12px"></div>
+        <button class="btn-light" onclick="addAd()">+ เพิ่มแอดเปล่า</button>
+      </div>
+    </section>
+
+    <!-- ========== PAGE: แคมเปญของฉัน ========== -->
+    <section class="page" id="page-campaigns">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px;flex-wrap:wrap">
+          <h2 style="margin:0">แคมเปญล่าสุดในบัญชี</h2>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="campProfile" onchange="loadCampaigns()" style="min-width:160px"></select>
+            <button class="btn-light btn-sm" onclick="loadCampaigns()">⟳ รีเฟรช</button>
+          </div>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>ชื่อแคมเปญ</th><th>วัตถุประสงค์</th><th>สถานะ</th><th>สร้างเมื่อ</th><th></th></tr></thead>
+            <tbody id="campaignRows"><tr><td colspan="5" style="color:var(--muted)">ยังไม่ได้โหลด</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== PAGE: บัญชี FB ========== -->
+    <section class="page" id="page-settings">
+      <div class="card">
+        <h2>บัญชี FB ทั้งหมด <span class="h-desc">— เพิ่มได้หลายบัญชี แต่ละบัญชีมี token + บัญชีโฆษณา + เพจของตัวเอง</span></h2>
+        <div id="profList"></div>
+        <button class="btn-primary" onclick="addProfile()">+ เพิ่มบัญชี FB</button>
+      </div>
+      <div class="card">
+        <h2>ตั้งค่า "เข้าสู่ระบบด้วย Facebook" <span class="h-desc">— ทำครั้งเดียวต่อแอป หลังจากนั้นกดปุ่มเดียวจบ</span></h2>
+        <ol style="font-size:13.5px;line-height:2;padding-left:20px">
+          <li>เปิดแอปที่ <a href="https://developers.facebook.com/apps" target="_blank">developers.facebook.com/apps</a> → "เพิ่มผลิตภัณฑ์" → เพิ่ม <b>Facebook Login</b> (Login ด้วย Facebook)</li>
+          <li>ไปที่ Facebook Login → <b>การตั้งค่า (Settings)</b> → ช่อง <b>Valid OAuth Redirect URIs</b> วาง: <code id="redirectUriText">http://localhost:4000/auth/callback</code> → บันทึก</li>
+          <li>เมนู การตั้งค่าแอป → <b>พื้นฐาน (Basic)</b> → คัดลอก <b>App ID</b> และ <b>App Secret</b> (กด "แสดง") มาวางในการ์ดบัญชีด้านบน</li>
+          <li>กดปุ่ม <b>🔵 เข้าสู่ระบบด้วย Facebook</b> → login → กดยอมรับ → เสร็จ! token มาเองและต่ออายุ 60 วันอัตโนมัติ</li>
+        </ol>
+        <div class="hint">💡 บัญชี FB ที่ login ต้องเป็นแอดมิน/ผู้ทดสอบของแอปนั้น (เฟสที่สร้างแอปเองเป็นแอดมินอยู่แล้ว ไม่ต้องส่ง App Review) • ถ้าหลาย ad account อยู่ใต้ FB เดียวกัน login ครั้งเดียวเห็นครบทุกบัญชี</div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ========== แถบขึ้นแอด (เฉพาะหน้าขึ้นแอด) ========== -->
+<div id="bottomBar">
+  <div class="inner">
+    <div id="barStats"><b id="barCount">0</b> แอด <span class="muted" id="barBudget"></span></div>
+    <div id="launchProfiles"><span class="lp-title">ขึ้นไปที่:</span></div>
+    <div id="progressWrap">
+      <div id="progressText"></div>
+      <div id="progressTrack"><div id="progressFill"></div></div>
+    </div>
+    <div id="doneBanner"></div>
+    <button id="launchBtn" onclick="launch()">🚀 ขึ้นแอดทั้งหมด</button>
+  </div>
+</div>
+
+<script>
+let adRowSeq = 0;
+let profiles = [];            // [{id, label, adAccountId, pageId, hasToken}]
+let activeProfileId = null;
+const accountCache = {};      // pid -> {name, adAccounts, pages}
+const cardResults = new Map();      // cardId -> {ok:Set<pid>, fail:Map<pid,error>}
+const lastCampaignByProfile = {};   // pid -> {id, name}
+
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+}
+
+// ---------- สลับหน้า ----------
+const PAGE_META = {
+  upload: ['ขึ้นแอด', 'สร้างแอดหลายตัวพร้อมกัน ขึ้นได้หลายบัญชี FB ในคลิกเดียว'],
+  campaigns: ['แคมเปญของฉัน', 'ดูสถานะและเปิด/ปิดแคมเปญ แยกตามบัญชี'],
+  settings: ['บัญชี FB', 'เพิ่ม/จัดการบัญชี FB, บัญชีโฆษณา และเพจ'],
+};
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  document.querySelectorAll('nav a').forEach(a => a.classList.toggle('active', a.dataset.page === name));
+  document.getElementById('pageTitle').textContent = PAGE_META[name][0];
+  document.getElementById('pageDesc').textContent = PAGE_META[name][1];
+  document.getElementById('bottomBar').style.display = name === 'upload' ? 'block' : 'none';
+  if (name === 'settings') renderSettings();
+  if (name === 'campaigns') loadCampaigns();
+}
+
+// ---------- บัญชี FB (profiles) ----------
+async function loadProfiles() {
+  const data = await (await fetch('/api/profiles')).json();
+  profiles = data.profiles;
+  activeProfileId = data.activeProfileId;
+  renderProfileUI();
+}
+function renderProfileUI() {
+  // dropdown มุมขวาบน
+  const top = document.getElementById('topProfile');
+  top.innerHTML = profiles.length
+    ? profiles.map(p => `<option value="${p.id}" ${p.id === activeProfileId ? 'selected' : ''}>${esc(p.label)}</option>`).join('')
+    : '<option value="">— ยังไม่มีบัญชี —</option>';
+  // side foot
+  const ready = profiles.filter(p => p.hasToken).length;
+  document.getElementById('sideConn').innerHTML = profiles.length
+    ? `<span class="dot ${ready ? 'on' : ''}"></span>${ready}/${profiles.length} บัญชีพร้อมใช้`
+    : '<span class="dot"></span>ยังไม่มีบัญชี';
+  // chips เลือกบัญชีตอนขึ้นแอด
+  const lp = document.getElementById('launchProfiles');
+  const prevChecked = new Set([...lp.querySelectorAll('input:checked')].map(i => i.value));
+  lp.innerHTML = '<span class="lp-title">ขึ้นไปที่:</span>' + profiles.filter(p => p.hasToken).map(p =>
+    `<label class="lp-chip"><input type="checkbox" value="${p.id}" onchange="updateStats()"
+      ${prevChecked.size ? (prevChecked.has(p.id) ? 'checked' : '') : (p.id === activeProfileId ? 'checked' : '')}> ${esc(p.label)}</label>`
+  ).join('');
+  if (!profiles.some(p => p.hasToken)) lp.innerHTML += '<span class="hint">เพิ่มบัญชีในหน้า "บัญชี FB" ก่อน</span>';
+  // dropdown หน้าแคมเปญ
+  document.getElementById('campProfile').innerHTML = profiles.map(p =>
+    `<option value="${p.id}" ${p.id === activeProfileId ? 'selected' : ''}>${esc(p.label)}</option>`).join('');
+  updateStats();
+}
+async function setActiveProfile(id) {
+  if (!id) return;
+  await fetch('/api/profiles/active', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+  activeProfileId = id;
+  renderProfileUI();
+}
+async function addProfile() {
+  const res = await fetch('/api/profiles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+  await res.json();
+  await loadProfiles();
+  renderSettings();
+}
+async function deleteProfile(id) {
+  const p = profiles.find(x => x.id === id);
+  if (!confirm(`ลบบัญชี "${p.label}" ออกจากโปรแกรม? (ไม่มีผลกับบัญชีจริงบน FB)`)) return;
+  await fetch('/api/profiles/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+  delete accountCache[id];
+  await loadProfiles();
+  renderSettings();
+}
+async function saveProfileField(id, fields) {
+  await fetch('/api/profiles/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, ...fields }) });
+  const p = profiles.find(x => x.id === id);
+  Object.assign(p, fields);
+  renderProfileUI();
+}
+function profCardHTML(p) {
+  return `<div class="prof-card ${p.id === activeProfileId ? 'active-prof' : ''}" data-pid="${p.id}">
+    <div class="prof-head">
+      <span class="prof-star ${p.id === activeProfileId ? 'on' : ''}" onclick="setActiveProfileAndRender('${p.id}')">${p.id === activeProfileId ? '★ ใช้งานอยู่' : '☆ ใช้บัญชีนี้'}</span>
+      <input value="${esc(p.label)}" onchange="saveProfileField('${p.id}', {label: this.value})" style="max-width:220px;font-weight:600">
+      <button class="btn-danger-light btn-sm" onclick="deleteProfile('${p.id}')" style="margin-left:auto">ลบ</button>
+    </div>
+    <div class="row" style="align-items:flex-end">
+      <div class="field"><label>App ID</label><input class="p-appid" value="${esc(p.appId || '')}" placeholder="เช่น 1719021692348316" onchange="saveProfileField('${p.id}', {appId: this.value})"></div>
+      <div class="field"><label>App Secret</label><input type="password" class="p-appsecret" placeholder="${p.hasSecret ? 'บันทึกแล้ว — ใส่ใหม่ถ้าต้องการเปลี่ยน' : 'คัดลอกจาก Basic Settings'}" onchange="saveProfileField('${p.id}', {appSecret: this.value})"></div>
+      <div class="field" style="flex:0 0 auto"><button class="btn-fblogin" onclick="fbLogin('${p.id}')">🔵 เข้าสู่ระบบด้วย Facebook</button></div>
+    </div>
+    <div class="p-status hint">${p.hasToken ? '✅ มี token แล้ว' : ''}</div>
+    <details class="target" style="margin-top:2px">
+      <summary>หรือวาง Access Token เอง (ทางเลือก)</summary>
+      <div class="row" style="margin-top:8px">
+        <div style="flex:3"><input type="password" class="p-token" placeholder="${p.hasToken ? 'มี token แล้ว — วางใหม่เฉพาะตอนต้องการเปลี่ยน' : 'วาง Access Token (EAA...)'}"></div>
+        <div style="flex:0 0 auto;min-width:auto"><button class="btn-primary btn-sm" onclick="connectProfile('${p.id}')" style="padding:8px 14px">${p.hasToken ? '⟳ โหลดบัญชี' : 'เชื่อมต่อ'}</button></div>
+      </div>
+    </details>
+    <div class="row" style="margin-top:8px">
+      <div class="field"><label>บัญชีโฆษณา (Ad Account)</label><select class="p-adaccount" onchange="saveProfileField('${p.id}', {adAccountId: this.value})"><option value="">— เชื่อมต่อก่อน —</option></select></div>
+      <div class="field"><label>เพจ (Facebook Page)</label><select class="p-page" onchange="saveProfileField('${p.id}', {pageId: this.value})"><option value="">— เชื่อมต่อก่อน —</option></select></div>
+    </div>
+  </div>`;
+}
+function fbLogin(pid) {
+  const card = document.querySelector(`.prof-card[data-pid="${pid}"]`);
+  const appId = card.querySelector('.p-appid').value.trim();
+  const appSecret = card.querySelector('.p-appsecret').value.trim();
+  if (!appId) return alert('ใส่ App ID ก่อนครับ (หาได้ในหน้า Basic Settings ของแอป)');
+  const body = { id: pid, appId };
+  if (appSecret) body.appSecret = appSecret;
+  fetch('/api/profiles/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(() => {
+    const w = 600, h = 720, left = (screen.width - w) / 2, top = (screen.height - h) / 2;
+    const popup = window.open('/auth/login?profile=' + pid, 'fblogin', `width=${w},height=${h},left=${left},top=${top}`);
+    if (!popup) alert('เบราว์เซอร์บล็อก popup — อนุญาต popup ให้ localhost แล้วลองใหม่ครับ');
+  });
+}
+window.addEventListener('message', async (e) => {
+  if (e.data === 'fb-auth-done') {
+    await loadProfiles();
+    renderSettings();
+  }
+});
+async function setActiveProfileAndRender(id) {
+  await setActiveProfile(id);
+  renderSettings();
+}
+function renderSettings() {
+  const el = document.getElementById('profList');
+  el.innerHTML = profiles.length
+    ? profiles.map(profCardHTML).join('')
+    : '<div class="hint" style="margin-bottom:10px">ยังไม่มีบัญชี — กดปุ่มด้านล่างเพื่อเพิ่มบัญชีแรก</div>';
+  profiles.filter(p => p.hasToken).forEach(p => populateProfileCard(p.id));
+}
+async function connectProfile(pid) {
+  const card = document.querySelector(`.prof-card[data-pid="${pid}"]`);
+  const token = card.querySelector('.p-token').value.trim();
+  const st = card.querySelector('.p-status');
+  if (token) {
+    await fetch('/api/profiles/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: pid, accessToken: token }) });
+    profiles.find(x => x.id === pid).hasToken = true;
+    delete accountCache[pid];
+  }
+  st.textContent = 'กำลังเชื่อมต่อ...';
+  st.className = 'p-status hint';
+  await populateProfileCard(pid, true);
+  renderProfileUI();
+}
+async function populateProfileCard(pid, force) {
+  const card = document.querySelector(`.prof-card[data-pid="${pid}"]`);
+  if (!card) return;
+  const st = card.querySelector('.p-status');
+  if (!accountCache[pid] || force) {
+    const res = await fetch('/api/accounts?profile=' + pid);
+    const data = await res.json();
+    if (data.error) {
+      st.textContent = '❌ ' + data.error;
+      st.className = 'p-status err';
+      return;
+    }
+    accountCache[pid] = data;
+  }
+  const data = accountCache[pid];
+  const p = profiles.find(x => x.id === pid);
+  st.textContent = '✅ เชื่อมต่อแล้ว: ' + data.name;
+  st.className = 'p-status ok';
+  const accSel = card.querySelector('.p-adaccount');
+  accSel.innerHTML = data.adAccounts.map(a =>
+    `<option value="${a.account_id}">${esc(a.name)} (${a.currency})</option>`).join('');
+  if (p.adAccountId) accSel.value = p.adAccountId;
+  const pageSel = card.querySelector('.p-page');
+  pageSel.innerHTML = data.pages.length
+    ? data.pages.map(pg => `<option value="${pg.id}">📄 ${esc(pg.name)}</option>`).join('')
+    : '<option value="">— ไม่พบเพจ (token ขาด pages_show_list) —</option>';
+  if (p.pageId) pageSel.value = p.pageId;
+  // บันทึกค่าที่ dropdown เลือกอัตโนมัติ (ตัวแรก) ถ้ายังไม่เคยตั้ง
+  if (!p.adAccountId && accSel.value) saveProfileField(pid, { adAccountId: accSel.value });
+  if (!p.pageId && pageSel.value) saveProfileField(pid, { pageId: pageSel.value });
+}
+
+(async function init() {
+  await loadProfiles();
+  try {
+    const env = await (await fetch('/api/env')).json();
+    if (env.redirectUri) document.getElementById('redirectUriText').textContent = env.redirectUri;
+  } catch {}
+  if (!profiles.length) showPage('settings');
+})();
+
+function togglePixel() {
+  const obj = document.getElementById('objective').value;
+  document.getElementById('pixelField').style.display =
+    (obj === 'OUTCOME_SALES' || obj === 'OUTCOME_LEADS') ? 'block' : 'none';
+}
+
+// ---------- หน้าแคมเปญ ----------
+const OBJ_TH = {
+  OUTCOME_TRAFFIC: 'การเข้าชม', OUTCOME_ENGAGEMENT: 'การมีส่วนร่วม', OUTCOME_SALES: 'ยอดขาย',
+  OUTCOME_LEADS: 'ลูกค้าเป้าหมาย', OUTCOME_AWARENESS: 'การรับรู้', OUTCOME_APP_PROMOTION: 'โปรโมทแอป',
+};
+function statusPill(c) {
+  if (c.effective_status === 'ACTIVE') return '<span class="st-pill on">● เปิดอยู่</span>';
+  if (c.effective_status === 'PAUSED') return '<span class="st-pill off">⏸ หยุดชั่วคราว</span>';
+  return `<span class="st-pill issue">⚠ ${c.effective_status}</span>`;
+}
+async function loadCampaigns() {
+  const pid = document.getElementById('campProfile').value;
+  const tbody = document.getElementById('campaignRows');
+  if (!pid) { tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">เพิ่มบัญชีในหน้า "บัญชี FB" ก่อน</td></tr>'; return; }
+  tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">กำลังโหลด...</td></tr>';
+  const res = await fetch('/api/campaigns?profile=' + pid);
+  const data = await res.json();
+  if (data.error) {
+    tbody.innerHTML = `<tr><td colspan="5" style="color:var(--red)">โหลดไม่สำเร็จ: ${esc(data.error)}</td></tr>`;
+    return;
+  }
+  if (!data.campaigns.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">ยังไม่มีแคมเปญในบัญชีนี้</td></tr>';
+    return;
+  }
+  tbody.innerHTML = data.campaigns.map(c => {
+    const created = new Date(c.created_time).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+    const toggleable = c.status === 'ACTIVE' || c.status === 'PAUSED';
+    const btn = toggleable
+      ? `<button class="btn-light btn-sm" onclick="toggleCampaign('${c.id}', '${c.status}', '${pid}')">${c.status === 'ACTIVE' ? 'หยุด' : 'เปิด'}</button>`
+      : '';
+    const link = `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${data.account}&selected_campaign_ids=${c.id}`;
+    return `<tr>
+      <td style="font-weight:600">${esc(c.name)}</td>
+      <td>${OBJ_TH[c.objective] || c.objective}</td>
+      <td>${statusPill(c)}</td>
+      <td>${created}</td>
+      <td style="white-space:nowrap">${btn} <a href="${link}" target="_blank" class="btn-light btn-sm" style="text-decoration:none;display:inline-block;padding:5px 11px">Ads Manager ↗</a></td>
+    </tr>`;
+  }).join('');
+}
+async function toggleCampaign(id, cur, pid) {
+  const to = cur === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
+  if (to === 'ACTIVE' && !confirm('เปิดแคมเปญนี้เลยไหม? งบจะเริ่มเดินทันที')) return;
+  const res = await fetch('/api/campaign-status', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, status: to, profile: pid }),
+  });
+  const data = await res.json();
+  if (data.error) return alert('เปลี่ยนสถานะไม่สำเร็จ: ' + data.error);
+  loadCampaigns();
+}
+
+// ---------- dropzone ----------
+const dz = document.getElementById('dropzone');
+dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+dz.addEventListener('drop', (e) => {
+  e.preventDefault(); dz.classList.remove('over');
+  filesPicked([...e.dataTransfer.files].filter(f => f.type.startsWith('image/')));
+});
+function filesPicked(files) {
+  [...files].forEach(f => addAd({ file: f }));
+}
+
+// ---------- template ----------
+function tplValues() {
+  return {
+    message: document.getElementById('tpl-message').value,
+    headline: document.getElementById('tpl-headline').value,
+    link: document.getElementById('tpl-link').value,
+    budget: document.getElementById('tpl-budget').value,
+    ageMin: document.getElementById('tpl-agemin').value,
+    ageMax: document.getElementById('tpl-agemax').value,
+    gender: document.getElementById('tpl-gender').value,
+    countries: document.getElementById('tpl-countries').value,
+    interests: [...document.querySelectorAll('#tpl-chips .chip')].map(c => ({ id: c.dataset.iid, name: c.dataset.iname })),
+  };
+}
+function applyTemplateToAll() {
+  const t = tplValues();
+  document.querySelectorAll('.ad-card').forEach(card => {
+    card.querySelector('.f-message').value = t.message;
+    card.querySelector('.f-headline').value = t.headline;
+    card.querySelector('.f-link').value = t.link;
+    card.querySelector('.f-budget').value = t.budget;
+    card.querySelector('.f-agemin').value = t.ageMin;
+    card.querySelector('.f-agemax').value = t.ageMax;
+    card.querySelector('.f-gender').value = t.gender;
+    card.querySelector('.f-countries').value = t.countries;
+    card.querySelector('.chips').innerHTML = '';
+    t.interests.forEach(x => addChip(card, x.id, x.name));
+    updateTargetSummary(card);
+  });
+  updateStats();
+}
+
+// ---------- การ์ดแอด ----------
+function addAd(opts = {}) {
+  const id = ++adRowSeq;
+  const t = tplValues();
+  const div = document.createElement('div');
+  div.className = 'ad-card';
+  div.dataset.id = id;
+  div.innerHTML = `
+    <div class="ad-head">
+      <img class="thumb" title="คลิกเพื่อเปลี่ยนรูป" onclick="this.closest('.ad-card').querySelector('.f-image').click()">
+      <input type="file" class="f-image" accept="image/*" style="display:none" onchange="imgChanged(this)">
+      <div class="name-wrap"><input class="f-name" placeholder="ชื่อแอด"></div>
+      <span class="badge" style="display:none"></span>
+      <button class="btn-light btn-sm" onclick="duplicateAd(${id})">ทำซ้ำ</button>
+      <button class="btn-danger-light btn-sm" onclick="removeAd(${id})">✕</button>
+    </div>
+    <div class="grid">
+      <div class="field">
+        <label>ข้อความหลัก</label>
+        <textarea class="f-message"></textarea>
+      </div>
+      <div>
+        <div class="field"><label>หัวข้อ</label><input class="f-headline"></div>
+        <div class="field"><label>ลิงก์</label><input class="f-link" placeholder="https://..."></div>
+      </div>
+      <div>
+        <div class="field"><label>งบ/วัน (บาท)</label><input class="f-budget" type="number" min="1" oninput="updateStats()"></div>
+      </div>
+    </div>
+    <details class="target">
+      <summary><span class="tsum"></span></summary>
+      <div class="row">
+        <div class="field"><label>อายุต่ำสุด</label><input class="f-agemin" type="number" min="18" max="65" onchange="updateTargetSummary(this.closest('.ad-card'))"></div>
+        <div class="field"><label>อายุสูงสุด</label><input class="f-agemax" type="number" min="18" max="65" onchange="updateTargetSummary(this.closest('.ad-card'))"></div>
+        <div class="field"><label>เพศ</label>
+          <select class="f-gender" onchange="updateTargetSummary(this.closest('.ad-card'))">
+            <option value="all">ทั้งหมด</option><option value="male">ชาย</option><option value="female">หญิง</option>
+          </select>
+        </div>
+        <div class="field"><label>ประเทศ</label><input class="f-countries" onchange="updateTargetSummary(this.closest('.ad-card'))"></div>
+        <div class="field interest-box" style="flex:2">
+          <label>ความสนใจ</label>
+          <input class="f-interest-search" placeholder="พิมพ์ค้นหา..." oninput="searchInterests(this)">
+          <div class="interest-results"></div>
+          <div class="chips"></div>
+        </div>
+      </div>
+    </details>
+    <div class="ad-err-msg" style="display:none"></div>`;
+  document.getElementById('adList').appendChild(div);
+
+  const src = opts.copyFrom;
+  const v = src ? {
+    message: src.querySelector('.f-message').value,
+    headline: src.querySelector('.f-headline').value,
+    link: src.querySelector('.f-link').value,
+    budget: src.querySelector('.f-budget').value,
+    ageMin: src.querySelector('.f-agemin').value,
+    ageMax: src.querySelector('.f-agemax').value,
+    gender: src.querySelector('.f-gender').value,
+    countries: src.querySelector('.f-countries').value,
+    interests: [...src.querySelectorAll('.chips .chip')].map(c => ({ id: c.dataset.iid, name: c.dataset.iname })),
+  } : t;
+  div.querySelector('.f-message').value = v.message;
+  div.querySelector('.f-headline').value = v.headline;
+  div.querySelector('.f-link').value = v.link;
+  div.querySelector('.f-budget').value = v.budget || 300;
+  div.querySelector('.f-agemin').value = v.ageMin || 20;
+  div.querySelector('.f-agemax').value = v.ageMax || 55;
+  div.querySelector('.f-gender').value = v.gender || 'all';
+  div.querySelector('.f-countries').value = v.countries || 'TH';
+  v.interests.forEach(x => addChip(div, x.id, x.name));
+
+  if (src) div.querySelector('.f-name').value = src.querySelector('.f-name').value + ' (copy)';
+
+  const file = opts.file || (src && src.querySelector('.f-image').files[0]);
+  if (file) {
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    const input = div.querySelector('.f-image');
+    input.files = dt.files;
+    imgChanged(input);
+    if (opts.file && !div.querySelector('.f-name').value)
+      div.querySelector('.f-name').value = file.name.replace(/\.[^.]+$/, '');
+  }
+  updateTargetSummary(div);
+  updateStats();
+  return div;
+}
+function duplicateAd(id) {
+  addAd({ copyFrom: document.querySelector(`.ad-card[data-id="${id}"]`) });
+}
+function removeAd(id) {
+  const card = document.querySelector(`.ad-card[data-id="${id}"]`);
+  cardResults.delete(card.dataset.id);
+  card.remove();
+  updateStats();
+}
+function imgChanged(input) {
+  const img = input.closest('.ad-card').querySelector('.thumb');
+  if (input.files[0]) img.src = URL.createObjectURL(input.files[0]);
+}
+function updateTargetSummary(card) {
+  const g = { all: 'ทุกเพศ', male: 'ชาย', female: 'หญิง' }[card.querySelector('.f-gender').value];
+  const n = card.querySelectorAll('.chips .chip').length;
+  card.querySelector('.tsum').textContent =
+    `กลุ่มเป้าหมาย: อายุ ${card.querySelector('.f-agemin').value}-${card.querySelector('.f-agemax').value} • ${g} • ${card.querySelector('.f-countries').value}${n ? ` • ${n} ความสนใจ` : ''}`;
+}
+function updateStats() {
+  const cards = document.querySelectorAll('.ad-card');
+  document.getElementById('adCount').textContent = `(${cards.length} ตัว)`;
+  document.getElementById('statCount').textContent = cards.length;
+  document.getElementById('barCount').textContent = cards.length;
+  let total = 0;
+  cards.forEach(c => total += Number(c.querySelector('.f-budget').value) || 0);
+  document.getElementById('statBudget').textContent = '฿' + total.toLocaleString();
+  document.getElementById('barBudget').textContent = total ? `• งบรวม ${total.toLocaleString()} บาท/วัน/บัญชี` : '';
+  const nProf = document.querySelectorAll('#launchProfiles input:checked').length;
+  document.getElementById('statProfiles').textContent = nProf;
+}
+
+// ---------- interests ----------
+let interestTimer;
+function searchInterests(input) {
+  clearTimeout(interestTimer);
+  const box = input.closest('.interest-box').querySelector('.interest-results');
+  const q = input.value.trim();
+  if (!q) { box.style.display = 'none'; return; }
+  interestTimer = setTimeout(async () => {
+    const res = await fetch('/api/interests?q=' + encodeURIComponent(q));
+    const data = await res.json();
+    if (!Array.isArray(data) || !data.length) { box.style.display = 'none'; return; }
+    box.innerHTML = data.map(d =>
+      `<div onclick='pickInterest(this, ${JSON.stringify(d.id)}, ${JSON.stringify(d.name)})'>${esc(d.name)} <small>(~${Number(d.audience_size_lower_bound || 0).toLocaleString()} คน)</small></div>`
+    ).join('');
+    box.style.display = 'block';
+  }, 350);
+}
+function pickInterest(el, id, name) {
+  const ibox = el.closest('.interest-box');
+  addChip(ibox, id, name);
+  ibox.querySelector('.interest-results').style.display = 'none';
+  ibox.querySelector('input').value = '';
+  const card = el.closest('.ad-card');
+  if (card) updateTargetSummary(card);
+}
+function addChip(scope, id, name) {
+  const chips = scope.querySelector('.chips');
+  if ([...chips.children].some(c => c.dataset.iid === String(id))) return;
+  const chip = document.createElement('div');
+  chip.className = 'chip';
+  chip.dataset.iid = id;
+  chip.dataset.iname = name;
+  chip.innerHTML = `${esc(name)} <span onclick="removeChip(this)">×</span>`;
+  chips.appendChild(chip);
+}
+function removeChip(x) {
+  const card = x.closest('.ad-card');
+  x.parentElement.remove();
+  if (card) updateTargetSummary(card);
+}
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.interest-box'))
+    document.querySelectorAll('.interest-results').forEach(b => b.style.display = 'none');
+});
+
+// ---------- ขึ้นแอด ----------
+function getRes(card) {
+  const k = card.dataset.id;
+  if (!cardResults.has(k)) cardResults.set(k, { ok: new Set(), fail: new Map() });
+  return cardResults.get(k);
+}
+function setBadge(card, cls, text) {
+  const b = card.querySelector('.badge');
+  b.className = 'badge ' + cls;
+  b.textContent = text;
+  b.style.display = 'inline-block';
+  card.classList.remove('st-ok', 'st-err');
+  if (cls === 'ok') card.classList.add('st-ok');
+  if (cls === 'err') card.classList.add('st-err');
+}
+// สรุปสถานะการ์ดหลังจบทุกบัญชี
+function aggregateBadge(card, selected) {
+  const r = getRes(card);
+  const okN = selected.filter(p => r.ok.has(p)).length;
+  const failN = selected.filter(p => r.fail.has(p)).length;
+  if (okN === selected.length) {
+    setBadge(card, 'ok', selected.length > 1 ? `✅ สำเร็จทั้ง ${okN} บัญชี` : '✅ สำเร็จ');
+  } else if (failN) {
+    setBadge(card, 'err', `❌ ล้มเหลว ${failN}/${selected.length} บัญชี`);
+  }
+}
+
+async function launch() {
+  const allCards = [...document.querySelectorAll('.ad-card')];
+  if (!allCards.length) return alert('ยังไม่มีแอด — ลากรูปมาวางหรือกด "+ เพิ่มแอดเปล่า" ก่อนครับ');
+  const campaignName = document.getElementById('campaignName').value.trim();
+  if (!campaignName) return alert('กรุณาใส่ชื่อแคมเปญ');
+  const objective = document.getElementById('objective').value;
+  const pixelId = document.getElementById('pixelId').value.trim();
+  if ((objective === 'OUTCOME_SALES' || objective === 'OUTCOME_LEADS') && !pixelId)
+    return alert('วัตถุประสงค์นี้ต้องใส่ Pixel ID');
+
+  const selected = [...document.querySelectorAll('#launchProfiles input:checked')].map(i => i.value);
+  if (!selected.length) return alert('เลือกอย่างน้อย 1 บัญชี FB ที่แถบล่าง ("ขึ้นไปที่:")');
+  for (const pid of selected) {
+    const p = profiles.find(x => x.id === pid);
+    if (!p.hasToken || !p.adAccountId || !p.pageId)
+      return alert(`บัญชี "${p.label}" ยังตั้งค่าไม่ครบ (token / บัญชีโฆษณา / เพจ) — ไปที่หน้า "บัญชี FB" ก่อนครับ`);
+  }
+
+  // ตรวจข้อมูลการ์ดทุกใบก่อนเริ่ม
+  for (const c of allCards) {
+    const num = allCards.indexOf(c) + 1;
+    const name = c.querySelector('.f-name').value.trim() || `Ad-${num}`;
+    if (!c.querySelector('.f-image').files[0]) return alert(`แอด #${num} (${name}): ยังไม่มีรูป — คลิกที่กรอบรูปเพื่อเลือก`);
+    if (!c.querySelector('.f-message').value.trim()) return alert(`แอด #${num} (${name}): ยังไม่ได้ใส่ข้อความหลัก`);
+    if (!/^https?:\/\//.test(c.querySelector('.f-link').value.trim())) return alert(`แอด #${num} (${name}): ลิงก์ต้องขึ้นต้นด้วย http:// หรือ https://`);
+  }
+
+  // แผนงาน: แต่ละบัญชีขึ้นเฉพาะการ์ดที่ยังไม่สำเร็จในบัญชีนั้น
+  const plan = selected
+    .map(pid => ({ pid, cards: allCards.filter(c => !getRes(c).ok.has(pid)) }))
+    .filter(x => x.cards.length);
+  if (!plan.length) return alert('แอดทุกตัวขึ้นครบทุกบัญชีที่เลือกแล้วครับ 🎉');
+
+  const totalUnits = plan.reduce((s, x) => s + x.cards.length, 0);
+  let doneUnits = 0, okCount = 0, failCount = 0;
+  const doneLinks = [];
+
+  const btn = document.getElementById('launchBtn');
+  btn.disabled = true;
+  btn.textContent = 'กำลังขึ้นแอด...';
+  document.getElementById('doneBanner').style.display = 'none';
+  const pw = document.getElementById('progressWrap');
+  pw.style.display = 'block';
+  const setProgress = (msg) => {
+    document.getElementById('progressFill').style.width = (totalUnits ? Math.round(doneUnits / totalUnits * 100) : 0) + '%';
+    document.getElementById('progressText').textContent = msg || `เสร็จแล้ว ${doneUnits}/${totalUnits} รายการ`;
+  };
+  allCards.forEach(c => { c.querySelector('.ad-err-msg').innerHTML = ''; c.querySelector('.ad-err-msg').style.display = 'none'; });
+  setProgress('กำลังเริ่ม...');
+
+  try {
+    // ขึ้นทีละบัญชี (ภายในบัญชีขึ้นขนาน 4 ตัว) — token คนละตัว แยกรอบกันชัดเจน
+    for (const { pid, cards } of plan) {
+      const prof = profiles.find(x => x.id === pid);
+      cards.forEach(c => setBadge(c, 'wait', selected.length > 1 ? `รอคิว • ${prof.label}` : 'รอคิว'));
+
+      const form = new FormData();
+      const ads = [];
+      cards.forEach((c, i) => {
+        const num = allCards.indexOf(c) + 1;
+        const field = `img_${i}`;
+        form.append(field, c.querySelector('.f-image').files[0]);
+        ads.push({
+          name: c.querySelector('.f-name').value.trim() || `Ad-${num}`,
+          message: c.querySelector('.f-message').value.trim(),
+          link: c.querySelector('.f-link').value.trim(),
+          headline: c.querySelector('.f-headline').value.trim(),
+          dailyBudget: Number(c.querySelector('.f-budget').value) || 300,
+          ageMin: Number(c.querySelector('.f-agemin').value) || 18,
+          ageMax: Number(c.querySelector('.f-agemax').value) || 65,
+          gender: c.querySelector('.f-gender').value,
+          countries: c.querySelector('.f-countries').value.split(',').map(s => s.trim().toUpperCase()).filter(Boolean),
+          interests: [...c.querySelectorAll('.chips .chip')].map(ch => ({ id: ch.dataset.iid, name: ch.dataset.iname })),
+          imageField: field,
+        });
+      });
+      const reuse = lastCampaignByProfile[pid];
+      form.append('data', JSON.stringify({
+        profileId: pid,
+        campaign: { name: campaignName, objective },
+        campaignId: (reuse && reuse.name === campaignName) ? reuse.id : undefined,
+        cta: document.getElementById('cta').value,
+        pixelId,
+        active: document.getElementById('activeNow').checked,
+        ads,
+      }));
+
+      const res = await fetch('/api/launch', { method: 'POST', body: form });
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const ev = JSON.parse(line);
+          if (ev.type === 'status') setBadge(cards[ev.index], 'run', `⏳ ${prof.label}`);
+          if (ev.type === 'result') {
+            const card = cards[ev.index];
+            const r = getRes(card);
+            doneUnits++;
+            if (ev.ok) {
+              okCount++;
+              r.ok.add(pid);
+              r.fail.delete(pid);
+              setBadge(card, 'ok', `✅ ${prof.label}`);
+            } else {
+              failCount++;
+              r.fail.set(pid, ev.error);
+              setBadge(card, 'err', `❌ ${prof.label}`);
+              const em = card.querySelector('.ad-err-msg');
+              em.innerHTML += `<div>⚠ ${esc(prof.label)}: ${esc(ev.error)}</div>`;
+              em.style.display = 'block';
+            }
+            setProgress(`${prof.label} • เสร็จ ${doneUnits}/${totalUnits} รายการ`);
+          }
+          if (ev.type === 'campaign') lastCampaignByProfile[pid] = { id: ev.id, name: campaignName };
+          if (ev.type === 'fatal') {
+            cards.forEach(c => {
+              const r = getRes(c);
+              if (!r.ok.has(pid)) {
+                doneUnits++; failCount++;
+                r.fail.set(pid, ev.error);
+              }
+            });
+            const em = cards[0].querySelector('.ad-err-msg');
+            em.innerHTML += `<div>⚠ ${esc(prof.label)}: ${esc(ev.error)}</div>`;
+            em.style.display = 'block';
+            setProgress();
+          }
+          if (ev.type === 'done') {
+            doneLinks.push({
+              label: prof.label,
+              url: `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${ev.account}&selected_campaign_ids=${ev.campaignId}`,
+            });
+          }
+        }
+      }
+    }
+  } catch (e) {
+    alert('ผิดพลาด: ' + e.message);
+  }
+
+  allCards.forEach(c => aggregateBadge(c, selected));
+
+  const links = doneLinks.map(d => `<a href="${d.url}" target="_blank">${esc(d.label)} ↗</a>`).join(' • ');
+  const banner = document.getElementById('doneBanner');
+  banner.style.display = 'block';
+  banner.innerHTML = failCount
+    ? `⚠ สำเร็จ ${okCount} • ล้มเหลว ${failCount} รายการ — แก้ตามข้อความสีแดงแล้วกดขึ้นอีกครั้ง (ที่สำเร็จแล้วไม่ขึ้นซ้ำ) &nbsp;${links}`
+    : `🎉 สำเร็จทั้งหมด ${okCount} รายการ ใน ${plan.length} บัญชี &nbsp;${links}`;
+  document.getElementById('statResult').innerHTML = failCount
+    ? `${okCount} <span style="font-size:14px;color:var(--muted)">สำเร็จ</span> / ${failCount} <span style="font-size:14px;color:var(--muted)">ล้มเหลว</span>`
+    : `${okCount} <span style="font-size:14px;color:var(--muted)">สำเร็จ</span>`;
+  document.getElementById('statResultSub').innerHTML = links || 'ยังไม่มีการขึ้นแอดในเซสชันนี้';
+
+  pw.style.display = 'none';
+  btn.disabled = false;
+  btn.textContent = '🚀 ขึ้นแอดทั้งหมด';
+}
+</script>
+</body>
+</html>
