@@ -254,9 +254,26 @@ app.get('/api/accounts', async (req, res) => {
   if (!prof || !prof.accessToken) return res.status(400).json({ error: 'ยังไม่ได้ใส่ Access Token' });
   try {
     const me = await fb('me', { fields: 'name' }, 'GET', prof.accessToken);
-    const adAccounts = await fb('me/adaccounts', { fields: 'name,account_id,currency,account_status,business{id,name}', limit: 200 }, 'GET', prof.accessToken);
+    // ?full=1 = ดึง Pixel + วิธีจ่ายเงินมาด้วยในครั้งเดียว (สำหรับหน้าขึ้นแอด/ต้นแบบ)
+    const full = req.query.full === '1';
+    const acctFields = full
+      ? 'name,account_id,currency,account_status,business{id,name},funding_source_details,adspixels.limit(15){id,name,last_fired_time}'
+      : 'name,account_id,currency,account_status,business{id,name}';
+    const adAccounts = await fbAll('me/adaccounts', { fields: acctFields, limit: 100 }, prof.accessToken);
     const pages = await fb('me/accounts', { fields: 'name,id', limit: 200 }, 'GET', prof.accessToken);
-    res.json({ name: me.name, adAccounts: adAccounts.data || [], pages: pages.data || [] });
+    const accounts = adAccounts.map((a) => {
+      const out = {
+        name: a.name, account_id: a.account_id, currency: a.currency,
+        account_status: a.account_status, business: a.business || null,
+      };
+      if (full) {
+        const fsd = a.funding_source_details || {};
+        out.hasPayment = !!(fsd.id || fsd.display_string);
+        out.pixels = (a.adspixels && a.adspixels.data) ? a.adspixels.data : [];
+      }
+      return out;
+    });
+    res.json({ name: me.name, adAccounts: accounts, pages: pages.data || [] });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
@@ -461,16 +478,19 @@ app.post('/api/launch', upload.any(), async (req, res) => {
 
   const prof = getProfile(cfg, data.profileId);
   if (!prof) { send({ type: 'fatal', error: 'ไม่พบบัญชีที่เลือก (อาจถูกลบไปแล้ว) — รีเฟรชหน้าแล้วลองใหม่' }); return res.end(); }
-  if (!prof.accessToken || !prof.adAccountId || !prof.pageId) {
+  // บัญชีโฆษณา: ใช้ที่ระบุมา (ต้นแบบ = ติ๊กหลายบัญชี) หรือ fallback ที่ตั้งไว้ใน profile
+  const acctId = String(data.accountId || prof.adAccountId || '').replace(/[^0-9]/g, '');
+  const pageId = data.pageId || prof.pageId;
+  if (!prof.accessToken || !acctId || !pageId) {
     send({ type: 'fatal', error: `บัญชี "${prof.label}" ตั้งค่าไม่ครบ (token / บัญชีโฆษณา / เพจ)` });
     return res.end();
   }
   const objInfo = OBJECTIVES[data.campaign.objective];
   if (!objInfo) { send({ type: 'fatal', error: `วัตถุประสงค์ไม่รองรับ: ${data.campaign.objective}` }); return res.end(); }
-  if (objInfo.needsPixel && !data.pixelId) { send({ type: 'fatal', error: 'วัตถุประสงค์นี้ต้องระบุ Pixel ID' }); return res.end(); }
+  if (objInfo.needsPixel && !data.pixelId) { send({ type: 'fatal', error: 'บัญชีนี้ยังไม่มี Pixel (สร้างในเมนูบัญชี FB ก่อน)' }); return res.end(); }
 
   const status = data.active ? 'ACTIVE' : 'PAUSED';
-  const acct = `act_${String(prof.adAccountId).replace(/^act_/, '')}`;
+  const acct = `act_${acctId}`;
   const token = prof.accessToken;
   const files = Object.fromEntries((req.files || []).map((f) => [f.fieldname, f]));
   const imageHashCache = {};
@@ -570,7 +590,7 @@ app.post('/api/launch', upload.any(), async (req, res) => {
         const adset = await fb(`${acct}/adsets`, adsetParams, 'POST', token);
 
         // ครีเอทีฟ: วิดีโอใช้ video_data, รูปใช้ link_data
-        const spec = { page_id: prof.pageId };
+        const spec = { page_id: pageId };
         if (isVideo) {
           spec.video_data = {
             video_id: videoId,

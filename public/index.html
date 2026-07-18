@@ -438,11 +438,6 @@
         </div>
         <div class="row" id="pixelRow" style="display:none">
           <div class="field">
-            <label>Pixel / Dataset ID</label>
-            <input id="pixelId" placeholder="123456789012345">
-            <div class="hint">ใช้ pixel เดียวกันทุกบัญชีที่เลือก</div>
-          </div>
-          <div class="field">
             <label>เหตุการณ์คอนเวอร์ชั่น</label>
             <select id="conversionEvent">
               <option value="SUBSCRIBE">สมัครรับข้อมูล (Subscribe)</option>
@@ -453,6 +448,10 @@
               <option value="INITIATE_CHECKOUT">เริ่มชำระเงิน (Initiate Checkout)</option>
               <option value="CONTACT">ติดต่อ (Contact)</option>
             </select>
+          </div>
+          <div class="field" style="flex:2">
+            <label>Pixel</label>
+            <div style="padding:8px 11px;border:1px dashed var(--line-strong);border-radius:var(--r-md);font-size:12.5px;color:var(--muted);background:#fafbfc">✨ เลือก Pixel ของแต่ละบัญชีให้อัตโนมัติ (ตัวที่ยิงล่าสุด) — ไม่ต้องกรอก</div>
           </div>
         </div>
         <label class="switch-row">
@@ -512,6 +511,17 @@
         </div>
         <input type="file" id="multiFile" accept="image/*,video/*" multiple style="display:none" onchange="filesPicked(this.files); this.value=''">
         <div id="adList" style="margin-top:12px"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head-row">
+          <div class="pc-step"><span class="pc-step-num">4</span> เลือกบัญชีที่จะขึ้น <span class="h-desc" id="launchAcctSummary"></span></div>
+          <div style="margin-left:auto;display:flex;gap:8px">
+            <button class="btn-light btn-sm" onclick="launchSelectReady()">เลือกเฉพาะที่พร้อม</button>
+            <button class="btn-light btn-sm" onclick="loadLaunchAccounts(true)">⟳ โหลดใหม่</button>
+          </div>
+        </div>
+        <div id="launchAccounts"><span class="hint">กำลังโหลด...</span></div>
       </div>
     </section>
 
@@ -631,8 +641,7 @@
 <!-- ========== แถบขึ้นแอด (เฉพาะหน้าขึ้นแอด) ========== -->
 <div id="bottomBar">
   <div class="inner">
-    <div id="barStats"><b id="barCount">0</b> แอด <span class="muted" id="barBudget"></span></div>
-    <div id="launchProfiles"><span class="lp-title">ขึ้นไปที่:</span></div>
+    <div id="barStats"><b id="barCount">0</b> แอด <span class="muted" id="barBudget"></span> <span class="muted" id="barAccts"></span></div>
     <div id="progressWrap">
       <div id="progressText"></div>
       <div id="progressTrack"><div id="progressFill"></div></div>
@@ -648,7 +657,7 @@ let profiles = [];            // [{id, label, adAccountId, pageId, hasToken}]
 let activeProfileId = null;
 const accountCache = {};      // pid -> {name, adAccounts, pages}
 const cardResults = new Map();      // cardId -> {ok:Set<pid>, fail:Map<pid,error>}
-const lastCampaignByProfile = {};   // pid -> {id, name}
+const lastCampaignByAcct = {};   // "pid:acctId" -> {id, name, objective}
 
 function esc(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -669,6 +678,7 @@ function showPage(name) {
   document.getElementById('bottomBar').style.display = name === 'upload' ? 'block' : 'none';
   if (name === 'settings') renderSettings();
   if (name === 'campaigns') buildCampFilters().then(loadCampaigns);
+  if (name === 'upload') loadLaunchAccounts();
 }
 
 // ---------- บัญชี FB (profiles) ----------
@@ -689,16 +699,9 @@ function renderProfileUI() {
   document.getElementById('sideConn').innerHTML = profiles.length
     ? `<span class="dot ${ready ? 'on' : ''}"></span>${ready}/${profiles.length} บัญชีพร้อมใช้`
     : '<span class="dot"></span>ยังไม่มีบัญชี';
-  // chips เลือกบัญชีตอนขึ้นแอด
-  const lp = document.getElementById('launchProfiles');
-  const prevChecked = new Set([...lp.querySelectorAll('input:checked')].map(i => i.value));
-  lp.innerHTML = '<span class="lp-title">ขึ้นไปที่:</span>' + profiles.filter(p => p.hasToken).map(p =>
-    `<label class="lp-chip"><input type="checkbox" value="${p.id}" onchange="updateStats()"
-      ${prevChecked.size ? (prevChecked.has(p.id) ? 'checked' : '') : (p.id === activeProfileId ? 'checked' : '')}> ${esc(p.label)}</label>`
-  ).join('');
-  if (!profiles.some(p => p.hasToken)) lp.innerHTML += '<span class="hint">เพิ่มบัญชีในหน้า "บัญชี FB" ก่อน</span>';
-  // รายชื่อบัญชีโฆษณาหน้าแคมเปญต้อง rebuild เมื่อ profiles เปลี่ยน
+  // รายชื่อบัญชีโฆษณา (หน้าแคมเปญ + หน้าขึ้นแอด) ต้อง rebuild เมื่อ profiles เปลี่ยน
   campFiltersBuilt = false;
+  launchAccountsBuilt = false;
   updateStats();
 }
 async function setActiveProfile(id) {
@@ -931,12 +934,15 @@ setInterval(tickClock, 1000);
     if (env.redirectUri) document.getElementById('redirectUriText').textContent = env.redirectUri;
   } catch {}
   if (!profiles.length) showPage('settings');
+  else loadLaunchAccounts();
 })();
 
 function togglePixel() {
   const obj = document.getElementById('objective').value;
   document.getElementById('pixelRow').style.display =
     (obj === 'OUTCOME_SALES' || obj === 'OUTCOME_LEADS') ? 'flex' : 'none';
+  // วัตถุประสงค์เปลี่ยน → เกณฑ์ความพร้อม (ต้องมี Pixel ไหม) เปลี่ยน → re-render
+  if (launchAccountsBuilt) renderLaunchAccounts();
 }
 
 // ---------- หน้าแคมเปญ ----------
@@ -968,6 +974,98 @@ function setCampDate(v, btn) {
   document.querySelectorAll('.date-pill').forEach(b => b.classList.toggle('active', b === btn));
   loadCampaigns();
 }
+// ---------- คลังบัญชีโฆษณาแบบเต็ม (Pixel + บัตร) ใช้ร่วมทั้งหน้าขึ้นแอดและแคมเปญ ----------
+const fullAccountCache = {}; // pid -> {name, adAccounts:[{...,pixels,hasPayment}], pages}
+async function loadFullAccounts(force) {
+  const out = [];
+  for (const p of profiles.filter(x => x.hasToken)) {
+    if (!fullAccountCache[p.id] || force) {
+      try {
+        const d = await (await fetch(`/api/accounts?full=1&profile=${p.id}&_=${Date.now()}`, { cache: 'no-store' })).json();
+        if (d.error) { out.push({ pid: p.id, label: p.label, error: d.error }); continue; }
+        fullAccountCache[p.id] = d;
+      } catch (e) { out.push({ pid: p.id, label: p.label, error: e.message }); continue; }
+    }
+    const d = fullAccountCache[p.id];
+    for (const a of d.adAccounts) {
+      const pixels = (a.pixels || []).slice().sort((x, y) =>
+        (new Date(y.last_fired_time || 0)) - (new Date(x.last_fired_time || 0)));
+      out.push({
+        pid: p.id, profileLabel: p.label, pageId: p.pageId,
+        acctId: a.account_id, name: a.name, bm: a.business ? a.business.name : 'ไม่อยู่ใน BM',
+        currency: a.currency, status: a.account_status,
+        hasPayment: !!a.hasPayment, pixels, chosenPixel: pixels[0] ? pixels[0].id : null,
+      });
+    }
+  }
+  return out;
+}
+// ประเมินความพร้อมของบัญชีตามต้นแบบปัจจุบัน
+function evalReady(acc) {
+  const obj = document.getElementById('objective').value;
+  const needsPixel = obj === 'OUTCOME_SALES' || obj === 'OUTCOME_LEADS';
+  const miss = [];
+  if (acc.status !== 1) miss.push('บัญชีถูกปิด/มีปัญหา');
+  if (!acc.hasPayment) miss.push('ยังไม่เชื่อมบัตร');
+  if (!acc.pageId) miss.push('ยังไม่เลือกเพจ (ในเมนูบัญชี FB)');
+  if (needsPixel && !acc.chosenPixel) miss.push('ยังไม่มี Pixel');
+  return { ready: miss.length === 0, missing: miss };
+}
+
+// ---------- หน้าขึ้นแอด: ขั้นตอน 4 เลือกบัญชี ----------
+let launchAccountsBuilt = false;
+let launchAccounts = [];
+async function loadLaunchAccounts(force) {
+  const el = document.getElementById('launchAccounts');
+  if (!profiles.some(p => p.hasToken)) { el.innerHTML = '<span class="hint">เพิ่มบัญชีในเมนู "บัญชี FB" ก่อน</span>'; return; }
+  if (launchAccountsBuilt && !force) { renderLaunchAccounts(); return; }
+  el.innerHTML = '<span class="hint"><span class="spin"></span> กำลังโหลดบัญชี + ตรวจ Pixel/บัตร...</span>';
+  launchAccounts = await loadFullAccounts(force);
+  launchAccountsBuilt = true;
+  renderLaunchAccounts();
+}
+function renderLaunchAccounts() {
+  const el = document.getElementById('launchAccounts');
+  const prev = new Set([...el.querySelectorAll('input:checked')].map(i => i.value));
+  const hadAny = el.querySelectorAll('input').length > 0;
+  // จัดกลุ่มตาม profile → BM
+  const byGroup = {};
+  for (const a of launchAccounts) {
+    const g = `${profiles.filter(p => p.hasToken).length > 1 ? a.profileLabel + ' • ' : ''}${a.bm}`;
+    (byGroup[g] = byGroup[g] || []).push(a);
+  }
+  let readyCount = 0;
+  const html = Object.entries(byGroup).map(([g, accs]) => {
+    const rows = accs.map(a => {
+      const v = `${a.pid}:${a.acctId}`;
+      const r = evalReady(a);
+      if (r.ready) readyCount++;
+      const checked = hadAny ? (prev.has(v) ? 'checked' : '') : (r.ready ? 'checked' : '');
+      const badge = r.ready
+        ? '<span class="hi-badge ok">พร้อม</span>'
+        : `<span class="hi-badge bad" title="${esc(r.missing.join(', '))}">${esc(r.missing[0])}</span>`;
+      const px = a.chosenPixel ? `Pixel: ${esc((a.pixels[0] || {}).name || a.chosenPixel)}` : 'ไม่มี Pixel';
+      return `<label class="acct-row ${r.ready ? '' : 'row-off'}">
+        <input type="checkbox" value="${v}" ${checked} ${r.ready ? '' : 'disabled'} onchange="updateStats()">
+        <span class="acct-dot ${a.status === 1 ? 'ok' : 'bad'}"></span>
+        <span class="acct-name">${esc(a.name)} <span style="color:var(--muted);font-size:11px">• ${px}</span></span>
+        ${badge}
+      </label>`;
+    }).join('');
+    return `<details class="camp-bm" open>
+      <summary><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/></svg><span class="bm-name">${esc(g)}</span><span class="bm-count">${accs.length}</span></summary>
+      ${rows}
+    </details>`;
+  }).join('');
+  el.innerHTML = html || '<span class="hint">ไม่พบบัญชีโฆษณา</span>';
+  document.getElementById('launchAcctSummary').textContent = `— พร้อม ${readyCount}/${launchAccounts.length} บัญชี`;
+  updateStats();
+}
+function launchSelectReady() {
+  document.querySelectorAll('#launchAccounts input[type=checkbox]').forEach(i => { i.checked = !i.disabled; });
+  updateStats();
+}
+
 // สร้างรายการติ๊กบัญชีโฆษณา: ทุกบัญชีที่ทุก token เห็น จัดกลุ่มตาม BM (default ติ๊กเฉพาะบัญชีที่ใช้ได้)
 let campFiltersBuilt = false;
 async function buildCampFilters() {
@@ -1329,8 +1427,9 @@ function updateStats() {
   document.getElementById('statBudget').textContent = '฿' + cb.toLocaleString();
   document.getElementById('barBudget').textContent = cb ? `• งบแคมเปญ ${cb.toLocaleString()} บาท/วัน/บัญชี` : '';
   document.getElementById('statBudgetSub').textContent = 'งบแคมเปญ (CBO) ต่อ 1 บัญชี';
-  const nProf = document.querySelectorAll('#launchProfiles input:checked').length;
-  document.getElementById('statProfiles').textContent = nProf;
+  const nAcc = document.querySelectorAll('#launchAccounts input:checked').length;
+  document.getElementById('statProfiles').textContent = nAcc;
+  document.getElementById('barAccts').textContent = nAcc ? `• ขึ้น ${nAcc} บัญชี` : '';
 }
 
 // ---------- interests ----------
@@ -1407,21 +1506,15 @@ function aggregateBadge(card, selected) {
 
 async function launch() {
   const allCards = [...document.querySelectorAll('.ad-card')];
-  if (!allCards.length) return alert('ยังไม่มีแอด — ลากรูปมาวางหรือกด "+ เพิ่มแอดเปล่า" ก่อนครับ');
+  if (!allCards.length) return alert('ยังไม่มีแอด — ลากรูป/วิดีโอมาวางก่อนครับ');
   const campaignName = document.getElementById('campaignName').value.trim();
-  if (!campaignName) return alert('กรุณาใส่ชื่อแคมเปญ');
+  if (!campaignName) return alert('กรุณาใส่ชื่อแคมเปญ (ขั้นตอนที่ 1)');
   const objective = document.getElementById('objective').value;
-  const pixelId = document.getElementById('pixelId').value.trim();
-  if ((objective === 'OUTCOME_SALES' || objective === 'OUTCOME_LEADS') && !pixelId)
-    return alert('วัตถุประสงค์นี้ต้องใส่ Pixel ID');
 
-  const selected = [...document.querySelectorAll('#launchProfiles input:checked')].map(i => i.value);
-  if (!selected.length) return alert('เลือกอย่างน้อย 1 บัญชี FB ที่แถบล่าง ("ขึ้นไปที่:")');
-  for (const pid of selected) {
-    const p = profiles.find(x => x.id === pid);
-    if (!p.hasToken || !p.adAccountId || !p.pageId)
-      return alert(`บัญชี "${p.label}" ยังตั้งค่าไม่ครบ (token / บัญชีโฆษณา / เพจ) — ไปที่หน้า "บัญชี FB" ก่อนครับ`);
-  }
+  // บัญชีที่ติ๊ก (ขั้นตอนที่ 4) = คีย์ "pid:acctId"
+  const selKeys = [...document.querySelectorAll('#launchAccounts input:checked')].map(i => i.value);
+  if (!selKeys.length) return alert('ติ๊กเลือกบัญชีที่จะขึ้นในขั้นตอนที่ 4 ก่อนครับ');
+  const targets = selKeys.map(k => launchAccounts.find(a => `${a.pid}:${a.acctId}` === k)).filter(Boolean);
 
   // ตรวจข้อมูลการ์ดทุกใบก่อนเริ่ม
   for (const c of allCards) {
@@ -1432,12 +1525,13 @@ async function launch() {
     if (!/^https?:\/\//.test(c.querySelector('.f-link').value.trim())) return alert(`แอด #${num} (${name}): ลิงก์ต้องขึ้นต้นด้วย http:// หรือ https://`);
   }
 
-  // แผนงาน: แต่ละบัญชีขึ้นเฉพาะการ์ดที่ยังไม่สำเร็จในบัญชีนั้น
-  const plan = selected
-    .map(pid => ({ pid, cards: allCards.filter(c => !getRes(c).ok.has(pid)) }))
+  // แผนงาน: แต่ละบัญชีขึ้นเฉพาะการ์ดที่ยังไม่สำเร็จในบัญชีนั้น (คีย์ = pid:acctId)
+  const plan = targets
+    .map(t => ({ t, key: `${t.pid}:${t.acctId}`, cards: allCards.filter(c => !getRes(c).ok.has(`${t.pid}:${t.acctId}`)) }))
     .filter(x => x.cards.length);
   if (!plan.length) return alert('แอดทุกตัวขึ้นครบทุกบัญชีที่เลือกแล้วครับ 🎉');
 
+  const selected = plan.map(x => x.key);
   const totalUnits = plan.reduce((s, x) => s + x.cards.length, 0);
   let doneUnits = 0, okCount = 0, failCount = 0;
   const doneLinks = [];
@@ -1456,10 +1550,10 @@ async function launch() {
   setProgress('กำลังเริ่ม...');
 
   try {
-    // ขึ้นทีละบัญชี (ภายในบัญชีขึ้นขนาน 4 ตัว) — token คนละตัว แยกรอบกันชัดเจน
-    for (const { pid, cards } of plan) {
-      const prof = profiles.find(x => x.id === pid);
-      cards.forEach(c => setBadge(c, 'wait', selected.length > 1 ? `รอคิว • ${prof.label}` : 'รอคิว'));
+    // ขึ้นทีละบัญชีโฆษณา (ภายในบัญชีขึ้นขนาน 4 ตัว)
+    for (const { t, key, cards } of plan) {
+      const label = t.name;
+      cards.forEach(c => setBadge(c, 'wait', targets.length > 1 ? `รอคิว • ${label}` : 'รอคิว'));
 
       const form = new FormData();
       const ads = [];
@@ -1481,14 +1575,16 @@ async function launch() {
           imageField: field,
         });
       });
-      const reuse = lastCampaignByProfile[pid];
+      const reuse = lastCampaignByAcct[key];
       form.append('data', JSON.stringify({
-        profileId: pid,
+        profileId: t.pid,
+        accountId: t.acctId,
+        pageId: t.pageId,
         campaign: { name: campaignName, objective },
         campaignId: (reuse && reuse.name === campaignName && reuse.objective === objective) ? reuse.id : undefined,
         campaignBudget: Number(document.getElementById('campaignBudget').value) || 300,
         cta: document.getElementById('cta').value,
-        pixelId,
+        pixelId: t.chosenPixel || '',
         conversionEvent: document.getElementById('conversionEvent').value,
         active: document.getElementById('activeNow').checked,
         ads,
@@ -1507,45 +1603,39 @@ async function launch() {
         for (const line of lines) {
           if (!line.trim()) continue;
           const ev = JSON.parse(line);
-          if (ev.type === 'status') setBadge(cards[ev.index], 'run', `⏳ ${prof.label}`);
+          if (ev.type === 'status') setBadge(cards[ev.index], 'run', `⏳ ${ev.msg ? ev.msg + ' • ' : ''}${label}`);
           if (ev.type === 'result') {
             const card = cards[ev.index];
             const r = getRes(card);
             doneUnits++;
             if (ev.ok) {
               okCount++;
-              r.ok.add(pid);
-              r.fail.delete(pid);
-              setBadge(card, 'ok', `✅ ${prof.label}`);
+              r.ok.add(key);
+              r.fail.delete(key);
+              setBadge(card, 'ok', `✅ ${label}`);
             } else {
               failCount++;
-              r.fail.set(pid, ev.error);
-              setBadge(card, 'err', `❌ ${prof.label}`);
+              r.fail.set(key, ev.error);
+              setBadge(card, 'err', `❌ ${label}`);
               const em = card.querySelector('.ad-err-msg');
-              em.innerHTML += `<div>⚠ ${esc(prof.label)}: ${esc(ev.error)}</div>`;
+              em.innerHTML += `<div>⚠ ${esc(label)}: ${esc(ev.error)}</div>`;
               em.style.display = 'block';
             }
-            setProgress(`${prof.label} • เสร็จ ${doneUnits}/${totalUnits} รายการ`);
+            setProgress(`${label} • เสร็จ ${doneUnits}/${totalUnits} รายการ`);
           }
-          if (ev.type === 'campaign') lastCampaignByProfile[pid] = { id: ev.id, name: campaignName, objective };
+          if (ev.type === 'campaign') lastCampaignByAcct[key] = { id: ev.id, name: campaignName, objective };
           if (ev.type === 'fatal') {
             cards.forEach(c => {
               const r = getRes(c);
-              if (!r.ok.has(pid)) {
-                doneUnits++; failCount++;
-                r.fail.set(pid, ev.error);
-              }
+              if (!r.ok.has(key)) { doneUnits++; failCount++; r.fail.set(key, ev.error); }
             });
             const em = cards[0].querySelector('.ad-err-msg');
-            em.innerHTML += `<div>⚠ ${esc(prof.label)}: ${esc(ev.error)}</div>`;
+            em.innerHTML += `<div>⚠ ${esc(label)}: ${esc(ev.error)}</div>`;
             em.style.display = 'block';
             setProgress();
           }
           if (ev.type === 'done') {
-            doneLinks.push({
-              label: prof.label,
-              url: `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${ev.account}&selected_campaign_ids=${ev.campaignId}`,
-            });
+            doneLinks.push({ label, url: `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${ev.account}&selected_campaign_ids=${ev.campaignId}` });
           }
         }
       }
