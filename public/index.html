@@ -154,6 +154,9 @@
   #uploadModal .camp-side { top: 0; max-height: calc(88vh - 160px); border: 1px solid var(--line); }
   .acct-detail { display: flex; flex-direction: column; gap: 5px; padding: 0 8px 9px 30px; }
   .acct-detail select, .acct-detail input { font-size: 12px; padding: 5px 8px; }
+  .camp-link { color: var(--blue); cursor: pointer; }
+  .camp-link:hover { text-decoration: underline; }
+  .ad-thumb { width: 34px; height: 34px; border-radius: 6px; object-fit: cover; background: #eceef2; vertical-align: middle; }
   .camp-main { flex: 1; min-width: 0; }
   .cs-head { display: flex; justify-content: space-between; align-items: center; font-size: 13.5px; font-weight: 700; margin-bottom: 10px; }
   .cs-actions { font-size: 12px; font-weight: 600; color: var(--muted); }
@@ -731,6 +734,21 @@
   </main>
 </div>
 
+<!-- ========== Modal รายละเอียดแคมเปญ (ชุดโฆษณา + โฆษณา) ========== -->
+<div id="detailModal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeDetail()">
+  <div class="modal-box" style="max-width:960px">
+    <div class="modal-head">
+      <h3 id="detailTitle">รายละเอียดแคมเปญ</h3>
+      <div style="display:flex;gap:8px;align-items:center">
+        <a id="detailAmLink" href="#" target="_blank" class="btn-light btn-sm" style="text-decoration:none">เปิดใน Ads Manager ↗</a>
+        <button class="btn-light btn-sm" onclick="renderCampaignDetail()">⟳ รีเฟรช</button>
+        <button class="icon-btn btn-light" onclick="closeDetail()"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      </div>
+    </div>
+    <div id="detailBody" class="modal-body"></div>
+  </div>
+</div>
+
 <!-- ========== Modal ตรวจสภาพบัญชี ========== -->
 <div id="healthModal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeHealth()">
   <div class="modal-box">
@@ -1216,10 +1234,10 @@ function renderDashboard(results) {
 
   // แคมเปญใช้จ่ายสูงสุด 10 อันดับ
   const allCamps = [];
-  ok.forEach(a => a.campaigns.forEach(c => allCamps.push({ ...c, acctName: a.name, currency: a.currency })));
+  ok.forEach(a => a.campaigns.forEach(c => allCamps.push({ ...c, acctName: a.name, currency: a.currency, pid: a.pid, acct: a.acct })));
   const top = allCamps.sort((a, b) => b.spend - a.spend).slice(0, 10);
   document.getElementById('dashTopRows').innerHTML = top.length ? top.map(c => `<tr>
-      <td style="font-weight:600;min-width:150px">${esc(c.name)}<div class="res-label">${OBJ_TH[c.objective] || c.objective}</div></td>
+      <td style="font-weight:600;min-width:150px"><span class="camp-link" title="ดูชุดโฆษณา/โฆษณาข้างใน" onclick="openCampaignDetail('${c.pid}','${c.id}','${c.acct}','${c.currency}','${esc(c.name).replace(/'/g, '&#39;')}')">${esc(c.name)}</span><div class="res-label">${OBJ_TH[c.objective] || c.objective}</div></td>
       <td><span class="chip" style="white-space:nowrap;max-width:170px;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:middle" title="${esc(c.acctName)}">${esc(c.acctName)}</span></td>
       <td>${statusPill(c)}</td>
       <td>${c.results != null ? num(c.results) + (c.resultLabel ? `<div class="res-label">${c.resultLabel}</div>` : '') : '<span style="color:var(--muted)">—</span>'}</td>
@@ -1493,7 +1511,7 @@ async function loadCampaigns() {
     return `<tr>
       <td>${toggle}</td>
       <td><span class="chip" style="white-space:nowrap;max-width:170px;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:middle" title="${esc(label)}">${esc(label)}</span></td>
-      <td style="font-weight:600;min-width:150px">${esc(c.name)}<div class="res-label">${OBJ_TH[c.objective] || c.objective}</div></td>
+      <td style="font-weight:600;min-width:150px"><span class="camp-link" title="ดูชุดโฆษณา/โฆษณาข้างใน" onclick="openCampaignDetail('${c.pid}','${c.id}','${c.account}','${c.currency}','${esc(c.name).replace(/'/g, '&#39;')}')">${esc(c.name)}</span><div class="res-label">${OBJ_TH[c.objective] || c.objective}</div></td>
       <td>${statusPill(c)}</td>
       <td>${results}</td>
       <td class="num-cell">${cpr}</td>
@@ -1509,6 +1527,79 @@ async function loadCampaigns() {
     </tr>`;
   }).join('');
 }
+// ---------- modal รายละเอียดแคมเปญ (ชุดโฆษณา + โฆษณา) ----------
+let detailCtx = null;
+function closeDetail() { document.getElementById('detailModal').style.display = 'none'; }
+async function openCampaignDetail(pid, id, acct, cur, name) {
+  detailCtx = { pid, id, acct, cur };
+  document.getElementById('detailModal').style.display = 'flex';
+  document.getElementById('detailTitle').textContent = name || 'รายละเอียดแคมเปญ';
+  document.getElementById('detailAmLink').href =
+    `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${acct}&selected_campaign_ids=${id}`;
+  await renderCampaignDetail();
+}
+function detailStatusPill(x) {
+  if (x.effective_status === 'ACTIVE') return '<span class="st-pill on">● เปิดอยู่</span>';
+  if (['PAUSED', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED'].includes(x.effective_status)) return '<span class="st-pill off">⏸ หยุด</span>';
+  if (x.effective_status === 'DISAPPROVED') return '<span class="st-pill rejected">✕ โดนปฏิเสธ</span>';
+  return `<span class="st-pill issue">⚠ ${EFF_TH[x.effective_status] || x.effective_status}</span>`;
+}
+async function renderCampaignDetail() {
+  const { pid, id, cur } = detailCtx;
+  const body = document.getElementById('detailBody');
+  body.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted)"><span class="spin"></span> กำลังโหลดชุดโฆษณา + โฆษณา...</div>';
+  const date = document.getElementById('campDate').value;
+  const d = await (await fetch(`/api/campaign-detail?profile=${pid}&id=${id}&date=${date}&_=${Date.now()}`, { cache: 'no-store' })).json();
+  if (d.error) { body.innerHTML = `<div style="color:var(--red)">โหลดไม่สำเร็จ: ${esc(d.error)}</div>`; return; }
+  const num = (n) => Number(n || 0).toLocaleString();
+  const money = (n) => (cur === 'THB' || !cur ? '฿' : cur + ' ') + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const resTxt = (r) => r != null ? `${num(r)}${d.resultLabel ? `<div class="res-label">${d.resultLabel}</div>` : ''}` : '<span style="color:var(--muted)">—</span>';
+  const toggleOf = (x) => (x.status === 'ACTIVE' || x.status === 'PAUSED')
+    ? `<label class="switch"><input type="checkbox" ${x.status === 'ACTIVE' ? 'checked' : ''} onchange="toggleDetailObj('${x.id}','${x.status}')"><span class="sl"></span></label>` : '';
+  const asRows = d.adsets.map(s => `<tr>
+      <td>${toggleOf(s)}</td>
+      <td style="font-weight:600">${esc(s.name)}<div class="res-label">${s.nAds} โฆษณา</div></td>
+      <td>${detailStatusPill(s)}</td>
+      <td class="num-cell">${s.dailyBudget ? money(s.dailyBudget) : '<span style="color:var(--muted)">—</span>'}</td>
+      <td>${resTxt(s.results)}</td>
+      <td class="num-cell">${money(s.spend)}</td>
+      <td class="num-cell">${num(s.impressions)}</td>
+    </tr>`).join('');
+  const adsetName = (aid) => (d.adsets.find(s => s.id === aid) || {}).name || '';
+  const adRows = d.ads.map(a => `<tr>
+      <td>${toggleOf(a)}</td>
+      <td>${a.thumb ? `<img class="ad-thumb" src="${esc(a.thumb)}" alt="">` : ''}</td>
+      <td style="font-weight:600">${esc(a.name)}<div class="res-label" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(adsetName(a.adsetId))}</div></td>
+      <td>${detailStatusPill(a)}</td>
+      <td>${resTxt(a.results)}</td>
+      <td class="num-cell">${money(a.spend)}</td>
+      <td class="num-cell">${num(a.impressions)}</td>
+    </tr>`).join('');
+  const dateTxt = { today: 'วันนี้', last_7d: '7 วันล่าสุด', last_30d: '30 วันล่าสุด', last_90d: '90 วันล่าสุด', maximum: 'ทั้งหมด' }[d.datePreset] || d.datePreset;
+  body.innerHTML = `
+    <div class="hint" style="margin-bottom:10px">สถิติช่วง: ${dateTxt} (ตามที่เลือกในหน้าแคมเปญ) • ${OBJ_TH[d.objective] || d.objective}</div>
+    <h2 style="margin-bottom:10px">ชุดโฆษณา <span class="h-desc">— ${d.adsets.length} ชุด</span></h2>
+    <div class="tbl-wrap" style="margin-bottom:18px"><table>
+      <thead><tr><th>เปิด/ปิด</th><th>ชุดโฆษณา</th><th>สถานะ</th><th class="num-cell">งบ/วัน</th><th>ผลลัพธ์</th><th class="num-cell">ใช้จ่าย</th><th class="num-cell">อิมเพรสชัน</th></tr></thead>
+      <tbody>${asRows || '<tr><td colspan="7" class="tbl-msg">ไม่มีชุดโฆษณาในแคมเปญนี้</td></tr>'}</tbody>
+    </table></div>
+    <h2 style="margin-bottom:10px">โฆษณา <span class="h-desc">— ${d.ads.length} ตัว</span></h2>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>เปิด/ปิด</th><th></th><th>โฆษณา</th><th>สถานะ</th><th>ผลลัพธ์</th><th class="num-cell">ใช้จ่าย</th><th class="num-cell">อิมเพรสชัน</th></tr></thead>
+      <tbody>${adRows || '<tr><td colspan="7" class="tbl-msg">ไม่มีโฆษณาในแคมเปญนี้</td></tr>'}</tbody>
+    </table></div>`;
+}
+async function toggleDetailObj(id, cur) {
+  const to = cur === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
+  if (to === 'ACTIVE' && !confirm('เปิดตัวนี้เลยไหม? งบจะเริ่มเดินทันที')) return renderCampaignDetail();
+  const r = await (await fetch('/api/campaign-status', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, status: to, profile: detailCtx.pid }),
+  })).json();
+  if (r.error) alert('เปลี่ยนสถานะไม่สำเร็จ: ' + r.error);
+  renderCampaignDetail();
+}
+
 async function deleteCampaign(id, name, pid) {
   if (!confirm(`ลบแคมเปญ "${name}" ?\n\n⚠ ลบแล้วกู้คืนไม่ได้ แอดทั้งหมดในแคมเปญจะถูกลบด้วย\n(สถิติย้อนหลังยังดูได้ใน Ads Manager)`)) return;
   const res = await fetch('/api/campaign-delete', {

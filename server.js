@@ -406,7 +406,61 @@ app.get('/api/daily', async (req, res) => {
   }
 });
 
-// เปิด/ปิดแคมเปญ
+// รายละเอียดแคมเปญ: ชุดโฆษณา + โฆษณา พร้อมสถิติ (ดูแบบ Ads Manager)
+app.get('/api/campaign-detail', async (req, res) => {
+  const cfg = loadConfig();
+  const prof = getProfile(cfg, req.query.profile);
+  if (!prof || !prof.accessToken) return res.status(400).json({ error: 'ยังไม่ได้เชื่อมต่อบัญชี' });
+  const id = String(req.query.id || '');
+  if (!/^\d+$/.test(id)) return res.status(400).json({ error: 'campaign id ไม่ถูกต้อง' });
+  const token = prof.accessToken;
+  const datePreset = ['today', 'last_7d', 'last_30d', 'last_90d', 'maximum'].includes(req.query.date) ? req.query.date : 'maximum';
+  try {
+    const camp = await fb(id, { fields: 'name,objective' }, 'GET', token);
+    const adsets = await fbAll(`${id}/adsets`, { fields: 'name,status,effective_status,daily_budget', limit: 100 }, token);
+    const ads = await fbAll(`${id}/ads`, { fields: 'name,status,effective_status,adset_id,creative{thumbnail_url}', limit: 200 }, token);
+    let ins = [];
+    try {
+      ins = await fbAll(`${id}/insights`, {
+        level: 'ad', fields: 'ad_id,spend,impressions,reach,actions',
+        date_preset: datePreset, limit: 500,
+      }, token);
+    } catch { /* ไม่มีข้อมูล */ }
+    const ra = RESULT_ACTION[camp.objective];
+    const insByAd = Object.fromEntries(ins.map((r) => [r.ad_id, r]));
+    const resultOf = (r) => {
+      if (!ra || !r || !Array.isArray(r.actions)) return null;
+      const hit = r.actions.find((a) => a.action_type === ra.type);
+      return hit ? Number(hit.value) : null;
+    };
+    const adRows = ads.map((a) => {
+      const r = insByAd[a.id] || {};
+      return {
+        id: a.id, name: a.name, adsetId: a.adset_id,
+        status: a.status, effective_status: a.effective_status,
+        thumb: (a.creative && a.creative.thumbnail_url) || null,
+        spend: Number(r.spend) || 0, impressions: Number(r.impressions) || 0,
+        results: resultOf(r),
+      };
+    });
+    const asRows = adsets.map((s) => {
+      const own = adRows.filter((a) => a.adsetId === s.id);
+      return {
+        id: s.id, name: s.name, status: s.status, effective_status: s.effective_status,
+        dailyBudget: s.daily_budget ? Number(s.daily_budget) / 100 : null,
+        spend: own.reduce((x, a) => x + a.spend, 0),
+        impressions: own.reduce((x, a) => x + a.impressions, 0),
+        results: own.some((a) => a.results != null) ? own.reduce((x, a) => x + (a.results || 0), 0) : null,
+        nAds: own.length,
+      };
+    });
+    res.json({ name: camp.name, objective: camp.objective, resultLabel: ra ? ra.label : null, adsets: asRows, ads: adRows, datePreset });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// เปิด/ปิดแคมเปญ (ใช้กับชุดโฆษณาและโฆษณาได้ด้วย — FB ใช้วิธีเดียวกัน)
 app.post('/api/campaign-status', async (req, res) => {
   const cfg = loadConfig();
   const prof = getProfile(cfg, req.body.profile);
