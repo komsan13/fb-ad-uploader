@@ -143,6 +143,7 @@
   /* panel เลือกบัญชีโฆษณาฝั่งซ้ายของหน้าแคมเปญ */
   .camp-layout { display: flex; gap: 14px; align-items: flex-start; }
   .camp-side { width: 264px; flex-shrink: 0; position: sticky; top: 14px; max-height: calc(100vh - 110px); overflow-y: auto; padding: 16px; }
+  #page-upload .camp-side { max-height: calc(100vh - 180px); } /* เผื่อ #bottomBar fixed ด้านล่าง */
   .camp-main { flex: 1; min-width: 0; }
   .cs-head { display: flex; justify-content: space-between; align-items: center; font-size: 13.5px; font-weight: 700; margin-bottom: 10px; }
   .cs-actions { font-size: 12px; font-weight: 600; color: var(--muted); }
@@ -163,8 +164,6 @@
   .acct-dot.bad { background: var(--red); }
   .acct-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .acct-row.row-off { opacity: .55; }
-  /* ขั้นตอน 4 หน้าขึ้นแอด: บีบ list ให้แคบชิดซ้ายเหมือน panel หน้าแคมเปญ */
-  #launchAccounts { max-width: 560px; }
   @media (max-width: 1000px) {
     .camp-layout { flex-direction: column; }
     .camp-side { position: static; width: 100%; max-height: 280px; }
@@ -384,6 +383,16 @@
 
     <!-- ========== PAGE: ขึ้นแอด ========== -->
     <section class="page active" id="page-upload">
+      <div class="camp-layout">
+      <aside class="camp-side card">
+        <div class="cs-head">
+          <span>บัญชีที่จะขึ้น</span>
+          <span class="cs-actions"><a onclick="launchSelectReady()">ที่พร้อม</a> · <a onclick="loadLaunchAccounts(true)">โหลดใหม่</a></span>
+        </div>
+        <div class="hint" id="launchAcctSummary" style="margin-bottom:8px"></div>
+        <div id="launchAccounts"><span class="hint">กำลังโหลด...</span></div>
+      </aside>
+      <div class="camp-main">
       <div class="kpi-row">
         <div class="tile">
           <div class="t-label"><span class="t-ic g"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 8.5 5-8.5 5L3.5 8 12 3z"/><path d="m3.5 13 8.5 5 8.5-5"/></svg></span>แอดในคิว</div>
@@ -398,7 +407,7 @@
         <div class="tile">
           <div class="t-label"><span class="t-ic b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>บัญชีที่จะขึ้น</div>
           <div class="t-value" id="statProfiles">0</div>
-          <div class="t-sub">เลือกได้ที่แถบด้านล่าง</div>
+          <div class="t-sub">เลือกได้ที่แผงด้านซ้าย</div>
         </div>
         <div class="tile">
           <div class="t-label"><span class="t-ic g"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg></span>ผลการขึ้นรอบล่าสุด</div>
@@ -515,15 +524,7 @@
         <div id="adList" style="margin-top:12px"></div>
       </div>
 
-      <div class="card">
-        <div class="card-head-row">
-          <div class="pc-step"><span class="pc-step-num">4</span> เลือกบัญชีที่จะขึ้น <span class="h-desc" id="launchAcctSummary"></span></div>
-          <div style="margin-left:auto;display:flex;gap:8px">
-            <button class="btn-light btn-sm" onclick="launchSelectReady()">เลือกเฉพาะที่พร้อม</button>
-            <button class="btn-light btn-sm" onclick="loadLaunchAccounts(true)">⟳ โหลดใหม่</button>
-          </div>
-        </div>
-        <div id="launchAccounts"><span class="hint">กำลังโหลด...</span></div>
+      </div>
       </div>
     </section>
 
@@ -1043,15 +1044,12 @@ function renderLaunchAccounts() {
       const r = evalReady(a);
       if (r.ready) readyCount++;
       const checked = hadAny ? (prev.has(v) ? 'checked' : '') : (r.ready ? 'checked' : '');
-      const badge = r.ready
-        ? '<span class="hi-badge ok">พร้อม</span>'
-        : `<span class="hi-badge bad" title="${esc(r.missing.join(', '))}">${esc(r.missing[0])}</span>`;
-      const px = a.chosenPixel ? `Pixel: ${esc((a.pixels[0] || {}).name || a.chosenPixel)}` : 'ไม่มี Pixel';
-      return `<label class="acct-row ${r.ready ? '' : 'row-off'}">
+      const px = a.chosenPixel ? `Pixel: ${(a.pixels[0] || {}).name || a.chosenPixel}` : 'ไม่มี Pixel';
+      const tip = `${a.name} • ${px}${r.ready ? '' : ' — ' + r.missing.join(', ')}`;
+      return `<label class="acct-row ${r.ready ? '' : 'row-off'}" title="${esc(tip)}">
         <input type="checkbox" value="${v}" ${checked} ${r.ready ? '' : 'disabled'} onchange="updateStats()">
-        <span class="acct-dot ${a.status === 1 ? 'ok' : 'bad'}"></span>
-        <span class="acct-name">${esc(a.name)} <span style="color:var(--muted);font-size:11px">• ${px}</span></span>
-        ${badge}
+        <span class="acct-dot ${r.ready ? 'ok' : 'bad'}"></span>
+        <span class="acct-name">${esc(a.name)}</span>
       </label>`;
     }).join('');
     return `<details class="camp-bm" open>
@@ -1060,7 +1058,7 @@ function renderLaunchAccounts() {
     </details>`;
   }).join('');
   el.innerHTML = html || '<span class="hint">ไม่พบบัญชีโฆษณา</span>';
-  document.getElementById('launchAcctSummary').textContent = `— พร้อม ${readyCount}/${launchAccounts.length} บัญชี`;
+  document.getElementById('launchAcctSummary').textContent = `พร้อม ${readyCount}/${launchAccounts.length} บัญชี`;
   updateStats();
 }
 function launchSelectReady() {
@@ -1515,7 +1513,7 @@ async function launch() {
 
   // บัญชีที่ติ๊ก (ขั้นตอนที่ 4) = คีย์ "pid:acctId"
   const selKeys = [...document.querySelectorAll('#launchAccounts input:checked')].map(i => i.value);
-  if (!selKeys.length) return alert('ติ๊กเลือกบัญชีที่จะขึ้นในขั้นตอนที่ 4 ก่อนครับ');
+  if (!selKeys.length) return alert('ติ๊กเลือกบัญชีที่จะขึ้นในแผงด้านซ้ายก่อนครับ');
   const targets = selKeys.map(k => launchAccounts.find(a => `${a.pid}:${a.acctId}` === k)).filter(Boolean);
 
   // ตรวจข้อมูลการ์ดทุกใบก่อนเริ่ม
