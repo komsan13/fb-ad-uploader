@@ -153,7 +153,7 @@
   @media (max-width: 760px) { .fgrid { grid-template-columns: 1fr 1fr; } .fgrid .fg-2 { grid-column: 1 / -1; } }
   #uploadModal .camp-side { top: 0; max-height: calc(88vh - 160px); border: 1px solid var(--line); }
   .acct-detail { display: flex; flex-direction: column; gap: 5px; padding: 0 8px 9px 30px; }
-  .acct-detail select { font-size: 12px; padding: 5px 8px; }
+  .acct-detail select, .acct-detail input { font-size: 12px; padding: 5px 8px; }
   .camp-main { flex: 1; min-width: 0; }
   .cs-head { display: flex; justify-content: space-between; align-items: center; font-size: 13.5px; font-weight: 700; margin-bottom: 10px; }
   .cs-actions { font-size: 12px; font-weight: 600; color: var(--muted); }
@@ -458,13 +458,8 @@
               <option value="CONTACT_US">ติดต่อเรา</option>
             </select>
           </div>
-          <div class="field fg-full">
-            <label>ผู้ลงโฆษณา <span class="h-desc">— ระบุหรือไม่ก็ได้</span></label>
-            <input id="beneficiary" list="beneficiaryList" placeholder="เช่น CROSS CURRENT PRODUCTIONS">
-            <datalist id="beneficiaryList"></datalist>
-            <div class="hint">ชื่อธุรกิจที่ยืนยันตัวตนกับ FB แล้ว (ตามที่เห็นใน Ads Manager) — เว้นว่างได้</div>
-          </div>
         </div>
+        <datalist id="beneficiaryList"></datalist>
         <label class="switch-row">
           <span class="switch"><input type="checkbox" id="activeNow"><span class="sl"></span></span>
           <span><b>เปิดแอดทันที (ACTIVE)</b> — ปิดไว้ = ขึ้นเป็น PAUSED ให้เข้าไปตรวจใน Ads Manager ก่อนเปิดเอง (แนะนำ)</span>
@@ -1334,6 +1329,9 @@ function renderLaunchAccounts() {
             ? a.pages.map(g => `<option value="${g.id}" ${g.id === a.chosenPage ? 'selected' : ''}>📄 ${esc(g.name)}</option>`).join('')
             : '<option value="">— ไม่พบเพจ —</option>'}
         </select>
+        <input list="beneficiaryList" value="${esc(a.beneficiary || '')}" placeholder="ผู้ลงโฆษณา (ไม่บังคับ)"
+          title="ผู้ลงโฆษณาของบัญชีนี้ — ชื่อธุรกิจที่ยืนยันตัวตนกับ FB แล้ว เว้นว่างได้"
+          onchange="launchSetBeneficiary('${v}', this.value)">
       </div>` : '';
       return `<label class="acct-row ${r.ready ? '' : 'row-off'}" title="${esc(tip)}">
         <input type="checkbox" value="${v}" ${isChecked ? 'checked' : ''} ${r.ready ? '' : 'disabled'} onchange="launchRowToggled()">
@@ -1358,6 +1356,7 @@ function launchRowToggled() { renderLaunchAccounts(); }
 function launchAcct(v) { return launchAccounts.find(a => `${a.pid}:${a.acctId}` === v); }
 function launchSetPixel(v, id) { const a = launchAcct(v); if (a) a.chosenPixel = id || null; }
 function launchSetPage(v, id) { const a = launchAcct(v); if (a) a.chosenPage = id || null; }
+function launchSetBeneficiary(v, name) { const a = launchAcct(v); if (a) a.beneficiary = name.trim(); }
 function launchSelectReady() {
   document.querySelectorAll('#launchAccounts input[type=checkbox]').forEach(i => { i.checked = !i.disabled; });
   renderLaunchAccounts();
@@ -1872,7 +1871,7 @@ async function launch() {
         profileId: t.pid,
         accountId: t.acctId,
         pageId: t.chosenPage || t.pageId,
-        beneficiary: document.getElementById('beneficiary').value.trim(),
+        beneficiary: t.beneficiary || '',
         campaign: { name: campaignName, objective },
         campaignId: (reuse && reuse.name === campaignName && reuse.objective === objective) ? reuse.id : undefined,
         campaignBudget: Number(document.getElementById('campaignBudget').value) || 300,
