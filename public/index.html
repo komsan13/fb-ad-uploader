@@ -500,7 +500,6 @@
             </div>
             <div class="row">
               <div class="field"><label>หัวข้อ (Headline)</label><input id="tpl-headline" placeholder="ไม่บังคับ"></div>
-              <input id="tpl-budget" type="hidden" value="300">
             </div>
             <div class="field"><label>ลิงก์ปลายทาง</label><input id="tpl-link" placeholder="https://..."></div>
           </div>
@@ -856,6 +855,12 @@ function esc(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 }
 
+// สร้าง JS string literal ที่ปลอดภัยสำหรับวางใน attribute เช่น onclick="f(${jsStr(name)})"
+// ต้องผ่านสองชั้น: JSON.stringify กัน \ และ " ในระดับ JS, esc กัน & < " ในระดับ HTML
+// (เดิมใช้ .replace(/'/g,'&#39;') ซึ่งไม่พอ — HTML parser ถอด &#39; กลับเป็น ' ก่อน JS อ่าน
+//  ชื่อแคมเปญที่มี \ หรือ ' จึงทำให้ปุ่มลบพัง/รันโค้ดแปลกได้)
+function jsStr(s) { return esc(JSON.stringify(String(s == null ? '' : s))); }
+
 // ถูกปิดใช้งาน/กำลังปิด/ปิดแล้ว = บิน — ใช้ซ่อนแถวในหน้าสุขภาพเท่านั้น
 // ห้ามใช้ข้ามการดึงสถิติ: บัญชีสถานะนี้ยังมียอดใช้จ่ายจริงที่ต้องโชว์
 const DEAD_ACCT = new Set([2, 100, 101]);
@@ -972,24 +977,24 @@ function profCardHTML(p) {
   return `<div class="prof-card ${p.id === activeProfileId ? 'active-prof' : ''}" data-pid="${p.id}">
     <div class="pc-head">
       <div class="pc-avatar">${initial}</div>
-      <input class="pc-name" value="${esc(p.label)}" title="คลิกเพื่อแก้ชื่อ" onchange="saveProfileField('${p.id}', {label: this.value})">
+      <input class="pc-name" value="${esc(p.label)}" title="คลิกเพื่อแก้ชื่อ" onchange="saveProfileField(${jsStr(p.id)}, {label: this.value})">
       <span class="p-status ${p.hasToken ? 'ok' : ''}">${p.hasToken ? '● เชื่อมต่อแล้ว' : '○ ยังไม่เชื่อมต่อ'}</span>
-      <span class="prof-star ${p.id === activeProfileId ? 'on' : ''}" onclick="setActiveProfileAndRender('${p.id}')">${p.id === activeProfileId ? '★ ใช้งานอยู่' : '☆ ใช้บัญชีนี้'}</span>
-      <button class="btn-danger-light pc-del" onclick="deleteProfile('${p.id}')" title="ลบบัญชีนี้ออกจากโปรแกรม"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+      <span class="prof-star ${p.id === activeProfileId ? 'on' : ''}" onclick="setActiveProfileAndRender(${jsStr(p.id)})">${p.id === activeProfileId ? '★ ใช้งานอยู่' : '☆ ใช้บัญชีนี้'}</span>
+      <button class="btn-danger-light pc-del" onclick="deleteProfile(${jsStr(p.id)})" title="ลบบัญชีนี้ออกจากโปรแกรม"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
     </div>
     <div class="pc-body">
       <div class="pc-col">
         <div class="pc-step"><span class="pc-step-num">1</span> เชื่อมต่อด้วยแอป Meta</div>
         <div class="row">
-          <div class="field"><label>App ID</label><input class="p-appid" value="${esc(p.appId || '')}" placeholder="เช่น 1719021692348316" onchange="saveProfileField('${p.id}', {appId: this.value})"></div>
-          <div class="field"><label>App Secret</label><input type="password" class="p-appsecret" placeholder="${p.hasSecret ? 'บันทึกแล้ว — ใส่ใหม่เมื่อต้องการเปลี่ยน' : 'คัดลอกจากหน้า Basic Settings'}" onchange="saveProfileField('${p.id}', {appSecret: this.value})"></div>
+          <div class="field"><label>App ID</label><input class="p-appid" value="${esc(p.appId || '')}" placeholder="เช่น 1719021692348316" onchange="saveProfileField(${jsStr(p.id)}, {appId: this.value})"></div>
+          <div class="field"><label>App Secret</label><input type="password" class="p-appsecret" placeholder="${p.hasSecret ? 'บันทึกแล้ว — ใส่ใหม่เมื่อต้องการเปลี่ยน' : 'คัดลอกจากหน้า Basic Settings'}" onchange="saveProfileField(${jsStr(p.id)}, {appSecret: this.value})"></div>
         </div>
-        <button class="btn-fblogin" onclick="fbLogin('${p.id}')"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M22 12a10 10 0 1 0-11.6 9.9v-7H7.9V12h2.5V9.8c0-2.5 1.5-3.9 3.8-3.9 1.1 0 2.2.2 2.2.2v2.5h-1.3c-1.2 0-1.6.8-1.6 1.6V12h2.8l-.4 2.9h-2.4v7A10 10 0 0 0 22 12z"/></svg>เข้าสู่ระบบด้วย Facebook</button>
+        <button class="btn-fblogin" onclick="fbLogin(${jsStr(p.id)})"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M22 12a10 10 0 1 0-11.6 9.9v-7H7.9V12h2.5V9.8c0-2.5 1.5-3.9 3.8-3.9 1.1 0 2.2.2 2.2.2v2.5h-1.3c-1.2 0-1.6.8-1.6 1.6V12h2.8l-.4 2.9h-2.4v7A10 10 0 0 0 22 12z"/></svg>เข้าสู่ระบบด้วย Facebook</button>
         <details class="target">
           <summary>หรือวาง Access Token เอง (ทางเลือก)</summary>
           <div class="row" style="margin-top:8px">
             <div style="flex:3"><input type="password" class="p-token" placeholder="${p.hasToken ? 'มี token แล้ว — วางใหม่เฉพาะตอนต้องการเปลี่ยน' : 'วาง Access Token (EAA...)'}"></div>
-            <div style="flex:0 0 auto;min-width:auto"><button class="btn-primary btn-sm" onclick="connectProfile('${p.id}')" style="padding:8px 14px">${p.hasToken ? '⟳ โหลดบัญชี' : 'เชื่อมต่อ'}</button></div>
+            <div style="flex:0 0 auto;min-width:auto"><button class="btn-primary btn-sm" onclick="connectProfile(${jsStr(p.id)})" style="padding:8px 14px">${p.hasToken ? '⟳ โหลดบัญชี' : 'เชื่อมต่อ'}</button></div>
           </div>
         </details>
       </div>
@@ -998,11 +1003,11 @@ function profCardHTML(p) {
         <div class="field">
           <div style="display:flex;justify-content:space-between;align-items:center">
             <label style="margin:0">บัญชีโฆษณา (Ad Account)</label>
-            <a onclick="openHealth('${p.id}')" style="font-size:12px;font-weight:600;cursor:pointer">🩺 ตรวจบัตร/Pixel</a>
+            <a onclick="openHealth(${jsStr(p.id)})" style="font-size:12px;font-weight:600;cursor:pointer">🩺 ตรวจบัตร/Pixel</a>
           </div>
-          <select class="p-adaccount" onchange="saveProfileField('${p.id}', {adAccountId: this.value})" style="margin-top:5px"><option value="">— เชื่อมต่อในขั้นตอนที่ 1 ก่อน —</option></select>
+          <select class="p-adaccount" onchange="saveProfileField(${jsStr(p.id)}, {adAccountId: this.value})" style="margin-top:5px"><option value="">— เชื่อมต่อในขั้นตอนที่ 1 ก่อน —</option></select>
         </div>
-        <div class="field"><label>เพจ (Facebook Page)</label><select class="p-page" onchange="saveProfileField('${p.id}', {pageId: this.value})"><option value="">— เชื่อมต่อในขั้นตอนที่ 1 ก่อน —</option></select></div>
+        <div class="field"><label>เพจ (Facebook Page)</label><select class="p-page" onchange="saveProfileField(${jsStr(p.id)}, {pageId: this.value})"><option value="">— เชื่อมต่อในขั้นตอนที่ 1 ก่อน —</option></select></div>
       </div>
     </div>
   </div>`;
@@ -1052,7 +1057,7 @@ async function renderHealth() {
   if (d.error) { body.innerHTML = `<div style="color:var(--red)">ตรวจไม่สำเร็จ: ${esc(d.error)}</div>`; return; }
   const billUrl = `https://business.facebook.com/ads/manager/account_settings/account_billing/?act=${acct}`;
   const pxList = d.pixels.length
-    ? d.pixels.map(p => `<div class="px-item">📊 ${esc(p.name)} <code>${esc(p.id)}</code> <button class="btn-light btn-sm" style="margin-left:auto" onclick="copyPixel('${esc(p.id)}')">คัดลอก ID</button></div>`).join('')
+    ? d.pixels.map(p => `<div class="px-item">📊 ${esc(p.name)} <code>${esc(p.id)}</code> <button class="btn-light btn-sm" style="margin-left:auto" onclick="copyPixel(${jsStr(p.id)})">คัดลอก ID</button></div>`).join('')
     : '<div style="color:var(--muted);font-size:13px;padding:6px 0">ยังไม่มี Pixel</div>';
   body.innerHTML = `
     <div class="health-item">
@@ -1353,7 +1358,8 @@ async function loadDashboard(force) {
 }
 function renderDashboard(results) {
   const num = (n) => Number(n || 0).toLocaleString();
-  const money = (cur, n) => (cur === 'THB' ? '฿' : cur + ' ') + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // ไม่รู้สกุลเงิน (บัญชีโหลดไม่ครบ) ให้ถือเป็นบาท — เดิมโชว์ว่า "undefined 1,234.00"
+  const money = (cur, n) => (!cur || cur === 'THB' ? '฿' : cur + ' ') + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   // สรุปต่อบัญชี
   const accts = results.map(r => {
@@ -1412,7 +1418,7 @@ function renderDashboard(results) {
   ok.forEach(a => a.campaigns.forEach(c => allCamps.push({ ...c, acctName: a.name, currency: a.currency, pid: a.pid, acct: a.acct })));
   const top = allCamps.sort((a, b) => b.spend - a.spend).slice(0, 10);
   document.getElementById('dashTopRows').innerHTML = top.length ? top.map(c => `<tr>
-      <td style="font-weight:600;min-width:150px"><span class="camp-link" title="ดูชุดโฆษณา/โฆษณาข้างใน" onclick="openCampaignDetail('${c.pid}','${c.id}','${c.acct}','${c.currency}','${esc(c.name).replace(/'/g, '&#39;')}')">${esc(c.name)}</span><div class="res-label">${OBJ_TH[c.objective] || c.objective}</div></td>
+      <td style="font-weight:600;min-width:150px"><span class="camp-link" title="ดูชุดโฆษณา/โฆษณาข้างใน" onclick="openCampaignDetail(${jsStr(c.pid)},${jsStr(c.id)},${jsStr(c.acct)},${jsStr(c.currency)},${jsStr(c.name)})">${esc(c.name)}</span><div class="res-label">${OBJ_TH[c.objective] || c.objective}</div></td>
       <td><span class="chip" style="white-space:nowrap;max-width:170px;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:middle" title="${esc(c.acctName)}">${esc(c.acctName)}</span></td>
       <td>${statusPill(c)}</td>
       <td>${c.results != null ? num(c.results) + (c.resultLabel ? `<div class="res-label">${c.resultLabel}</div>` : '') : '<span style="color:var(--muted)">—</span>'}</td>
@@ -1477,8 +1483,8 @@ function renderHealthPage(results) {
   const acctHtml = rows.map(a => {
     const warn = WARN[a.status] ? ` <span class="st-pill issue">⚠ ${WARN[a.status]}</span>` : '';
     const px = a.pixels.length
-      ? a.pixels.map(x => `<span style="white-space:nowrap"><span class="st-pill on" title="Pixel ID: ${esc(x.id)}">✓ ${esc(x.name)}</span> <button class="btn-light btn-sm" title="คัดลอก Pixel ID ${esc(x.id)}" onclick="copyPixel('${x.id}');this.textContent='✓ คัดลอกแล้ว';setTimeout(()=>this.textContent='คัดลอก ID',1200)">คัดลอก ID</button></span>`).join(' ')
-      : `<button class="btn-primary btn-sm" onclick="createPixelHealth('${a.pid}','${a.id}',this)">+ สร้าง Pixel เลย</button>`;
+      ? a.pixels.map(x => `<span style="white-space:nowrap"><span class="st-pill on" title="Pixel ID: ${esc(x.id)}">✓ ${esc(x.name)}</span> <button class="btn-light btn-sm" title="คัดลอก Pixel ID ${esc(x.id)}" onclick="copyPixel(${jsStr(x.id)});this.textContent='✓ คัดลอกแล้ว';setTimeout(()=>this.textContent='คัดลอก ID',1200)">คัดลอก ID</button></span>`).join(' ')
+      : `<button class="btn-primary btn-sm" onclick="createPixelHealth(${jsStr(a.pid)},${jsStr(a.id)},this)">+ สร้าง Pixel เลย</button>`;
     const card = a.funding
       ? `<span class="st-pill on">✓ ${esc(a.funding)}</span>`
       : `<a class="btn-primary btn-sm" style="text-decoration:none;display:inline-block;color:#fff" target="_blank" href="https://business.facebook.com/billing_hub/payment_settings?asset_id=${a.id}">เชื่อมบัตรเลย ↗</a>`;
@@ -1640,17 +1646,17 @@ function renderLaunchAccounts() {
       const tip = `${a.name} • ${pxName ? 'Pixel: ' + pxName : 'ไม่มี Pixel'}${r.ready ? '' : ' — ' + r.missing.join(', ')}`;
       // บัญชีที่ติ๊กแล้ว = โชว์ช่องเลือก Pixel + เพจ ของบัญชีนั้น
       const detail = (r.ready && isChecked) ? `<div class="acct-detail">
-        <select onchange="launchSetPixel('${v}', this.value)" title="Pixel ของบัญชีนี้">
+        <select onchange="launchSetPixel(${jsStr(v)}, this.value)" title="Pixel ของบัญชีนี้">
           ${a.pixels.length
             ? a.pixels.map(x => `<option value="${x.id}" ${x.id === a.chosenPixel ? 'selected' : ''}>📊 ${esc(x.name || x.id)}</option>`).join('')
             : '<option value="">— ไม่มี Pixel —</option>'}
         </select>
-        <select onchange="launchSetPage('${v}', this.value)" title="เพจที่ใช้ลงโฆษณา">
+        <select onchange="launchSetPage(${jsStr(v)}, this.value)" title="เพจที่ใช้ลงโฆษณา">
           ${a.pages.length
             ? a.pages.map(g => `<option value="${g.id}" ${g.id === a.chosenPage ? 'selected' : ''}>📄 ${esc(g.name)}</option>`).join('')
             : '<option value="">— ไม่พบเพจ —</option>'}
         </select>
-        <select onchange="launchSetBeneficiary('${v}', this.value)" title="ผู้ลงโฆษณา (ธุรกิจที่ยืนยันตัวตนกับ FB แล้ว) — จำค่าให้ถาวรต่อบัญชี ไม่บังคับ">
+        <select onchange="launchSetBeneficiary(${jsStr(v)}, this.value)" title="ผู้ลงโฆษณา (ธุรกิจที่ยืนยันตัวตนกับ FB แล้ว) — จำค่าให้ถาวรต่อบัญชี ไม่บังคับ">
           <option value="">— ผู้ลงโฆษณา: ไม่ระบุ —</option>
           ${a.beneficiaryOptions.map(b => `<option value="${b.id}" ${b.id === a.beneficiaryId ? 'selected' : ''}>✅ ${esc(b.name)}</option>`).join('')}
         </select>
@@ -1666,7 +1672,12 @@ function renderLaunchAccounts() {
       ${rows}
     </details>`;
   }).join('');
+  // ติ๊กทีนึงวาดใหม่ทั้งแผง — ถ้าไม่คืนตำแหน่ง scroll ผู้ใช้จะถูกเด้งกลับไปบนสุดทุกครั้งที่เลือกบัญชี
+  // ตัวที่ scroll จริงคือ .camp-side ที่ครอบอยู่ (overflow-y:auto) ไม่ใช่ #launchAccounts เอง
+  const scroller = el.closest('.camp-side') || el;
+  const scroll = scroller.scrollTop;
   el.innerHTML = html || '<span class="hint">ไม่พบบัญชีโฆษณา</span>';
+  scroller.scrollTop = scroll;
   document.getElementById('launchAcctSummary').textContent = `พร้อม ${readyCount}/${launchAccounts.length} บัญชี`;
   updateStats();
 }
@@ -1837,7 +1848,7 @@ function renderCampaignRows(results, sels) {
     const toggleable = c.status === 'ACTIVE' || c.status === 'PAUSED';
     const checked = c.status === 'ACTIVE' ? 'checked' : '';
     const toggle = toggleable
-      ? `<label class="switch"><input type="checkbox" ${checked} onchange="toggleCampaign('${c.id}','${c.status}','${c.pid}')"><span class="sl"></span></label>`
+      ? `<label class="switch"><input type="checkbox" ${checked} onchange="toggleCampaign(${jsStr(c.id)},${jsStr(c.status)},${jsStr(c.pid)})"><span class="sl"></span></label>`
       : '';
     const results = c.results != null
       ? `${num(c.results)}${c.resultLabel ? `<div class="res-label">${c.resultLabel}</div>` : ''}`
@@ -1851,7 +1862,7 @@ function renderCampaignRows(results, sels) {
     return `<tr>
       <td>${toggle}</td>
       <td><span class="chip" style="white-space:nowrap;max-width:170px;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:middle" title="${esc(label)}">${esc(label)}</span></td>
-      <td style="font-weight:600;min-width:150px"><span class="camp-link" title="ดูชุดโฆษณา/โฆษณาข้างใน" onclick="openCampaignDetail('${c.pid}','${c.id}','${c.account}','${c.currency}','${esc(c.name).replace(/'/g, '&#39;')}')">${esc(c.name)}</span><div class="res-label">${OBJ_TH[c.objective] || c.objective}</div></td>
+      <td style="font-weight:600;min-width:150px"><span class="camp-link" title="ดูชุดโฆษณา/โฆษณาข้างใน" onclick="openCampaignDetail(${jsStr(c.pid)},${jsStr(c.id)},${jsStr(c.account)},${jsStr(c.currency)},${jsStr(c.name)})">${esc(c.name)}</span><div class="res-label">${OBJ_TH[c.objective] || c.objective}</div></td>
       <td>${statusPill(c)}</td>
       <td>${results}</td>
       <td class="num-cell">${cpr}</td>
@@ -1862,7 +1873,7 @@ function renderCampaignRows(results, sels) {
       <td style="white-space:nowrap">${ends}</td>
       <td style="white-space:nowrap">
         <a href="${link}" target="_blank" title="เปิดใน Ads Manager" class="btn-light icon-btn" style="text-decoration:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></a>
-        <button class="btn-danger-light icon-btn" title="ลบแคมเปญนี้" onclick="deleteCampaign('${c.id}', '${esc(c.name).replace(/'/g, '&#39;')}', '${c.pid}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+        <button class="btn-danger-light icon-btn" title="ลบแคมเปญนี้" onclick="deleteCampaign(${jsStr(c.id)}, ${jsStr(c.name)}, ${jsStr(c.pid)})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
       </td>
     </tr>`;
   }).join('');
@@ -1897,7 +1908,7 @@ async function renderCampaignDetail() {
   const money = (n) => (cur === 'THB' || !cur ? '฿' : cur + ' ') + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const resTxt = (r) => r != null ? `${num(r)}${d.resultLabel ? `<div class="res-label">${d.resultLabel}</div>` : ''}` : '<span style="color:var(--muted)">—</span>';
   const toggleOf = (x) => (x.status === 'ACTIVE' || x.status === 'PAUSED')
-    ? `<label class="switch"><input type="checkbox" ${x.status === 'ACTIVE' ? 'checked' : ''} onchange="toggleDetailObj('${x.id}','${x.status}')"><span class="sl"></span></label>` : '';
+    ? `<label class="switch"><input type="checkbox" ${x.status === 'ACTIVE' ? 'checked' : ''} onchange="toggleDetailObj(${jsStr(x.id)},${jsStr(x.status)})"><span class="sl"></span></label>` : '';
   const asRows = d.adsets.map(s => `<tr>
       <td>${toggleOf(s)}</td>
       <td style="font-weight:600">${esc(s.name)}<div class="res-label">${s.nAds} โฆษณา</div></td>
@@ -1906,7 +1917,7 @@ async function renderCampaignDetail() {
       <td>${resTxt(s.results)}</td>
       <td class="num-cell">${money(s.spend)}</td>
       <td class="num-cell">${num(s.impressions)}</td>
-      <td><button class="btn-light btn-sm" style="white-space:nowrap" title="ก๊อปชุดโฆษณานี้พร้อมแอดข้างใน (ขึ้นเป็น PAUSED) — ไว้สเกลตัวที่ผลงานดี" onclick="copyAdset('${s.id}', this)">⧉ ก๊อปสเกล</button></td>
+      <td><button class="btn-light btn-sm" style="white-space:nowrap" title="ก๊อปชุดโฆษณานี้พร้อมแอดข้างใน (ขึ้นเป็น PAUSED) — ไว้สเกลตัวที่ผลงานดี" onclick="copyAdset(${jsStr(s.id)}, this)">⧉ ก๊อปสเกล</button></td>
     </tr>`).join('');
   const adsetName = (aid) => (d.adsets.find(s => s.id === aid) || {}).name || '';
   const adRows = d.ads.map(a => `<tr>
@@ -1998,7 +2009,6 @@ function tplValues() {
     message: document.getElementById('tpl-message').value,
     headline: document.getElementById('tpl-headline').value,
     link: document.getElementById('tpl-link').value,
-    budget: document.getElementById('tpl-budget').value,
     ageMin: document.getElementById('tpl-agemin').value,
     ageMax: document.getElementById('tpl-agemax').value,
     gender: document.getElementById('tpl-gender').value,
@@ -2012,7 +2022,6 @@ function applyTemplateToAll() {
     card.querySelector('.f-message').value = t.message;
     card.querySelector('.f-headline').value = t.headline;
     card.querySelector('.f-link').value = t.link;
-    card.querySelector('.f-budget').value = t.budget;
     card.querySelector('.f-agemin').value = t.ageMin;
     card.querySelector('.f-agemax').value = t.ageMax;
     card.querySelector('.f-gender').value = t.gender;
@@ -2074,9 +2083,6 @@ function addAd(opts = {}) {
         <div class="field"><label>หัวข้อ</label><input class="f-headline"></div>
         <div class="field"><label>ลิงก์</label><input class="f-link" placeholder="https://..."></div>
       </div>
-      <div class="card-budget" style="display:none">
-        <div class="field"><label>งบ/วัน (บาท)</label><input class="f-budget" type="number" min="1" oninput="updateStats()"></div>
-      </div>
     </div>
     <details class="target">
       <summary><span class="tsum"></span></summary>
@@ -2105,7 +2111,6 @@ function addAd(opts = {}) {
     message: src.querySelector('.f-message').value,
     headline: src.querySelector('.f-headline').value,
     link: src.querySelector('.f-link').value,
-    budget: src.querySelector('.f-budget').value,
     ageMin: src.querySelector('.f-agemin').value,
     ageMax: src.querySelector('.f-agemax').value,
     gender: src.querySelector('.f-gender').value,
@@ -2115,7 +2120,6 @@ function addAd(opts = {}) {
   div.querySelector('.f-message').value = v.message;
   div.querySelector('.f-headline').value = v.headline;
   div.querySelector('.f-link').value = v.link;
-  div.querySelector('.f-budget').value = v.budget || 300;
   div.querySelector('.f-agemin').value = v.ageMin || 20;
   div.querySelector('.f-agemax').value = v.ageMax || 55;
   div.querySelector('.f-gender').value = v.gender || 'all';
@@ -2241,8 +2245,15 @@ function searchInterests(input) {
   const q = input.value.trim();
   if (!q) { box.style.display = 'none'; return; }
   interestTimer = setTimeout(async () => {
-    const res = await fetch('/api/interests?q=' + encodeURIComponent(q));
-    const data = await res.json();
+    let data;
+    try { data = await (await fetch('/api/interests?q=' + encodeURIComponent(q))).json(); }
+    catch (e) { data = { error: e.message }; }
+    // เดิม error ถูกกลืนเงียบ (ไม่ใช่ array ก็แค่ซ่อนกล่อง) — token ตายแล้วผู้ใช้นึกว่า "ไม่มีผลลัพธ์"
+    if (data && data.error) {
+      box.innerHTML = `<div style="color:var(--red);cursor:default">ค้นหาไม่สำเร็จ: ${esc(data.error)}</div>`;
+      box.style.display = 'block';
+      return;
+    }
     if (!Array.isArray(data) || !data.length) { box.style.display = 'none'; return; }
     box.innerHTML = data.map(d =>
       `<div onclick="pickInterest(this, ${esc(JSON.stringify(d.id))}, ${esc(JSON.stringify(d.name))})">${esc(d.name)} <small>(~${Number(d.audience_size_lower_bound || 0).toLocaleString()} คน)</small></div>`
@@ -2372,7 +2383,6 @@ async function launch() {
           message: c.querySelector('.f-message').value.trim(),
           link: c.querySelector('.f-link').value.trim(),
           headline: c.querySelector('.f-headline').value.trim(),
-          dailyBudget: Number(c.querySelector('.f-budget').value) || 300,
           ageMin: Number(c.querySelector('.f-agemin').value) || 18,
           ageMax: Number(c.querySelector('.f-agemax').value) || 65,
           gender: c.querySelector('.f-gender').value,

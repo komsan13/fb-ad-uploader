@@ -165,6 +165,8 @@ async function uploadVideo(acct, file, token, attempt = 0) {
     try { json = JSON.parse(text); } catch { throw new Error(`FB ตอบกลับผิดปกติ (HTTP ${res.status})`); }
   } catch (err) {
     // การเชื่อมต่อสะดุด/FB ตอบไม่เป็น JSON — รอแล้วอัปโหลดใหม่ได้อีก 2 รอบ
+    // จงใจต่างจาก fb() ที่ไม่ retry POST: ตัวซ้ำที่นี่เป็นแค่วิดีโอลอยในคลัง FB (ไม่ถูกผูกกับแอด
+    // เพราะเราใช้ id ของรอบที่สำเร็จเท่านั้น) แลกกับการไม่ต้องให้ผู้ใช้อัปไฟล์ใหญ่ใหม่ทั้งก้อน
     if (attempt < 2) {
       await new Promise((r) => setTimeout(r, (attempt + 1) * 5000));
       return uploadVideo(acct, file, token, attempt + 1);
@@ -200,7 +202,6 @@ async function videoThumb(videoId, token) {
 // ค่าคงที่ 35 — ยืนยันกับ FB จริงผ่าน targetingsentencelines ("ภาษา: ภาษาไทย")
 // ห้ามใช้ search type=adlocale q=Thai (คืนค่าว่าง) และห้ามใช้ 24 (= English UK)
 const THAI_LOCALE = 35;
-async function getThaiLocale() { return THAI_LOCALE; }
 
 const REDIRECT_URI = `${PUBLIC_URL}/auth/callback`;
 const LOGIN_SCOPES = 'ads_management,ads_read,business_management,pages_show_list,pages_read_engagement';
@@ -229,12 +230,18 @@ setInterval(() => {
   }
 }, 3600 * 1000).unref();
 
-app.post('/api/media', upload.single('file'), (req, res) => {
+// วิดีโอเขียนลงดิสก์โดยตรง ไม่ผ่าน memoryStorage — ไฟล์ 512MB ไม่ต้องกอง RAM ทั้งก้อน
+const uploadDisk = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, MEDIA_DIR),
+    filename: (req, file, cb) => cb(null, crypto.randomUUID()),
+  }),
+  limits: { fileSize: 512 * 1024 * 1024 },
+});
+app.post('/api/media', uploadDisk.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'ไม่ได้แนบไฟล์' });
-  const id = crypto.randomUUID();
-  const p = path.join(MEDIA_DIR, id);
-  fs.writeFileSync(p, req.file.buffer);
-  mediaStore.set(id, { path: p, mimetype: req.file.mimetype, originalname: req.file.originalname, ts: Date.now() });
+  const id = req.file.filename;
+  mediaStore.set(id, { path: req.file.path, mimetype: req.file.mimetype, originalname: req.file.originalname, ts: Date.now() });
   res.json({ id });
 });
 
@@ -262,8 +269,13 @@ app.post('/api/profiles/update', (req, res) => {
   const cfg = loadConfig();
   const p = cfg.profiles.find((x) => x.id === req.body.id);
   if (!p) return res.status(404).json({ error: 'ไม่พบบัญชีนี้' });
-  for (const k of ['label', 'accessToken', 'adAccountId', 'pageId', 'appId', 'appSecret']) {
-    if (req.body[k] !== undefined && req.body[k] !== '') p[k] = req.body[k];
+  // ความลับ (token/secret): ช่องว่าง = "ไม่เปลี่ยน" เพราะหน้าเว็บโชว์เป็น placeholder ไม่เคยส่งค่าเดิมกลับมา
+  for (const k of ['accessToken', 'appSecret']) {
+    if (req.body[k]) p[k] = req.body[k];
+  }
+  // ค่าธรรมดา: ช่องว่าง = ตั้งใจล้างค่า (เดิมล้าง appId/เพจ/บัญชีโฆษณาที่เลือกผิดไว้ไม่ได้เลย)
+  for (const k of ['label', 'adAccountId', 'pageId', 'appId']) {
+    if (req.body[k] !== undefined) p[k] = req.body[k];
   }
   saveConfig(cfg);
   res.json({ ok: true });
@@ -756,6 +768,12 @@ app.post('/api/launch', upload.any(), async (req, res) => {
     send({ type: 'fatal', error: `บัญชี "${prof.label}" ตั้งค่าไม่ครบ (token / บัญชีโฆษณา / เพจ)` });
     return res.end();
   }
+  // เช็ครูปร่าง payload ก่อนแตะ field ข้างใน — เดิมอ่าน data.campaign.objective ตรงๆ
+  // payload เพี้ยนจึงโยน TypeError นอก try → ตอบ 500 กลางสตรีม แทน {type:'fatal'} ที่หน้าเว็บอ่านได้
+  if (!data.campaign || !Array.isArray(data.ads) || !data.ads.length) {
+    send({ type: 'fatal', error: 'ข้อมูลที่ส่งมาไม่ครบ (ไม่มีแคมเปญหรือรายการแอด) — รีเฟรชหน้าแล้วลองใหม่' });
+    return res.end();
+  }
   const objInfo = OBJECTIVES[data.campaign.objective];
   if (!objInfo) { send({ type: 'fatal', error: `วัตถุประสงค์ไม่รองรับ: ${data.campaign.objective}` }); return res.end(); }
   if (objInfo.needsPixel && !data.pixelId) { send({ type: 'fatal', error: 'บัญชีนี้ยังไม่มี Pixel (สร้างในเมนูบัญชี FB ก่อน)' }); return res.end(); }
@@ -825,7 +843,6 @@ app.post('/api/launch', upload.any(), async (req, res) => {
       }
     }
     send({ type: 'campaign', id: campaignId });
-    const thaiLocale = await getThaiLocale();
 
     let verifyDone = false;
 
@@ -865,7 +882,7 @@ app.post('/api/launch', upload.any(), async (req, res) => {
           facebook_positions: ['feed', 'profile_feed', 'story', 'facebook_reels'],
           device_platforms: ['mobile'],                    // มือถือเท่านั้น
         };
-        if (thaiLocale) targeting.locales = [thaiLocale];  // ภาษาไทย
+        targeting.locales = [THAI_LOCALE];                // ภาษาไทย
         if (ad.gender === 'male') targeting.genders = [1];
         if (ad.gender === 'female') targeting.genders = [2];
         if (ad.interests && ad.interests.length) {
@@ -881,11 +898,7 @@ app.post('/api/launch', upload.any(), async (req, res) => {
           targeting,
           status,
         };
-        // ABO: ไม่มี campaignBudget → ตั้งงบที่ ad set. CBO: งบอยู่ที่แคมเปญแล้ว ไม่ต้องใส่
-        if (!data.campaignBudget) {
-          adsetParams.daily_budget = Math.round(Number(ad.dailyBudget) * 100);
-          adsetParams.bid_strategy = 'LOWEST_COST_WITHOUT_CAP';
-        }
+        // งบอยู่ที่ระดับแคมเปญเสมอ (CBO) — ไม่ต้องตั้งที่ ad set
         // กลยุทธ์วงจรลูกค้า — เลือกจากหน้าเว็บ: '100' = รับทุกกลุ่ม, '0' = หาลูกค้าใหม่, '' = ไม่ส่ง ปล่อยตาม default ของ FB
         const lifecycleStrategy = data.lifecycleStrategy === undefined ? '100' : String(data.lifecycleStrategy);
         if (objInfo.needsPixel) {
@@ -1107,11 +1120,16 @@ async function dailySummary() {
 
 setTimeout(() => watchTick().catch(() => {}), 30 * 1000);           // รอบแรกหลังบูต 30 วิ
 setInterval(() => watchTick().catch(() => {}), 60 * 60 * 1000);     // แล้วทุก 1 ชม.
-let lastSummaryDay = '';
 setInterval(() => {
   const th = new Date(Date.now() + 7 * 3600 * 1000);
   const day = th.toISOString().slice(0, 10);
-  if (th.getUTCHours() === 8 && lastSummaryDay !== day) { lastSummaryDay = day; dailySummary().catch(() => {}); }
+  if (th.getUTCHours() !== 8) return;
+  // จำวันที่ส่งล่าสุดลงไฟล์ ไม่ใช่ตัวแปรในหน่วยความจำ — restart ช่วง 8-9 โมงจะได้ไม่ส่งสรุปซ้ำ
+  const st = loadWatchState();
+  if (st.lastSummaryDay === day) return;
+  st.lastSummaryDay = day;
+  saveWatchState(st);
+  dailySummary().catch(() => {});
 }, 5 * 60 * 1000);
 
 // ตั้งค่า Telegram จากหน้าเว็บ
