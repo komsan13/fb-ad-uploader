@@ -550,6 +550,7 @@
         <div class="card-head-row">
           <div class="pc-step"><span class="pc-step-num">3</span> รายการแอด <span class="h-desc" id="adCount"></span></div>
           <button class="btn-primary btn-sm" style="margin-left:auto" onclick="autoLaunch(this)" title="หยิบวิดีโอ+แคปชั่นจากคลัง สร้างแคมเปญ แล้วขึ้นแอดทุกบัญชีที่ใช้ได้ เปิดยิงทันที">⚡ ขึ้นอัตโนมัติทั้งหมด</button>
+          <button class="btn-light btn-sm" onclick="handToAi(this)" title="บันทึกค่าที่ตั้งไว้ทั้งหมด แล้วให้ AI ขึ้นแอดต่อเองทุก 30 นาที">🤖 จำค่านี้ แล้วให้ AI ขึ้นต่อ</button>
           <button class="btn-light btn-sm" onclick="openLibPick(null)">🎬 เลือกเอง</button>
         </div>
         <div class="hint" style="margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -2541,6 +2542,57 @@ async function runAutoPlan(btn, opts = {}) {
   }
   updateStats();
   return { plan: d.plan, warnings: d.warnings, total: d.plan.reduce((s, a) => s + a.ads.length, 0), link };
+}
+
+// บันทึกค่าที่ตั้งไว้ แล้วเปิดให้ autopilot ขึ้นแอดต่อเอง — เชื่อมหน้าขึ้นแอดกับระบบอัตโนมัติในปุ่มเดียว
+async function handToAi(btn) {
+  const link = document.getElementById('tpl-link').value.trim();
+  if (!/^https?:\/\//.test(link)) return alert('ใส่ "ลิงก์ปลายทาง" (ขั้นตอนที่ 2) ก่อนครับ — AI ใช้ลิงก์นี้กับทุกแอดที่ขึ้นให้');
+  const budget = Number(document.getElementById('campaignBudget').value) || 0;
+  if (budget <= 0) return alert('ใส่ "งบแคมเปญ/วัน" (ขั้นตอนที่ 1) ก่อนครับ');
+  const perAccount = Number(document.getElementById('planPerAccount').value) || 3;
+
+  const ready = readyAccounts();
+  const cpa = Number(document.getElementById('ruleCpr').value) || 0;
+  const ruleOn = document.getElementById('ruleOn').checked;
+
+  let cur = {};
+  try { cur = await (await fetch('/api/autopilot')).json(); } catch { /* อ่านสถานะเดิมไม่ได้ */ }
+
+  let msg = `จะจำค่าพวกนี้ไว้ แล้วให้ AI ขึ้นแอดต่อเอง:\n\n`
+    + `• คุมทุกบัญชีที่ใช้ได้ (ตอนนี้ ${ready.length} บัญชี) ให้มีแอดยิงอยู่บัญชีละ ${perAccount} ตัว\n`
+    + `• ต่ำกว่านั้นเมื่อไหร่ หยิบวิดีโอ+แคปชั่นจากคลังขึ้นให้เอง ⚡ เปิดยิงทันที\n`
+    + `• งบ ${budget.toLocaleString()} บาท/วัน/บัญชี • ลิงก์ ${link}\n`
+    + `• เช็คทุก 30 นาที • งบวันไหนเต็มแล้วหยุดเติม รอวันถัดไป\n`
+    + `• แอดโดนปฏิเสธ → อ่านเหตุผลแล้วแก้ข้อความให้ (ครั้งเดียวต่อตัว)\n`;
+  if (!ruleOn) msg += `\n⚠️ ยังไม่ได้เปิด "กฎหยุดอัตโนมัติ" — ระบบจะยิงเงินต่อแม้แอดไม่เวิร์ก แนะนำให้เปิด\n`;
+  else if (!cpa) msg += `\n⚠️ ยังไม่ได้ใส่ตัวเลข "หยุดเมื่อต้นทุน/ผลลัพธ์เกิน" — ตัวขยายงบจะไม่ทำงาน\n`;
+  if (cur.killSwitch) msg += `\n⚠️ ตอนนี้ "หยุดฉุกเฉิน" เปิดอยู่ — ต้องไปปิดที่เมนูบัญชี FB ก่อน AI ถึงจะเริ่มทำงาน\n`;
+  if (!ready.length) msg += `\n⚠️ ตอนนี้ยังไม่มีบัญชีที่พร้อมเลย — AI จะยังไม่ขึ้นอะไรจนกว่าจะมีบัญชีพร้อม\n`;
+  msg += `\nยืนยันไหม?`;
+  if (!confirm(msg)) return;
+
+  btn.disabled = true;
+  const old = btn.textContent;
+  btn.textContent = 'กำลังบันทึก...';
+  try {
+    // บันทึกค่าทันที ไม่รอ debounce
+    const r1 = await fetch('/api/launch-defaults', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(collectLaunchDefaults()),
+    });
+    if (!r1.ok) throw new Error('บันทึกค่าตั้งต้นไม่สำเร็จ');
+    const d = await (await fetch('/api/autopilot', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ enabled: true, minAds: perAccount }),
+    })).json();
+    if (d.error) throw new Error(d.error);
+  } catch (e) {
+    btn.disabled = false; btn.textContent = old;
+    return alert('เปิดระบบอัตโนมัติไม่สำเร็จ: ' + e.message);
+  }
+  btn.disabled = false; btn.textContent = old;
+  alert('✅ เรียบร้อย — AI รับช่วงต่อแล้ว\n\nดูสิ่งที่มันทำได้ที่ เมนู "บัญชี FB" → ระบบอัตโนมัติ (มีบันทึกทุกการกระทำ + ปุ่มหยุดฉุกเฉิน)\nและจะแจ้งเข้า Telegram ทุกครั้งที่ลงมือ');
 }
 
 // ปุ่มเดียวจบ: จัดแผน → ยืนยัน → ขึ้นจริง (เปิดยิงทันที)
