@@ -144,8 +144,10 @@
   .camp-layout { display: flex; gap: 14px; align-items: flex-start; }
   .camp-side { width: 264px; flex-shrink: 0; position: sticky; top: 14px; max-height: calc(100vh - 110px); overflow-y: auto; padding: 16px; }
   /* modal ขึ้นแอด */
-  .modal-box.upload-modal { max-width: 1100px; }
+  .modal-box.upload-modal { max-width: 1200px; }
   #uploadModal .camp-side { top: 0; max-height: calc(88vh - 160px); border: 1px solid var(--line); }
+  .acct-detail { display: flex; flex-direction: column; gap: 5px; padding: 0 8px 9px 30px; }
+  .acct-detail select { font-size: 12px; padding: 5px 8px; }
   .camp-main { flex: 1; min-width: 0; }
   .cs-head { display: flex; justify-content: space-between; align-items: center; font-size: 13.5px; font-weight: 700; margin-bottom: 10px; }
   .cs-actions { font-size: 12px; font-weight: 600; color: var(--muted); }
@@ -440,8 +442,8 @@
             <div class="hint">งบรวมทั้งแคมเปญ FB กระจายให้แต่ละแอดเอง</div>
           </div>
         </div>
-        <div class="row" id="pixelRow" style="display:none">
-          <div class="field">
+        <div class="row">
+          <div class="field" id="convField" style="display:none">
             <label>เหตุการณ์คอนเวอร์ชั่น</label>
             <select id="conversionEvent">
               <option value="SUBSCRIBE">สมัครรับข้อมูล (Subscribe)</option>
@@ -453,9 +455,14 @@
               <option value="CONTACT">ติดต่อ (Contact)</option>
             </select>
           </div>
-          <div class="field" style="flex:2">
-            <label>Pixel</label>
-            <div style="padding:8px 11px;border:1px dashed var(--line-strong);border-radius:var(--r-md);font-size:12.5px;color:var(--muted);background:#fafbfc">✨ เลือก Pixel ของแต่ละบัญชีให้อัตโนมัติ (ตัวที่ยิงล่าสุด) — ไม่ต้องกรอก</div>
+          <div class="field" style="flex:1.4">
+            <label>ผู้ลงโฆษณา <span class="h-desc">— ระบุหรือไม่ก็ได้ (ชื่อธุรกิจที่ยืนยันตัวตนกับ FB แล้ว)</span></label>
+            <input id="beneficiary" list="beneficiaryList" placeholder="เช่น CROSS CURRENT PRODUCTIONS">
+            <datalist id="beneficiaryList"></datalist>
+          </div>
+          <div class="field" style="flex:1.4">
+            <label>Pixel และเพจ</label>
+            <div style="padding:8px 11px;border:1px dashed var(--line-strong);border-radius:var(--r-md);font-size:12.5px;color:var(--muted);background:#fafbfc">เลือกได้รายบัญชีที่แผงด้านซ้าย (ติ๊กบัญชีแล้วจะมีช่องให้เลือก)</div>
           </div>
         </div>
         <label class="switch-row">
@@ -773,6 +780,7 @@ function showPage(name) {
 // ---------- modal ขึ้นแอด ----------
 function openUploadModal() {
   document.getElementById('uploadModal').style.display = 'flex';
+  togglePixel(); // โชว์/ซ่อนช่องเหตุการณ์คอนเวอร์ชั่นตามวัตถุประสงค์ปัจจุบันตั้งแต่เปิด
   loadLaunchAccounts();
   updateStats();
 }
@@ -1038,8 +1046,8 @@ setInterval(tickClock, 1000);
 
 function togglePixel() {
   const obj = document.getElementById('objective').value;
-  document.getElementById('pixelRow').style.display =
-    (obj === 'OUTCOME_SALES' || obj === 'OUTCOME_LEADS') ? 'flex' : 'none';
+  document.getElementById('convField').style.display =
+    (obj === 'OUTCOME_SALES' || obj === 'OUTCOME_LEADS') ? '' : 'none';
   // วัตถุประสงค์เปลี่ยน → เกณฑ์ความพร้อม (ต้องมี Pixel ไหม) เปลี่ยน → re-render
   if (launchAccountsBuilt) renderLaunchAccounts();
 }
@@ -1259,11 +1267,13 @@ async function loadFullAccounts(force) {
     for (const a of d.adAccounts) {
       const pixels = (a.pixels || []).slice().sort((x, y) =>
         (new Date(y.last_fired_time || 0)) - (new Date(x.last_fired_time || 0)));
+      const pages = d.pages || [];
       out.push({
         pid: p.id, profileLabel: p.label, pageId: p.pageId,
         acctId: a.account_id, name: a.name, bm: a.business ? a.business.name : 'ไม่อยู่ใน BM',
         currency: a.currency, status: a.account_status,
         hasPayment: !!a.hasPayment, pixels, chosenPixel: pixels[0] ? pixels[0].id : null,
+        pages, chosenPage: (pages.some(g => g.id === p.pageId) ? p.pageId : (pages[0] || {}).id) || null,
       });
     }
   }
@@ -1276,7 +1286,7 @@ function evalReady(acc) {
   const miss = [];
   if (acc.status !== 1) miss.push('บัญชีถูกปิด/มีปัญหา');
   if (!acc.hasPayment) miss.push('ยังไม่เชื่อมบัตร');
-  if (!acc.pageId) miss.push('ยังไม่เลือกเพจ (ในเมนูบัญชี FB)');
+  if (!acc.chosenPage) miss.push('ไม่มีเพจให้ใช้ (เชื่อมต่อเพจในเมนูบัญชี FB)');
   if (needsPixel && !acc.chosenPixel) miss.push('ยังไม่มี Pixel');
   return { ready: miss.length === 0, missing: miss };
 }
@@ -1309,14 +1319,27 @@ function renderLaunchAccounts() {
       const v = `${a.pid}:${a.acctId}`;
       const r = evalReady(a);
       if (r.ready) readyCount++;
-      const checked = hadAny ? (prev.has(v) ? 'checked' : '') : (r.ready ? 'checked' : '');
-      const px = a.chosenPixel ? `Pixel: ${(a.pixels[0] || {}).name || a.chosenPixel}` : 'ไม่มี Pixel';
-      const tip = `${a.name} • ${px}${r.ready ? '' : ' — ' + r.missing.join(', ')}`;
+      const isChecked = hadAny ? prev.has(v) : r.ready;
+      const pxName = a.chosenPixel ? ((a.pixels.find(x => x.id === a.chosenPixel) || {}).name || a.chosenPixel) : null;
+      const tip = `${a.name} • ${pxName ? 'Pixel: ' + pxName : 'ไม่มี Pixel'}${r.ready ? '' : ' — ' + r.missing.join(', ')}`;
+      // บัญชีที่ติ๊กแล้ว = โชว์ช่องเลือก Pixel + เพจ ของบัญชีนั้น
+      const detail = (r.ready && isChecked) ? `<div class="acct-detail">
+        <select onchange="launchSetPixel('${v}', this.value)" title="Pixel ของบัญชีนี้">
+          ${a.pixels.length
+            ? a.pixels.map(x => `<option value="${x.id}" ${x.id === a.chosenPixel ? 'selected' : ''}>📊 ${esc(x.name || x.id)}</option>`).join('')
+            : '<option value="">— ไม่มี Pixel —</option>'}
+        </select>
+        <select onchange="launchSetPage('${v}', this.value)" title="เพจที่ใช้ลงโฆษณา">
+          ${a.pages.length
+            ? a.pages.map(g => `<option value="${g.id}" ${g.id === a.chosenPage ? 'selected' : ''}>📄 ${esc(g.name)}</option>`).join('')
+            : '<option value="">— ไม่พบเพจ —</option>'}
+        </select>
+      </div>` : '';
       return `<label class="acct-row ${r.ready ? '' : 'row-off'}" title="${esc(tip)}">
-        <input type="checkbox" value="${v}" ${checked} ${r.ready ? '' : 'disabled'} onchange="updateStats()">
+        <input type="checkbox" value="${v}" ${isChecked ? 'checked' : ''} ${r.ready ? '' : 'disabled'} onchange="launchRowToggled()">
         <span class="acct-dot ${r.ready ? 'ok' : 'bad'}"></span>
         <span class="acct-name">${esc(a.name)}</span>
-      </label>`;
+      </label>${detail}`;
     }).join('');
     return `<details class="camp-bm" open>
       <summary><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/></svg><span class="bm-name">${esc(g)}</span><span class="bm-count">${accs.length}</span></summary>
@@ -1325,11 +1348,19 @@ function renderLaunchAccounts() {
   }).join('');
   el.innerHTML = html || '<span class="hint">ไม่พบบัญชีโฆษณา</span>';
   document.getElementById('launchAcctSummary').textContent = `พร้อม ${readyCount}/${launchAccounts.length} บัญชี`;
+  // ตัวเลือก "ผู้ลงโฆษณา" — เดาจากชื่อ BM ที่มี (พิมพ์เองได้)
+  const dl = document.getElementById('beneficiaryList');
+  if (dl) dl.innerHTML = [...new Set(launchAccounts.map(a => a.bm).filter(b => b && b !== 'ไม่อยู่ใน BM'))]
+    .map(b => `<option value="${esc(b)}"></option>`).join('');
   updateStats();
 }
+function launchRowToggled() { renderLaunchAccounts(); }
+function launchAcct(v) { return launchAccounts.find(a => `${a.pid}:${a.acctId}` === v); }
+function launchSetPixel(v, id) { const a = launchAcct(v); if (a) a.chosenPixel = id || null; }
+function launchSetPage(v, id) { const a = launchAcct(v); if (a) a.chosenPage = id || null; }
 function launchSelectReady() {
   document.querySelectorAll('#launchAccounts input[type=checkbox]').forEach(i => { i.checked = !i.disabled; });
-  updateStats();
+  renderLaunchAccounts();
 }
 
 // สร้างรายการติ๊กบัญชีโฆษณา: ทุกบัญชีที่ทุก token เห็น จัดกลุ่มตาม BM (default ติ๊กเฉพาะบัญชีที่ใช้ได้)
@@ -1840,7 +1871,8 @@ async function launch() {
       form.append('data', JSON.stringify({
         profileId: t.pid,
         accountId: t.acctId,
-        pageId: t.pageId,
+        pageId: t.chosenPage || t.pageId,
+        beneficiary: document.getElementById('beneficiary').value.trim(),
         campaign: { name: campaignName, objective },
         campaignId: (reuse && reuse.name === campaignName && reuse.objective === objective) ? reuse.id : undefined,
         campaignBudget: Number(document.getElementById('campaignBudget').value) || 300,

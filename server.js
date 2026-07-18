@@ -617,7 +617,24 @@ app.post('/api/launch', upload.any(), async (req, res) => {
           };
           adsetParams.destination_type = 'WEBSITE';
         }
-        const adset = await fb(`${acct}/adsets`, adsetParams, 'POST', token);
+        // ผู้ลงโฆษณา (ชื่อธุรกิจที่ยืนยันตัวตน) — ใส่เป็น beneficiary/payor ของ ad set
+        const beneficiary = (data.beneficiary || '').trim();
+        if (beneficiary) {
+          adsetParams.dsa_beneficiary = beneficiary;
+          adsetParams.dsa_payor = beneficiary;
+        }
+        let adset;
+        try {
+          adset = await fb(`${acct}/adsets`, adsetParams, 'POST', token);
+        } catch (e) {
+          // บางบัญชีไม่รองรับ dsa_beneficiary/dsa_payor — ถอดออกแล้วลองใหม่
+          if (beneficiary && /dsa|beneficiary|payor/i.test(e.message)) {
+            send({ type: 'status', index: i, msg: 'บัญชีนี้ไม่รองรับ "ผู้ลงโฆษณา" — ขึ้นโดยไม่ระบุ...' });
+            delete adsetParams.dsa_beneficiary;
+            delete adsetParams.dsa_payor;
+            adset = await fb(`${acct}/adsets`, adsetParams, 'POST', token);
+          } else throw e;
+        }
 
         // ครีเอทีฟ: วิดีโอใช้ video_data, รูปใช้ link_data
         const spec = { page_id: pageId };
