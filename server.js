@@ -1417,6 +1417,281 @@ async function watchTick() {
   if (alerts.length) await tgSend(cfg, '📣 FB Ad Uploader แจ้งเตือน\n\n' + alerts.join('\n'));
 }
 
+// ================= AUTOPILOT: จัดการแอดโดนปฏิเสธเอง =================
+// หลักการ: แก้ที่เหตุ ไม่ใช่ยิงซ้ำ — อ่านเหตุผลจริงจาก FB, ให้ Claude ชี้ว่าผิดข้อไหน,
+// แก้ได้เฉพาะที่ข้อความเท่านั้น และแก้ได้ครั้งเดียวต่อครีเอทีฟตลอดชีพ
+// ยิงซ้ำจนหลุดคือทางที่ทำให้บัญชีโดนแบน ระบบนี้จงใจไม่รองรับ
+const AP_PATH = path.join(path.dirname(CONFIG_PATH), 'autopilot-state.json');
+const AP_MAX_FIX_PER_DAY = 10;      // เพดานการแก้อัตโนมัติทั้งระบบต่อวัน
+const AP_FREEZE_REJECTIONS = 3;     // โดนปฏิเสธกี่ตัวใน 24 ชม. ถึงหยุดบัญชีนั้น
+const AP_LOG_MAX = 200;
+
+function loadAp() {
+  try {
+    const s = JSON.parse(fs.readFileSync(AP_PATH, 'utf8'));
+    return { frozen: {}, handled: {}, retryOf: {}, rejections: {}, fixes: [], log: [], baselined: {}, ...s };
+  } catch {
+    return { frozen: {}, handled: {}, retryOf: {}, rejections: {}, fixes: [], log: [], baselined: {} };
+  }
+}
+function saveAp(s) { try { fs.writeFileSync(AP_PATH, JSON.stringify(s)); } catch { /* ข้าม */ } }
+function apLog(s, level, msg, acct) {
+  s.log.unshift({ ts: Date.now(), level, msg, acct: acct || null });
+  if (s.log.length > AP_LOG_MAX) s.log.length = AP_LOG_MAX;
+}
+const apRecent = (arr, ms) => (arr || []).filter((t) => Date.now() - t < ms);
+
+const REJECT_SCHEMA = {
+  type: 'object',
+  properties: {
+    where: { type: 'string', enum: ['text', 'video', 'landing_page', 'account', 'unclear'] },
+    violation: { type: 'string', description: 'อธิบายเป็นภาษาไทยว่าอะไรในแอดที่ผิดนโยบายข้อนี้ อ้างข้อความจริงที่มีปัญหา' },
+    fixable: { type: 'boolean', description: 'true เฉพาะเมื่อระบุได้ชัดว่าข้อความส่วนไหนผิด และแก้ที่ข้อความแล้วจะผ่านได้' },
+    newMessage: { type: ['string', 'null'], description: 'ข้อความหลักที่แก้แล้ว (null ถ้า fixable=false)' },
+    newHeadline: { type: ['string', 'null'], description: 'หัวข้อที่แก้แล้ว (null ถ้าไม่ต้องแก้)' },
+  },
+  required: ['where', 'violation', 'fixable', 'newMessage', 'newHeadline'],
+  additionalProperties: false,
+};
+
+const REJECT_SYSTEM = `คุณคือผู้เชี่ยวชาญนโยบายโฆษณา Facebook หน้าที่คือดูว่าแอดโดนปฏิเสธเพราะอะไร และแก้ได้ไหม
+
+ตัดสินว่าปัญหาอยู่ที่ไหน:
+- text = ข้อความในแอด (เคลมเกินจริง, เคลมทางการแพทย์, พาดพิงเรื่องส่วนตัว, before/after, คำต้องห้าม)
+- video = ตัววิดีโอเอง (ภาพ, เสียง, ตัวหนังสือในคลิป)
+- landing_page = ปลายทางลิงก์
+- account = ปัญหาระดับบัญชี/เพจ ไม่เกี่ยวกับแอดตัวนี้
+- unclear = เหตุผลกำกวมเกินกว่าจะระบุ
+
+กฎเหล็ก:
+- fixable=true ได้เฉพาะเมื่อ where=text และคุณชี้ได้ชัดว่าประโยคไหนผิดข้อไหน
+- ถ้าไม่แน่ใจว่าอะไรผิด ต้องตอบ fixable=false เสมอ ห้ามเดา
+- ห้ามแก้ด้วยการเลี่ยงคำ สลับคำ หรือเขียนอ้อมให้ระบบตรวจจับไม่ได้ — ต้องเอาข้อความที่ผิดจริงออก
+- ถ้าสิ่งที่โฆษณาผิดนโยบายโดยเนื้อหา (ไม่ใช่แค่วิธีเขียน) ต้องตอบ fixable=false
+- ข้อความใหม่ต้องสื่อสารสิ่งเดียวกันแบบที่ไม่ผิดนโยบาย ถ้าทำไม่ได้ให้ fixable=false
+- เขียนเป็นภาษาไทย`;
+
+async function aiDiagnoseRejection(apiKey, info) {
+  const client = new Anthropic({ apiKey });
+  const msg = await client.messages.create({
+    model: 'claude-opus-4-8',
+    max_tokens: 8000,
+    thinking: { type: 'adaptive' },
+    output_config: { effort: 'high', format: { type: 'json_schema', schema: REJECT_SCHEMA } },
+    system: REJECT_SYSTEM,
+    messages: [{
+      role: 'user',
+      content: `แอดนี้โดน Facebook ปฏิเสธ
+
+นโยบายที่อ้าง: ${info.policy || 'ไม่ระบุ'}
+คำอธิบายจาก FB: ${info.reason || 'ไม่ระบุ'}
+
+ข้อความหลักในแอด:
+"""${info.message || '(ไม่มี)'}"""
+
+หัวข้อ: "${info.headline || '(ไม่มี)'}"`,
+    }],
+  });
+  if (msg.stop_reason === 'refusal') throw new Error('AI ปฏิเสธการวิเคราะห์เคสนี้');
+  const b = msg.content.find((x) => x.type === 'text');
+  if (!b) throw new Error('AI ตอบว่าง');
+  return JSON.parse(b.text);
+}
+
+// สร้างแอดใหม่จากครีเอทีฟเดิม เปลี่ยนแค่ข้อความ
+async function apResubmit(acct, token, origCreative, adsetId, adName, newMessage, newHeadline) {
+  const spec = JSON.parse(JSON.stringify(origCreative.object_story_spec || {}));
+  if (spec.video_data) {
+    spec.video_data.message = newMessage;
+    if (newHeadline) spec.video_data.title = newHeadline;
+  } else if (spec.link_data) {
+    spec.link_data.message = newMessage;
+    if (newHeadline) spec.link_data.name = newHeadline;
+  } else {
+    throw new Error('ครีเอทีฟรูปแบบนี้ยังแก้อัตโนมัติไม่ได้');
+  }
+  const creative = await fb(`${acct}/adcreatives`, {
+    name: `${adName} (แก้ข้อความ) - Creative`, object_story_spec: spec,
+  }, 'POST', token);
+  const ad = await fb(`${acct}/ads`, {
+    name: `${adName} (แก้ข้อความ)`.slice(0, 100),
+    adset_id: adsetId,
+    creative: { creative_id: creative.id },
+    status: 'ACTIVE',
+  }, 'POST', token);
+  return ad.id;
+}
+
+async function autopilotTick() {
+  const cfg = loadConfig();
+  const ap = cfg.autopilot || {};
+  if (!ap.enabled) return;
+
+  const s = loadAp();
+  if (s.killSwitch) return;
+
+  const apiKey = cfg.anthropicKey || process.env.ANTHROPIC_API_KEY;
+  const alerts = [];
+  s.fixes = apRecent(s.fixes, 24 * 3600 * 1000);
+
+  for (const prof of cfg.profiles || []) {
+    if (!prof.accessToken) continue;
+    let accts = [];
+    try { accts = await fbAll('me/adaccounts', { fields: 'name,account_id,account_status', limit: 100 }, prof.accessToken); }
+    catch { continue; }
+
+    for (const a of accts.filter((x) => x.account_status === 1)) {
+      const acctId = a.account_id;
+      const acct = `act_${acctId}`;
+      if (s.frozen[acctId]) continue;
+
+      let ads = [];
+      try {
+        ads = await fbAll(`${acct}/ads`, {
+          fields: 'id,name,effective_status,adset_id,issues_info,creative{id,object_story_spec}',
+          limit: 200,
+        }, prof.accessToken);
+      } catch { continue; }
+
+      const rejected = ads.filter((x) => x.effective_status === 'DISAPPROVED');
+
+      // รอบแรกของบัญชีนี้ = จดไว้เฉยๆ ไม่ลงมือ กันไปไล่แก้ของเก่าที่ค้างมานานรวดเดียว
+      if (!s.baselined[acctId]) {
+        rejected.forEach((x) => { s.handled[x.id] = 'baseline'; });
+        s.baselined[acctId] = Date.now();
+        apLog(s, 'info', `เริ่มเฝ้า ${a.name} — แอดที่โดนปฏิเสธอยู่ก่อนแล้ว ${rejected.length} ตัว จะไม่แตะ`, acctId);
+        continue;
+      }
+
+      for (const ad of rejected) {
+        if (s.handled[ad.id]) continue;
+
+        // นับการโดนปฏิเสธ → ถึงเพดานเมื่อไหร่หยุดทั้งบัญชี (ตัวป้องกันบัญชีโดนแบน)
+        s.rejections[acctId] = apRecent(s.rejections[acctId], 24 * 3600 * 1000).concat(Date.now());
+        if (s.rejections[acctId].length >= AP_FREEZE_REJECTIONS) {
+          s.frozen[acctId] = { since: Date.now(), reason: `โดนปฏิเสธ ${s.rejections[acctId].length} ตัวใน 24 ชม.` };
+          s.handled[ad.id] = 'frozen';
+          const m = `🧊 หยุดระบบอัตโนมัติของบัญชี ${a.name} — โดนปฏิเสธ ${s.rejections[acctId].length} ตัวใน 24 ชม. เสี่ยงโดนแบน เข้าไปดูเองก่อนแล้วค่อยปลดล็อกในเว็บ`;
+          alerts.push(m); apLog(s, 'freeze', m, acctId);
+          break;
+        }
+
+        // ตัวที่เกิดจากการแก้อัตโนมัติแล้วยังโดนอีก = ตายถาวร ห้ามแตะต่อ
+        if (s.retryOf[ad.id]) {
+          s.handled[ad.id] = 'dead-after-retry';
+          const m = `⛔ ${a.name}: "${ad.name}" แก้ข้อความไปแล้วยังโดนปฏิเสธอีก — หยุดถาวร ไม่ลองต่อ`;
+          alerts.push(m); apLog(s, 'dead', m, acctId);
+          continue;
+        }
+
+        const issue = (ad.issues_info || [])[0] || {};
+        const spec = (ad.creative || {}).object_story_spec || {};
+        const vd = spec.video_data || spec.link_data || {};
+        const curMsg = vd.message || '';
+        const curHead = vd.title || vd.name || '';
+
+        if (!apiKey) {
+          s.handled[ad.id] = 'no-key';
+          const m = `✕ ${a.name}: "${ad.name}" โดนปฏิเสธ (${issue.error_summary || 'ไม่ระบุ'}) — ยังไม่ได้ใส่ Anthropic key เลยวินิจฉัยไม่ได้`;
+          alerts.push(m); apLog(s, 'warn', m, acctId);
+          continue;
+        }
+        if (s.fixes.length >= AP_MAX_FIX_PER_DAY) {
+          s.handled[ad.id] = 'cap';
+          const m = `✋ ${a.name}: "${ad.name}" โดนปฏิเสธ แต่วันนี้แก้อัตโนมัติครบ ${AP_MAX_FIX_PER_DAY} ครั้งแล้ว — รอคุณจัดการเอง`;
+          alerts.push(m); apLog(s, 'warn', m, acctId);
+          continue;
+        }
+
+        let dx;
+        try {
+          dx = await aiDiagnoseRejection(apiKey, {
+            policy: issue.error_summary, reason: issue.error_message, message: curMsg, headline: curHead,
+          });
+        } catch (e) {
+          s.handled[ad.id] = 'diag-failed';
+          const m = `⚠️ ${a.name}: "${ad.name}" โดนปฏิเสธ แต่วินิจฉัยไม่สำเร็จ (${e.message})`;
+          alerts.push(m); apLog(s, 'warn', m, acctId);
+          continue;
+        }
+
+        if (!dx.fixable || dx.where !== 'text' || !dx.newMessage) {
+          s.handled[ad.id] = 'not-fixable';
+          const where = { video: 'ตัววิดีโอ', landing_page: 'หน้าปลายทาง', account: 'ระดับบัญชี/เพจ', unclear: 'ไม่ชัดเจน', text: 'ข้อความ' }[dx.where] || dx.where;
+          const m = `✕ ${a.name}: "${ad.name}" โดนปฏิเสธ — แก้อัตโนมัติไม่ได้ (ปัญหาอยู่ที่${where})\n   ${dx.violation}`;
+          alerts.push(m); apLog(s, 'manual', m, acctId);
+          continue;
+        }
+
+        try {
+          const newId = await apResubmit(acct, prof.accessToken, ad.creative, ad.adset_id, ad.name, dx.newMessage, dx.newHeadline);
+          s.handled[ad.id] = 'fixed';
+          s.retryOf[newId] = ad.id;
+          s.fixes.push(Date.now());
+          const m = `🔧 ${a.name}: "${ad.name}" โดนปฏิเสธเพราะ ${dx.violation}\n   → แก้ข้อความแล้วขึ้นใหม่ให้ (ครั้งเดียว ถ้าโดนอีกจะหยุดถาวร)\n   ข้อความใหม่: ${dx.newMessage.slice(0, 150)}`;
+          alerts.push(m); apLog(s, 'fixed', m, acctId);
+        } catch (e) {
+          s.handled[ad.id] = 'resubmit-failed';
+          const m = `⚠️ ${a.name}: "${ad.name}" แก้ข้อความได้แต่สร้างแอดใหม่ไม่สำเร็จ (${e.message})`;
+          alerts.push(m); apLog(s, 'warn', m, acctId);
+        }
+      }
+    }
+  }
+
+  saveAp(s);
+  if (alerts.length) await tgSend(cfg, '🤖 ระบบอัตโนมัติ\n\n' + alerts.join('\n\n'));
+}
+
+app.get('/api/autopilot', (req, res) => {
+  const cfg = loadConfig();
+  const s = loadAp();
+  res.json({
+    enabled: !!(cfg.autopilot || {}).enabled,
+    killSwitch: !!s.killSwitch,
+    frozen: s.frozen,
+    fixesToday: apRecent(s.fixes, 24 * 3600 * 1000).length,
+    maxPerDay: AP_MAX_FIX_PER_DAY,
+    log: s.log.slice(0, 60),
+  });
+});
+app.post('/api/autopilot', (req, res) => {
+  const cfg = loadConfig();
+  cfg.autopilot = { ...(cfg.autopilot || {}), enabled: !!req.body.enabled };
+  saveConfig(cfg);
+  const s = loadAp();
+  if (typeof req.body.killSwitch === 'boolean') s.killSwitch = req.body.killSwitch;
+  apLog(s, 'info', req.body.killSwitch ? '🛑 กดหยุดฉุกเฉิน' : (cfg.autopilot.enabled ? '▶️ เปิดระบบอัตโนมัติ' : '⏸️ ปิดระบบอัตโนมัติ'));
+  saveAp(s);
+  res.json({ ok: true, enabled: cfg.autopilot.enabled, killSwitch: s.killSwitch });
+});
+// สั่งตรวจทันที ไม่ต้องรอครบ 30 นาที
+let apRunning = false;
+app.post('/api/autopilot/run', async (req, res) => {
+  if (apRunning) return res.status(409).json({ error: 'กำลังตรวจอยู่ รอรอบนี้จบก่อน' });
+  if (!(loadConfig().autopilot || {}).enabled) return res.status(400).json({ error: 'ยังไม่ได้เปิดระบบอัตโนมัติ' });
+  apRunning = true;
+  try {
+    await autopilotTick();
+    res.json({ ok: true, log: loadAp().log.slice(0, 20) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  } finally { apRunning = false; }
+});
+
+app.post('/api/autopilot/unfreeze', (req, res) => {
+  const s = loadAp();
+  const id = String(req.body.acctId || '');
+  if (!s.frozen[id]) return res.status(404).json({ error: 'บัญชีนี้ไม่ได้ถูกหยุดอยู่' });
+  delete s.frozen[id];
+  s.rejections[id] = [];
+  apLog(s, 'info', `ปลดล็อกบัญชี ${id} ด้วยมือ`, id);
+  saveAp(s);
+  res.json({ ok: true });
+});
+
+setInterval(() => autopilotTick().catch(() => {}), 30 * 60 * 1000).unref();
+
 // สรุปยอดเมื่อวานทุกเช้า 08:00 เวลาไทย
 async function dailySummary() {
   const cfg = loadConfig();

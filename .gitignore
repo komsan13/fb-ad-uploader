@@ -3,6 +3,7 @@ config.json
 config-backups/
 media-library/
 captions.json
+autopilot-state.json
 watch-state.json
 *.log
 .gstack/
