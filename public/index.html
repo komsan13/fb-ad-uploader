@@ -1287,6 +1287,8 @@ async function loadFullAccounts(force) {
         currency: a.currency, status: a.account_status,
         hasPayment: !!a.hasPayment, pixels, chosenPixel: pixels[0] ? pixels[0].id : null,
         pages, chosenPage: (pages.some(g => g.id === p.pageId) ? p.pageId : (pages[0] || {}).id) || null,
+        dsaOptions: a.dsaOptions || [],
+        beneficiary: (a.dsaOptions || [])[0] || '', // default = ตัวที่ FB แนะนำ
       });
     }
   }
@@ -1347,9 +1349,12 @@ function renderLaunchAccounts() {
             ? a.pages.map(g => `<option value="${g.id}" ${g.id === a.chosenPage ? 'selected' : ''}>📄 ${esc(g.name)}</option>`).join('')
             : '<option value="">— ไม่พบเพจ —</option>'}
         </select>
-        <input value="${esc(a.beneficiary || '')}" placeholder="ผู้ลงโฆษณา (ไม่บังคับ)"
-          title="พิมพ์ชื่อธุรกิจที่ยืนยันตัวตนแล้วให้ตรงกับที่เห็นใน dropdown ผู้ลงโฆษณาของ Ads Manager เป๊ะๆ เช่น CROSS CURRENT PRODUCTIONS — เว้นว่างได้"
-          onchange="launchSetBeneficiary('${v}', this.value)">
+        ${a.dsaOptions.length ? `<select onchange="launchSetBeneficiary('${v}', this.value)" title="ผู้ลงโฆษณาของบัญชีนี้ (รายชื่อจาก FB) — ไม่บังคับ">
+          <option value="">— ผู้ลงโฆษณา: ไม่ระบุ —</option>
+          ${a.dsaOptions.map(o => `<option value="${esc(o)}" ${o === a.beneficiary ? 'selected' : ''}>👤 ${esc(o)}</option>`).join('')}
+        </select>` : `<input value="${esc(a.beneficiary || '')}" placeholder="ผู้ลงโฆษณา (ไม่บังคับ)"
+          title="พิมพ์ชื่อธุรกิจ/บุคคลที่ยืนยันตัวตนแล้ว ให้ตรงกับ Ads Manager เป๊ะๆ — เว้นว่างได้"
+          onchange="launchSetBeneficiary('${v}', this.value)">`}
       </div>` : '';
       return `<label class="acct-row ${r.ready ? '' : 'row-off'}" title="${esc(tip)}">
         <input type="checkbox" value="${v}" ${isChecked ? 'checked' : ''} ${r.ready ? '' : 'disabled'} onchange="launchRowToggled()">

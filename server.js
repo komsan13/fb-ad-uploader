@@ -257,7 +257,7 @@ app.get('/api/accounts', async (req, res) => {
     // ?full=1 = ดึง Pixel + วิธีจ่ายเงินมาด้วยในครั้งเดียว (สำหรับหน้าขึ้นแอด/ต้นแบบ)
     const full = req.query.full === '1';
     const acctFields = full
-      ? 'name,account_id,currency,account_status,business{id,name},funding_source_details,adspixels.limit(15){id,name,last_fired_time}'
+      ? 'name,account_id,currency,account_status,business{id,name},funding_source_details,adspixels.limit(15){id,name,last_fired_time},dsa_recommendations{recommendations}'
       : 'name,account_id,currency,account_status,business{id,name}';
     const adAccounts = await fbAll('me/adaccounts', { fields: acctFields, limit: 100 }, prof.accessToken);
     const pages = await fb('me/accounts', { fields: 'name,id', limit: 200 }, 'GET', prof.accessToken);
@@ -270,6 +270,9 @@ app.get('/api/accounts', async (req, res) => {
         const fsd = a.funding_source_details || {};
         out.hasPayment = !!(fsd.id || fsd.display_string);
         out.pixels = (a.adspixels && a.adspixels.data) ? a.adspixels.data : [];
+        // รายชื่อ "ผู้ลงโฆษณา" ที่ FB แนะนำสำหรับบัญชีนี้ (ธุรกิจ/บุคคลที่ยืนยันตัวตนแล้ว)
+        out.dsaOptions = ((a.dsa_recommendations && a.dsa_recommendations.data) || [])
+          .flatMap((r) => r.recommendations || []);
       }
       return out;
     });
