@@ -549,13 +549,11 @@
       <div class="card">
         <div class="card-head-row">
           <div class="pc-step"><span class="pc-step-num">3</span> รายการแอด <span class="h-desc" id="adCount"></span></div>
-          <button class="btn-primary btn-sm" style="margin-left:auto" onclick="autoLaunch(this)" title="จัดแผน + สร้างแคมเปญ + ขึ้นแอดทุกบัญชี แล้วเปิดยิงทันที">⚡ ขึ้นอัตโนมัติทั้งหมด</button>
-          <button class="btn-light btn-sm" onclick="autoPlan(this)" title="จัดแผนใส่การ์ดให้ตรวจก่อน ยังไม่ขึ้นจริง">🤖 จัดแผนอย่างเดียว</button>
-          <button class="btn-light btn-sm" onclick="openLibPick(null)">🎬 เลือกจากคลังวิดีโอ</button>
-          <button class="btn-light btn-sm" onclick="addAd()">+ เพิ่มแอดเปล่า</button>
+          <button class="btn-primary btn-sm" style="margin-left:auto" onclick="autoLaunch(this)" title="หยิบวิดีโอ+แคปชั่นจากคลัง สร้างแคมเปญ แล้วขึ้นแอดทุกบัญชีที่ใช้ได้ เปิดยิงทันที">⚡ ขึ้นอัตโนมัติทั้งหมด</button>
+          <button class="btn-light btn-sm" onclick="openLibPick(null)">🎬 เลือกเอง</button>
         </div>
         <div class="hint" style="margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <span><b>⚡ ขึ้นอัตโนมัติทั้งหมด</b> = หยิบวิดีโอ+แคปชั่นจากคลังใส่ให้ทุกบัญชีที่ติ๊กไว้ (ขั้นตอนที่ 4) ไม่ให้ซ้ำกัน แล้วสร้างแคมเปญ+ขึ้นแอดเปิดยิงเลย (มีสรุปให้ยืนยันก่อน) —</span>
+          <span>กดปุ่มเดียวจบ — ขึ้นให้<b>ทุกบัญชีที่ใช้ได้</b>โดยอัตโนมัติ ไม่ต้องติ๊กเลือกเอง มีสรุปให้ยืนยันก่อนเงินออก —</span>
           <label style="display:inline-flex;align-items:center;gap:6px">แอดต่อบัญชี
             <input id="planPerAccount" type="number" min="1" max="10" value="3" style="width:60px;padding:4px 6px">
           </label>
@@ -1042,6 +1040,7 @@ window.addEventListener('hashchange', () => {
 function openUploadModal() {
   document.getElementById('uploadModal').style.display = 'flex';
   togglePixel(); // โชว์/ซ่อนช่องเหตุการณ์คอนเวอร์ชั่นตามวัตถุประสงค์ปัจจุบันตั้งแต่เปิด
+  loadLaunchDefaults(); // ดึงค่าที่จำไว้ทุกครั้งที่เปิด — เผื่อรอบ init พลาด
   loadLaunchAccounts();
   updateStats();
 }
@@ -2316,7 +2315,7 @@ function applyLaunchDefaults(d) {
   const rf = document.getElementById('ruleFields');
   if (rf) rf.style.display = document.getElementById('ruleOn').checked ? '' : 'none';
 }
-let ldTimer, ldLoaded = false;
+let ldTimer, ldLoaded = false, ldBound = false;
 function saveLaunchDefaultsSoon() {
   if (!ldLoaded) return; // อย่าเพิ่งเขียนทับก่อนโหลดค่าเดิมเสร็จ
   clearTimeout(ldTimer);
@@ -2336,6 +2335,9 @@ async function loadLaunchDefaults() {
   catch { /* โหลดไม่ได้ก็ใช้ค่าเริ่มต้นในหน้า */ }
   ldLoaded = true;
   // ผูก listener หลังโหลดเสร็จ กันการ apply ไปกระตุ้น save ย้อนกลับ
+  // ผูกครั้งเดียวพอ — openUploadModal เรียกซ้ำได้ ไม่งั้น listener ซ้อนกันทุกครั้งที่เปิด
+  if (ldBound) return;
+  ldBound = true;
   for (const [, id] of [...LD_FIELDS, ...LD_TOGGLES]) {
     const el = document.getElementById(id);
     if (el) { el.addEventListener('change', saveLaunchDefaultsSoon); el.addEventListener('input', saveLaunchDefaultsSoon); }
@@ -2484,11 +2486,22 @@ async function aiPause(pid, campaignId, btn) {
 // ---------- จัดแผนขึ้นแอดอัตโนมัติ ----------
 // การ์ดที่จัดแผนมาจะถูกล็อกไว้กับบัญชีเดียว (dataset.onlyAcct) เพราะแต่ละบัญชีได้วิดีโอคนละตัว
 // จัดแผน + สร้างการ์ด คืนสรุปให้ผู้เรียกไปใช้ต่อ (null = ยกเลิก/พลาด)
+// บัญชีที่พร้อมยิงทั้งหมด — ไม่ต้องติ๊กเอง ขึ้นทุกบัญชีที่ใช้ได้เสมอ
+function readyAccounts() {
+  return launchAccounts.filter(a => evalReady(a).ready);
+}
 async function runAutoPlan(btn, opts = {}) {
-  const keys = [...document.querySelectorAll('#launchAccounts input:checked')].map(i => i.value);
-  if (!keys.length) { alert('ติ๊กเลือกบัญชีที่จะขึ้นในแผงด้านซ้าย (ขั้นตอนที่ 4) ก่อนครับ'); return null; }
-  const accounts = keys.map(k => launchAccounts.find(a => `${a.pid}:${a.acctId}` === k)).filter(Boolean)
-    .map(a => ({ pid: a.pid, acctId: a.acctId, name: a.name }));
+  const ready = readyAccounts();
+  if (!ready.length) {
+    alert('ยังไม่มีบัญชีที่พร้อมยิงเลย — เช็คในเมนู "สุขภาพบัญชี" ว่าขาดอะไร (บัตร / เพจ / Pixel)');
+    return null;
+  }
+  const accounts = ready.map(a => ({ pid: a.pid, acctId: a.acctId, name: a.name }));
+  // ติ๊กเฉพาะบัญชีที่พร้อมจริง (เทียบจากรายการ ไม่ใช่จาก disabled ซึ่งเปราะ)
+  // ตอนกดขึ้นจริง launch() อ่านจากช่องที่ติ๊ก — ติ๊กตัวที่ใช้ไม่ได้ไปด้วยจะพังกลางทาง
+  const readyKeys = new Set(accounts.map(a => `${a.pid}:${a.acctId}`));
+  document.querySelectorAll('#launchAccounts input[type=checkbox]').forEach(i => { i.checked = readyKeys.has(i.value); });
+  updateStats();
   const perAccount = Number(document.getElementById('planPerAccount').value) || 3;
 
   const existing = document.querySelectorAll('.ad-card').length;
@@ -2530,15 +2543,6 @@ async function runAutoPlan(btn, opts = {}) {
   return { plan: d.plan, warnings: d.warnings, total: d.plan.reduce((s, a) => s + a.ads.length, 0), link };
 }
 
-async function autoPlan(btn) {
-  const r = await runAutoPlan(btn);
-  if (!r) return;
-  let msg = `จัดแผนให้แล้ว ${r.total} แอด ใน ${r.plan.length} บัญชี\nแต่ละการ์ดล็อกไว้กับบัญชีของตัวเอง — ตรวจแล้วกด "ขึ้นแอดทั้งหมด" ได้เลย`;
-  if (r.warnings.length) msg += `\n\n⚠️ ข้อควรรู้:\n- ${r.warnings.join('\n- ')}`;
-  if (!r.link) msg += '\n\n⚠️ ยังไม่ได้ใส่ลิงก์ในค่าเริ่มต้น (ขั้นตอนที่ 2) — ต้องใส่ก่อนถึงจะขึ้นแอดได้';
-  alert(msg);
-}
-
 // ปุ่มเดียวจบ: จัดแผน → ยืนยัน → ขึ้นจริง (เปิดยิงทันที)
 async function autoLaunch(btn) {
   const link = document.getElementById('tpl-link').value.trim();
@@ -2562,7 +2566,7 @@ async function autoLaunch(btn) {
 
   // สรุปให้เห็นตัวเลขเงินก่อนกด — นี่คือจุดที่เงินเริ่มไหลจริง
   let msg = `กำลังจะขึ้นแอดจริงและ ⚡ เปิดยิงทันที\n\n`
-    + `• ${nAcct} บัญชี × ${r.total / nAcct} แอด = ${r.total} แอด\n`
+    + `• ทุกบัญชีที่ใช้ได้ ${nAcct} บัญชี × ${r.total / nAcct} แอด = ${r.total} แอด\n`
     + `• แคมเปญ: "${nameEl.value.trim()}" (${objText})\n`
     + `• งบ ${budget.toLocaleString()} บาท/วัน/บัญชี → รวม ${totalDaily.toLocaleString()} บาท/วัน\n`
     + `• ลิงก์: ${link}\n`
