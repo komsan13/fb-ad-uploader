@@ -884,6 +884,13 @@
           <span class="switch"><input type="checkbox" id="apKill" onchange="saveAutopilot()"><span class="sl"></span></span>
           <span>🛑 <b>หยุดฉุกเฉิน</b> — หยุดทุกการกระทำทันที (ทับสวิตช์ด้านบน)</span>
         </label>
+        <div class="fgrid" style="align-items:flex-end;margin-bottom:6px">
+          <div class="field" style="max-width:340px">
+            <label>เติมแอดให้แต่ละบัญชีมีแอดยิงอยู่อย่างน้อย (ตัว)</label>
+            <input id="apMinAds" type="number" min="0" max="50" value="0" onchange="saveAutopilot()">
+          </div>
+        </div>
+        <div class="hint" style="margin-bottom:10px">ใส่ <b>0</b> = ไม่เติมให้ • ถ้าใส่เลข มันจะหยิบวิดีโอ+แคปชั่นจากคลังขึ้นแอดเองจนครบ <b>เปิดยิงทันที</b> โดยใช้ค่าตั้งต้นในหน้าขึ้นแอด (งบ/ลิงก์/วัตถุประสงค์/กลุ่มเป้าหมาย) — งบอยู่ระดับแคมเปญ (CBO) เพิ่มแอดกี่ตัวก็ไม่ใช้จ่ายเกินงบที่ตั้งไว้</div>
         <div class="hint" style="margin-bottom:10px">
           <b>สิ่งที่มันทำ:</b> อ่านเหตุผลที่ FB ปฏิเสธ → ถ้าปัญหาอยู่ที่ข้อความและระบุได้ชัด จะแก้แล้วขึ้นใหม่ให้ <b>ครั้งเดียวต่อครีเอทีฟ</b> • ถ้าปัญหาอยู่ที่วิดีโอ/หน้าขาย/ระดับบัญชี จะไม่แตะ แค่เตือนคุณ<br>
           <b>เพดานกันพัง:</b> แก้ได้ไม่เกิน <b id="apCap">10</b> ครั้ง/วันทั้งระบบ • บัญชีไหนโดนปฏิเสธ 3 ตัวใน 24 ชม. จะ<b>หยุดบัญชีนั้นทันที</b>เพื่อกันโดนแบน • แจ้งทุกอย่างเข้า Telegram
@@ -2337,13 +2344,15 @@ async function loadAutopilot() {
   document.getElementById('apEnabled').checked = d.enabled;
   document.getElementById('apKill').checked = d.killSwitch;
   document.getElementById('apCap').textContent = d.maxPerDay;
+  document.getElementById('apMinAds').value = d.minAds || 0;
 
   const frozen = Object.entries(d.frozen || {});
   const st = [];
   st.push(d.killSwitch ? '<b style="color:var(--red)">🛑 หยุดฉุกเฉินอยู่ — ไม่ทำอะไรทั้งสิ้น</b>'
     : d.enabled ? '<b style="color:var(--brand-dark)">▶️ ทำงานอยู่</b> — รอบตรวจถัดไปภายใน 30 นาที'
     : '<span class="muted">⏸️ ปิดอยู่</span>');
-  st.push(`แก้ไปแล้ววันนี้ ${d.fixesToday}/${d.maxPerDay} ครั้ง`);
+  st.push(`แก้ข้อความไปแล้ววันนี้ ${d.fixesToday}/${d.maxPerDay} ครั้ง`);
+  if (d.minAds) st.push(`เติมแอดไปแล้ววันนี้ ${d.createdToday} ตัว (เพดาน ${d.maxNewPerAcct}/บัญชี)`);
   if (frozen.length) {
     st.push('<b style="color:var(--red)">บัญชีที่ถูกหยุด:</b> ' + frozen.map(([id, f]) =>
       `${esc(id)} (${esc(f.reason)}) <button class="btn-light btn-sm" onclick="apUnfreeze(${jsStr(id)})">ปลดล็อก</button>`).join(' • '));
@@ -2362,6 +2371,7 @@ async function saveAutopilot() {
       body: JSON.stringify({
         enabled: document.getElementById('apEnabled').checked,
         killSwitch: document.getElementById('apKill').checked,
+        minAds: Number(document.getElementById('apMinAds').value) || 0,
       }),
     });
   } catch (e) { alert('บันทึกไม่สำเร็จ: ' + e.message); }

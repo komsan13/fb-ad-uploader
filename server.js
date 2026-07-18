@@ -1450,9 +1450,9 @@ const AP_LOG_MAX = 200;
 function loadAp() {
   try {
     const s = JSON.parse(fs.readFileSync(AP_PATH, 'utf8'));
-    return { frozen: {}, handled: {}, retryOf: {}, rejections: {}, fixes: [], log: [], baselined: {}, ...s };
+    return { frozen: {}, handled: {}, retryOf: {}, rejections: {}, fixes: [], log: [], baselined: {}, created: {}, warned: {}, campaign: {}, ...s };
   } catch {
-    return { frozen: {}, handled: {}, retryOf: {}, rejections: {}, fixes: [], log: [], baselined: {} };
+    return { frozen: {}, handled: {}, retryOf: {}, rejections: {}, fixes: [], log: [], baselined: {}, created: {}, warned: {}, campaign: {} };
   }
 }
 function saveAp(s) { try { fs.writeFileSync(AP_PATH, JSON.stringify(s)); } catch { /* ข้าม */ } }
@@ -1541,6 +1541,189 @@ async function apResubmit(acct, token, origCreative, adsetId, adName, newMessage
     status: 'ACTIVE',
   }, 'POST', token);
   return ad.id;
+}
+
+// ---------- เติมแอดให้บัญชีที่มีแอดยิงอยู่ต่ำกว่าเป้า ----------
+const AP_MAX_NEW_ADS_PER_ACCT_DAY = 6;   // เพดานแอดใหม่ต่อบัญชีต่อวัน
+
+// หาแคมเปญของ autopilot ในบัญชีนี้ ถ้าไม่มี/ถูกลบ/ถูกปิด ก็สร้างใหม่
+// งบอยู่ที่ระดับแคมเปญ (CBO) → เพิ่มแอดกี่ตัวก็ไม่ทำให้ใช้จ่ายเกินงบก้อนนี้
+async function apGetCampaign(acct, token, s, acctId, d, objInfo) {
+  const known = (s.campaign || {})[acctId];
+  if (known) {
+    try {
+      const c = await fb(known, { fields: 'id,status,effective_status' }, 'GET', token);
+      if (c && c.status === 'ACTIVE') return known;
+    } catch { /* ถูกลบไปแล้ว สร้างใหม่ */ }
+  }
+  const params = {
+    name: `Autopilot ${new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10)}`,
+    objective: d.objective || 'OUTCOME_SALES',
+    status: 'ACTIVE',
+    special_ad_categories: [],
+  };
+  const budget = Number(d.campaignBudget) || 0;
+  if (budget > 0) { params.daily_budget = Math.round(budget * 100); params.bid_strategy = 'LOWEST_COST_WITHOUT_CAP'; }
+  const c = await fb(`${acct}/campaigns`, params, 'POST', token);
+  s.campaign = s.campaign || {};
+  s.campaign[acctId] = c.id;
+  return c.id;
+}
+
+async function apCreateOneAd(acct, token, campaignId, pageId, pixelId, d, objInfo, item) {
+  const targeting = {
+    geo_locations: { countries: String(d.countries || 'TH').split(',').map((x) => x.trim().toUpperCase()).filter(Boolean) },
+    age_min: Number(d.ageMin) || 18,
+    age_max: Number(d.ageMax) || 65,
+    targeting_automation: { advantage_audience: 0 },
+    publisher_platforms: ['facebook'],
+    facebook_positions: ['feed', 'profile_feed', 'story', 'facebook_reels'],
+    device_platforms: ['mobile'],
+    locales: [THAI_LOCALE],
+  };
+  if (d.gender === 'male') targeting.genders = [1];
+  if (d.gender === 'female') targeting.genders = [2];
+  if (Array.isArray(d.interests) && d.interests.length) {
+    targeting.flexible_spec = [{ interests: d.interests.map((x) => ({ id: x.id, name: x.name })) }];
+  }
+
+  const adsetParams = {
+    name: `${item.name} - Ad Set`,
+    campaign_id: campaignId,
+    billing_event: 'IMPRESSIONS',
+    optimization_goal: objInfo.optimization_goal,
+    targeting,
+    status: 'ACTIVE',
+  };
+  if (objInfo.needsPixel) {
+    adsetParams.promoted_object = { pixel_id: pixelId, custom_event_type: d.conversionEvent || objInfo.event };
+    adsetParams.destination_type = 'WEBSITE';
+    const life = d.lifecycleStrategy === undefined ? '100' : String(d.lifecycleStrategy);
+    if (life !== '') adsetParams.existing_customer_budget_percentage = Number(life);
+  }
+  let adset;
+  try { adset = await fb(`${acct}/adsets`, adsetParams, 'POST', token); }
+  catch (e) {
+    // field เสริมบางตัวบัญชีนี้อาจไม่รองรับ — ถอดแล้วลองใหม่ครั้งเดียว
+    delete adsetParams.existing_customer_budget_percentage;
+    adset = await fb(`${acct}/adsets`, adsetParams, 'POST', token);
+  }
+
+  // อัปวิดีโอจากคลังขึ้น FB แล้วรอประมวลผล
+  const m = resolveMedia(item.mediaId);
+  if (!m) throw new Error('ไฟล์วิดีโอหายจากคลัง');
+  const file = { buffer: fs.readFileSync(m.path), mimetype: m.mimetype, originalname: m.originalname };
+  const videoId = await uploadVideo(acct, file, token);
+  await waitVideoReady(videoId, token);
+  const thumb = await videoThumb(videoId, token);
+
+  const spec = {
+    page_id: pageId,
+    video_data: {
+      video_id: videoId,
+      message: item.message,
+      title: item.headline || undefined,
+      call_to_action: { type: d.cta || 'LEARN_MORE', value: { link: d.link } },
+    },
+  };
+  if (thumb) spec.video_data.image_url = thumb;
+  const creative = await fb(`${acct}/adcreatives`, { name: `${item.name} - Creative`, object_story_spec: spec }, 'POST', token);
+  const ad = await fb(`${acct}/ads`, {
+    name: item.name.slice(0, 100), adset_id: adset.id, creative: { creative_id: creative.id }, status: 'ACTIVE',
+  }, 'POST', token);
+  return ad.id;
+}
+
+async function apRefill(cfg, prof, a, ads, s, alerts) {
+  const ap = cfg.autopilot || {};
+  const target = Math.max(0, Math.min(50, Number(ap.minAds) || 0));
+  if (!target) return;
+
+  const acctId = a.account_id;
+  const acct = `act_${acctId}`;
+  const activeCount = ads.filter((x) => x.effective_status === 'ACTIVE').length;
+  if (activeCount >= target) return;
+
+  const d = cfg.launchDefaults || {};
+  const objInfo = OBJECTIVES[d.objective || 'OUTCOME_SALES'];
+  const problems = [];
+  if (!objInfo) problems.push('วัตถุประสงค์ไม่รองรับ');
+  if (!d.link) problems.push('ยังไม่ได้ตั้งลิงก์ในค่าเริ่มต้น');
+  if (!Number(d.campaignBudget)) problems.push('ยังไม่ได้ตั้งงบ');
+  if (!prof.pageId) problems.push(`โปรไฟล์ "${prof.label}" ยังไม่ได้เลือกเพจ`);
+  if (problems.length) {
+    if (s.warned[acctId] !== 'setup') {
+      const m = `⚠️ ${a.name}: มีแอดยิงอยู่ ${activeCount}/${target} ตัว แต่เติมให้ไม่ได้ — ${problems.join(', ')}`;
+      alerts.push(m); apLog(s, 'warn', m, acctId); s.warned[acctId] = 'setup';
+    }
+    return;
+  }
+  s.warned[acctId] = '';
+
+  // เพดานแอดใหม่ต่อบัญชีต่อวัน
+  s.created[acctId] = apRecent(s.created[acctId], 24 * 3600 * 1000);
+  const room = AP_MAX_NEW_ADS_PER_ACCT_DAY - s.created[acctId].length;
+  if (room <= 0) {
+    if (s.warned[acctId] !== 'cap') {
+      const m = `✋ ${a.name}: แอดเหลือ ${activeCount}/${target} แต่วันนี้เติมครบ ${AP_MAX_NEW_ADS_PER_ACCT_DAY} ตัวแล้ว`;
+      alerts.push(m); apLog(s, 'warn', m, acctId); s.warned[acctId] = 'cap';
+    }
+    return;
+  }
+
+  let pixelId = null;
+  if (objInfo.needsPixel) {
+    try {
+      const px = await fbAll(`${acct}/adspixels`, { fields: 'id', limit: 10 }, prof.accessToken);
+      pixelId = (px[0] || {}).id;
+    } catch { /* อ่าน pixel ไม่ได้ */ }
+    if (!pixelId) {
+      const m = `⚠️ ${a.name}: เติมแอดไม่ได้ — วัตถุประสงค์นี้ต้องมี Pixel แต่บัญชีนี้ยังไม่มี`;
+      if (s.warned[acctId] !== 'pixel') { alerts.push(m); apLog(s, 'warn', m, acctId); s.warned[acctId] = 'pixel'; }
+      return;
+    }
+  }
+
+  // เลือกวิดีโอ+แคปชั่นด้วยตรรกะเดียวกับตัวจัดแผน: เลี่ยงตัวที่บัญชีนี้เคยใช้
+  const videos = loadLib();
+  const captions = loadCaptions();
+  if (!videos.length || !captions.length) {
+    const m = `📭 ${a.name}: แอดเหลือ ${activeCount}/${target} แต่${!videos.length ? 'คลังวิดีโอ' : 'คลังแคปชั่น'}ว่าง — เติมของเข้าคลังด่วน`;
+    if (s.warned[acctId] !== 'empty') { alerts.push(m); apLog(s, 'empty', m, acctId); s.warned[acctId] = 'empty'; }
+    return;
+  }
+
+  const want = Math.min(target - activeCount, room);
+  const ranked = videos.slice().sort((x, y) =>
+    ((x.usedOn || []).includes(acctId) ? 1 : 0) - ((y.usedOn || []).includes(acctId) ? 1 : 0) || y.ts - x.ts);
+  let campaignId;
+  try { campaignId = await apGetCampaign(acct, prof.accessToken, s, acctId, d, objInfo); }
+  catch (e) {
+    const m = `⚠️ ${a.name}: สร้างแคมเปญให้ไม่สำเร็จ (${e.message})`;
+    alerts.push(m); apLog(s, 'warn', m, acctId);
+    return;
+  }
+
+  let ok = 0;
+  for (let i = 0; i < want; i++) {
+    const v = ranked[i % ranked.length];
+    const cap = captions[(s.capCursor = ((s.capCursor || 0) + 1)) % captions.length];
+    const item = { mediaId: v.id, name: `${v.name} - auto`, message: cap.message, headline: cap.headline };
+    try {
+      await apCreateOneAd(acct, prof.accessToken, campaignId, prof.pageId, pixelId, d, objInfo, item);
+      markVideoUsed(v.id, acctId);
+      s.created[acctId].push(Date.now());
+      ok++;
+    } catch (e) {
+      const m = `⚠️ ${a.name}: เติมแอด "${v.name}" ไม่สำเร็จ (${e.message})`;
+      alerts.push(m); apLog(s, 'warn', m, acctId);
+      break; // พลาดแล้วหยุดรอบนี้ ไม่รัวต่อ
+    }
+  }
+  if (ok) {
+    const m = `➕ ${a.name}: แอดยิงอยู่ ${activeCount}/${target} ตัว — เติมให้อีก ${ok} ตัว (เปิดยิงแล้ว งบรวมยังคุมที่ ${Number(d.campaignBudget).toLocaleString()} บาท/วัน)`;
+    alerts.push(m); apLog(s, 'refill', m, acctId);
+  }
 }
 
 async function autopilotTick() {
@@ -1657,6 +1840,12 @@ async function autopilotTick() {
           alerts.push(m); apLog(s, 'warn', m, acctId);
         }
       }
+
+      // เติมแอดให้ครบเป้า — ทำหลังจัดการของที่โดนปฏิเสธเสร็จ และเฉพาะบัญชีที่ยังไม่ถูกหยุด
+      if (!s.frozen[acctId]) {
+        try { await apRefill(cfg, prof, a, ads, s, alerts); }
+        catch (e) { apLog(s, 'warn', `เติมแอดให้ ${a.name} ไม่สำเร็จ: ${e.message}`, acctId); }
+      }
     }
   }
 
@@ -1669,16 +1858,22 @@ app.get('/api/autopilot', (req, res) => {
   const s = loadAp();
   res.json({
     enabled: !!(cfg.autopilot || {}).enabled,
+    minAds: Number((cfg.autopilot || {}).minAds) || 0,
     killSwitch: !!s.killSwitch,
     frozen: s.frozen,
     fixesToday: apRecent(s.fixes, 24 * 3600 * 1000).length,
     maxPerDay: AP_MAX_FIX_PER_DAY,
+    maxNewPerAcct: AP_MAX_NEW_ADS_PER_ACCT_DAY,
+    createdToday: Object.values(s.created || {}).reduce((n, arr) => n + apRecent(arr, 24 * 3600 * 1000).length, 0),
     log: s.log.slice(0, 60),
   });
 });
 app.post('/api/autopilot', (req, res) => {
   const cfg = loadConfig();
   cfg.autopilot = { ...(cfg.autopilot || {}), enabled: !!req.body.enabled };
+  if (req.body.minAds !== undefined) {
+    cfg.autopilot.minAds = Math.max(0, Math.min(50, Number(req.body.minAds) || 0));
+  }
   saveConfig(cfg);
   const s = loadAp();
   if (typeof req.body.killSwitch === 'boolean') s.killSwitch = req.body.killSwitch;
