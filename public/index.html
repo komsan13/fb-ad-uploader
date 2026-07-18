@@ -1685,6 +1685,28 @@ function applyTemplateToAll() {
   updateStats();
 }
 
+// ---------- ต้นแบบพิมพ์แล้วไหลเข้าแอดทุกตัวอัตโนมัติ ----------
+// กติกา: อัปเดตเฉพาะการ์ดที่ช่องนั้นยังว่าง หรือยังเท่ากับค่าต้นแบบเดิม (ค่าที่ผู้ใช้แก้รายตัวไม่ถูกทับ)
+[['tpl-message', 'f-message'], ['tpl-headline', 'f-headline'], ['tpl-link', 'f-link'],
+ ['tpl-agemin', 'f-agemin'], ['tpl-agemax', 'f-agemax'], ['tpl-gender', 'f-gender'], ['tpl-countries', 'f-countries'],
+].forEach(([tplId, cardCls]) => {
+  const el = document.getElementById(tplId);
+  let prev = el.value;
+  const sync = () => {
+    if (el.value === prev) return;
+    document.querySelectorAll('.ad-card').forEach(card => {
+      const f = card.querySelector('.' + cardCls);
+      if (f.value === prev || f.value.trim() === '') {
+        f.value = el.value;
+        if (['f-agemin', 'f-agemax', 'f-gender', 'f-countries'].includes(cardCls)) updateTargetSummary(card);
+      }
+    });
+    prev = el.value;
+  };
+  el.addEventListener('input', sync);
+  el.addEventListener('change', sync);
+});
+
 // ---------- การ์ดแอด ----------
 function addAd(opts = {}) {
   const id = ++adRowSeq;
