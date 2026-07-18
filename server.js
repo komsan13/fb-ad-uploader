@@ -297,7 +297,7 @@ app.get('/api/campaigns', async (req, res) => {
   if (!acctId) return res.status(400).json({ error: `บัญชี "${prof.label}" ยังไม่ได้เลือกบัญชีโฆษณา` });
   const acct = `act_${acctId}`;
   const token = prof.accessToken;
-  const datePreset = ['today', 'last_7d', 'last_30d', 'maximum'].includes(req.query.date) ? req.query.date : 'maximum';
+  const datePreset = ['today', 'last_7d', 'last_30d', 'last_90d', 'maximum'].includes(req.query.date) ? req.query.date : 'maximum';
   try {
     const acctInfo = await fb(acct, { fields: 'currency' }, 'GET', token);
     const campData = await fbAll(`${acct}/campaigns`, {
@@ -371,6 +371,36 @@ app.get('/api/campaigns', async (req, res) => {
       };
     });
     res.json({ campaigns: rows, account: acct.replace('act_', ''), currency: acctInfo.currency || '', datePreset });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// ใช้จ่ายรายวันระดับบัญชี (สำหรับกราฟหน้าแดชบอร์ด)
+app.get('/api/daily', async (req, res) => {
+  const cfg = loadConfig();
+  const prof = getProfile(cfg, req.query.profile);
+  if (!prof || !prof.accessToken) return res.status(400).json({ error: 'ยังไม่ได้เชื่อมต่อบัญชี' });
+  const acctId = String(req.query.account || prof.adAccountId || '').replace(/[^0-9]/g, '');
+  if (!acctId) return res.status(400).json({ error: 'ไม่ได้ระบุบัญชีโฆษณา' });
+  const datePreset = ['today', 'last_7d', 'last_30d', 'last_90d'].includes(req.query.date) ? req.query.date : 'last_7d';
+  try {
+    const rows = await fbAll(`act_${acctId}/insights`, {
+      level: 'account',
+      fields: 'spend,impressions,reach',
+      time_increment: 1,
+      date_preset: datePreset,
+      limit: 100,
+    }, prof.accessToken);
+    res.json({
+      account: acctId,
+      days: rows.map((r) => ({
+        date: r.date_start,
+        spend: Number(r.spend) || 0,
+        impressions: Number(r.impressions) || 0,
+        reach: Number(r.reach) || 0,
+      })),
+    });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
