@@ -1072,7 +1072,7 @@ async function buildCampFilters() {
     if (!accountCache[p.id]) {
       try {
         const d = await (await fetch('/api/accounts?profile=' + p.id)).json();
-        if (d.error) { groups.push({ title: `${p.label} — โหลดไม่สำเร็จ: ${d.error}`, chips: '' }); return; }
+        if (d.error) { groups.push({ title: `${p.label} — โหลดไม่สำเร็จ: ${d.error}`, rows: '', count: 0 }); return; }
         accountCache[p.id] = d;
       } catch { return; }
     }
@@ -1430,7 +1430,7 @@ function searchInterests(input) {
     const data = await res.json();
     if (!Array.isArray(data) || !data.length) { box.style.display = 'none'; return; }
     box.innerHTML = data.map(d =>
-      `<div onclick='pickInterest(this, ${JSON.stringify(d.id)}, ${JSON.stringify(d.name)})'>${esc(d.name)} <small>(~${Number(d.audience_size_lower_bound || 0).toLocaleString()} คน)</small></div>`
+      `<div onclick="pickInterest(this, ${esc(JSON.stringify(d.id))}, ${esc(JSON.stringify(d.name))})">${esc(d.name)} <small>(~${Number(d.audience_size_lower_bound || 0).toLocaleString()} คน)</small></div>`
     ).join('');
     box.style.display = 'block';
   }, 350);
