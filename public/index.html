@@ -455,8 +455,8 @@
       <div class="card">
         <div class="filter-bar">
           <div class="field" style="margin:0">
-            <label>บัญชี FB</label>
-            <select id="campProfile" onchange="loadCampaigns()" style="min-width:180px"></select>
+            <label>บัญชี FB (ติ๊กเลือกที่จะแสดง)</label>
+            <div id="campProfiles" style="display:flex;gap:7px;flex-wrap:wrap;min-height:38px;align-items:center"></div>
           </div>
           <select id="campDate" style="display:none">
             <option value="today" selected>วันนี้</option>
@@ -506,6 +506,7 @@
           <table>
             <thead><tr>
               <th>เปิด/ปิด</th>
+              <th>บัญชี</th>
               <th>แคมเปญ</th>
               <th>การแสดงโฆษณา</th>
               <th>ผลลัพธ์</th>
@@ -517,7 +518,7 @@
               <th>สิ้นสุด</th>
               <th></th>
             </tr></thead>
-            <tbody id="campaignRows"><tr><td colspan="11" class="tbl-msg">ยังไม่ได้โหลด — เลือกบัญชีแล้วกด "รีเฟรชข้อมูล"</td></tr></tbody>
+            <tbody id="campaignRows"><tr><td colspan="12" class="tbl-msg">ยังไม่ได้โหลด — ติ๊กเลือกบัญชีแล้วกด "รีเฟรชข้อมูล"</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -613,9 +614,14 @@ function renderProfileUI() {
       ${prevChecked.size ? (prevChecked.has(p.id) ? 'checked' : '') : (p.id === activeProfileId ? 'checked' : '')}> ${esc(p.label)}</label>`
   ).join('');
   if (!profiles.some(p => p.hasToken)) lp.innerHTML += '<span class="hint">เพิ่มบัญชีในหน้า "บัญชี FB" ก่อน</span>';
-  // dropdown หน้าแคมเปญ
-  document.getElementById('campProfile').innerHTML = profiles.map(p =>
-    `<option value="${p.id}" ${p.id === activeProfileId ? 'selected' : ''}>${esc(p.label)}</option>`).join('');
+  // chips เลือกบัญชีหน้าแคมเปญ (default ติ๊กทุกบัญชี)
+  const cp = document.getElementById('campProfiles');
+  const prevCamp = new Set([...cp.querySelectorAll('input:checked')].map(i => i.value));
+  const hadAny = cp.querySelectorAll('input').length > 0;
+  cp.innerHTML = profiles.filter(p => p.hasToken).map(p =>
+    `<label class="lp-chip"><input type="checkbox" value="${p.id}" onchange="loadCampaigns()"
+      ${hadAny ? (prevCamp.has(p.id) ? 'checked' : '') : 'checked'}> ${esc(p.label)}</label>`
+  ).join('') || '<span class="hint">เพิ่มบัญชีในหน้า "บัญชี FB" ก่อน</span>';
   updateStats();
 }
 async function setActiveProfile(id) {
@@ -830,66 +836,88 @@ function setCampKpis(count, spend, results, reach, imp) {
   document.getElementById('kReachSub').textContent = 'อิมเพรสชัน ' + imp;
 }
 async function loadCampaigns() {
-  const pid = document.getElementById('campProfile').value;
+  const pids = [...document.querySelectorAll('#campProfiles input:checked')].map(i => i.value);
   const date = document.getElementById('campDate').value;
   const tbody = document.getElementById('campaignRows');
   document.getElementById('campSummary').textContent = '';
-  if (!pid) { tbody.innerHTML = '<tr><td colspan="11" class="tbl-msg">ยังไม่มีบัญชี — เพิ่มบัญชีในหน้า "บัญชี FB" ก่อน</td></tr>'; setCampKpis('—', '—', '—', '—', '—'); return; }
-  tbody.innerHTML = '<tr><td colspan="11" class="tbl-msg"><span class="spin"></span>กำลังโหลดข้อมูลจาก Facebook...</td></tr>';
-  const res = await fetch(`/api/campaigns?profile=${pid}&date=${date}&_=${Date.now()}`, { cache: 'no-store' });
-  const data = await res.json();
-  if (data.error) {
-    tbody.innerHTML = `<tr><td colspan="11" class="tbl-msg err">โหลดไม่สำเร็จ: ${esc(data.error)}</td></tr>`;
-    setCampKpis('—', '—', '—', '—', '—');
-    return;
-  }
-  if (!data.campaigns.length) {
-    tbody.innerHTML = '<tr><td colspan="11" class="tbl-msg">ยังไม่มีแคมเปญในบัญชีนี้</td></tr>';
-    setCampKpis('0', '฿0', '0', '0', '0');
-    return;
-  }
-  const cur = data.currency === 'THB' ? '฿' : (data.currency ? data.currency + ' ' : '฿');
-  const money = (n) => cur + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const num = (n) => Number(n || 0).toLocaleString();
+  if (!pids.length) { tbody.innerHTML = '<tr><td colspan="12" class="tbl-msg">ติ๊กเลือกอย่างน้อย 1 บัญชีด้านบน</td></tr>'; setCampKpis('—', '—', '—', '—', '—'); return; }
+  tbody.innerHTML = `<tr><td colspan="12" class="tbl-msg"><span class="spin"></span>กำลังโหลดข้อมูลจาก ${pids.length} บัญชี...</td></tr>`;
 
-  // แถวสรุปรวมด้านบน
-  const tot = data.campaigns.reduce((a, c) => ({
+  // โหลดทุกบัญชีที่ติ๊กพร้อมกัน
+  const results = await Promise.all(pids.map(async (pid) => {
+    try {
+      const res = await fetch(`/api/campaigns?profile=${pid}&date=${date}&_=${Date.now()}`, { cache: 'no-store' });
+      return { pid, ...(await res.json()) };
+    } catch (e) {
+      return { pid, error: e.message };
+    }
+  }));
+  // กันผลรอบเก่ามาทับ ถ้าผู้ใช้เปลี่ยนติ๊กระหว่างโหลด
+  const nowPids = [...document.querySelectorAll('#campProfiles input:checked')].map(i => i.value);
+  if (nowPids.join(',') !== pids.join(',')) return;
+
+  const errs = results.filter(r => r.error);
+  const rows = [];
+  for (const r of results) {
+    if (r.error) continue;
+    for (const c of r.campaigns) rows.push({ ...c, pid: r.pid, account: r.account, currency: r.currency });
+  }
+  rows.sort((a, b) => new Date(b.created_time) - new Date(a.created_time));
+
+  const curOf = (c) => c.currency === 'THB' ? '฿' : (c.currency ? c.currency + ' ' : '฿');
+  const num = (n) => Number(n || 0).toLocaleString();
+  const moneyC = (c, n) => curOf(c) + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const tot = rows.reduce((a, c) => ({
     spend: a.spend + c.spend, impressions: a.impressions + c.impressions,
     reach: a.reach + c.reach, results: a.results + (c.results || 0),
   }), { spend: 0, impressions: 0, reach: 0, results: 0 });
-  setCampKpis(num(data.campaigns.length), money(tot.spend), num(tot.results), num(tot.reach), num(tot.impressions));
+  const mainCur = rows.length ? curOf(rows[0]) : '฿';
+  setCampKpis(num(rows.length), mainCur + tot.spend.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }), num(tot.results), num(tot.reach), num(tot.impressions));
   document.getElementById('campSummary').textContent =
-    `— act_${data.account} • ตัวเลขจาก FB API อาจช้ากว่าหน้า Ads Manager ~15-60 นาที`;
+    `— ${pids.length - errs.length}/${pids.length} บัญชี • ตัวเลขจาก FB API อาจช้ากว่าหน้า Ads Manager ~15-60 นาที`;
 
-  tbody.innerHTML = data.campaigns.map(c => {
+  const errRows = errs.map(r => {
+    const label = (profiles.find(x => x.id === r.pid) || {}).label || r.pid;
+    return `<tr><td colspan="12" class="tbl-msg err" style="padding:14px 20px">⚠ ${esc(label)}: ${esc(r.error)}</td></tr>`;
+  }).join('');
+
+  if (!rows.length) {
+    tbody.innerHTML = errRows + '<tr><td colspan="12" class="tbl-msg">ยังไม่มีแคมเปญในบัญชีที่เลือก</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = errRows + rows.map(c => {
+    const label = (profiles.find(x => x.id === c.pid) || {}).label || '';
     const toggleable = c.status === 'ACTIVE' || c.status === 'PAUSED';
     const checked = c.status === 'ACTIVE' ? 'checked' : '';
     const toggle = toggleable
-      ? `<label class="switch"><input type="checkbox" ${checked} onchange="toggleCampaign('${c.id}','${c.status}','${pid}')"><span class="sl"></span></label>`
+      ? `<label class="switch"><input type="checkbox" ${checked} onchange="toggleCampaign('${c.id}','${c.status}','${c.pid}')"><span class="sl"></span></label>`
       : '';
     const results = c.results != null
       ? `${num(c.results)}${c.resultLabel ? `<div class="res-label">${c.resultLabel}</div>` : ''}`
       : '<span style="color:var(--muted)">—</span>';
-    const cpr = c.costPerResult != null ? money(c.costPerResult) : '<span style="color:var(--muted)">—</span>';
-    const budget = c.dailyBudget ? `${money(c.dailyBudget)}<div class="res-label">ต่อวัน</div>` : (c.lifetimeBudget ? money(c.lifetimeBudget) : '<span style="color:var(--muted)">—</span>');
+    const cpr = c.costPerResult != null ? moneyC(c, c.costPerResult) : '<span style="color:var(--muted)">—</span>';
+    const budget = c.dailyBudget ? `${moneyC(c, c.dailyBudget)}<div class="res-label">ต่อวัน</div>` : (c.lifetimeBudget ? moneyC(c, c.lifetimeBudget) : '<span style="color:var(--muted)">—</span>');
     const ends = c.stop_time
       ? new Date(c.stop_time).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })
       : '<span style="color:var(--muted)">ทำงานต่อเนื่อง</span>';
-    const link = `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${data.account}&selected_campaign_ids=${c.id}`;
+    const link = `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${c.account}&selected_campaign_ids=${c.id}`;
     return `<tr>
       <td>${toggle}</td>
+      <td><span class="chip" style="white-space:nowrap">${esc(label)}</span></td>
       <td style="font-weight:600;min-width:150px">${esc(c.name)}<div class="res-label">${OBJ_TH[c.objective] || c.objective}</div></td>
       <td>${statusPill(c)}</td>
       <td>${results}</td>
       <td class="num-cell">${cpr}</td>
       <td class="num-cell">${budget}</td>
-      <td class="num-cell">${money(c.spend)}</td>
+      <td class="num-cell">${moneyC(c, c.spend)}</td>
       <td class="num-cell">${num(c.impressions)}</td>
       <td class="num-cell">${num(c.reach)}</td>
       <td style="white-space:nowrap">${ends}</td>
       <td style="white-space:nowrap">
         <a href="${link}" target="_blank" title="เปิดใน Ads Manager" class="btn-light icon-btn" style="text-decoration:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></a>
-        <button class="btn-danger-light icon-btn" title="ลบแคมเปญนี้" onclick="deleteCampaign('${c.id}', '${esc(c.name).replace(/'/g, '&#39;')}', '${pid}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+        <button class="btn-danger-light icon-btn" title="ลบแคมเปญนี้" onclick="deleteCampaign('${c.id}', '${esc(c.name).replace(/'/g, '&#39;')}', '${c.pid}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
       </td>
     </tr>`;
   }).join('');
