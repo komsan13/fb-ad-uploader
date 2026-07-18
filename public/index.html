@@ -714,24 +714,43 @@
     <!-- ========== PAGE: สุขภาพบัญชี & เพจ ========== -->
     <section class="page" id="page-health">
       <div class="card">
-        <div class="filter-bar">
-          <div class="hint" style="flex:1;min-width:220px">เช็คสดจาก Facebook ทุกครั้งที่กดรีเฟรช — เพจที่ "บิน" คือเพจที่ FB ปิดเผยแพร่/ตัดสิทธิ์ลงโฆษณา</div>
-          <button class="btn-light" onclick="loadHealthPage(true)" style="display:inline-flex;align-items:center;gap:7px"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>รีเฟรชข้อมูล</button>
+        <h2><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/><path d="M3.22 12H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27"/></svg></span>ภาพรวม
+          <button class="btn-light btn-sm" style="margin-left:auto;display:inline-flex;align-items:center;gap:6px" onclick="loadHealthPage(true)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>เช็คใหม่</button>
+        </h2>
+        <div class="kpi-row" style="margin-bottom:0">
+          <div class="tile">
+            <div class="t-label"><span class="t-ic g"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg></span>บัญชีพร้อมยิงแอด</div>
+            <div class="t-value" id="hReady">—</div>
+            <div class="t-sub">ใช้ได้ + มี Pixel + มีบัตร</div>
+          </div>
+          <div class="tile">
+            <div class="t-label"><span class="t-ic o"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></span>ต้องแก้ก่อนใช้</div>
+            <div class="t-value" id="hFix">—</div>
+            <div class="t-sub">ขาด Pixel หรือยังไม่เชื่อมบัตร</div>
+          </div>
+          <div class="tile">
+            <div class="t-label"><span class="t-ic b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M18 9h1a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-3"/><path d="M8 6h4"/><path d="M8 10h4"/></svg></span>เพจใช้ได้</div>
+            <div class="t-value" id="hPageOk">—</div>
+            <div class="t-sub" id="hPageOkSub">จากทั้งหมด —</div>
+          </div>
+          <div class="tile">
+            <div class="t-label"><span class="t-ic r"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg></span>บิน (ซ่อนไว้)</div>
+            <div class="t-value" id="hDead">—</div>
+            <div class="t-sub">บัญชีถูกปิด + เพจบิน — ไม่ต้องสนใจ</div>
+          </div>
         </div>
       </div>
 
       <div class="card">
-        <h2 style="margin-bottom:12px"><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><path d="M2 10h20"/></svg></span>บัญชีโฆษณา <span class="h-desc" id="healthAcctSub"></span></h2>
+        <h2 style="margin-bottom:12px"><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><path d="M2 10h20"/></svg></span>บัญชีโฆษณาที่ใช้ได้ <span class="h-desc" id="healthAcctSub"></span></h2>
         <div class="tbl-wrap">
           <table>
             <thead><tr>
               <th>บัญชีโฆษณา</th>
-              <th>ธุรกิจ (BM)</th>
-              <th>สถานะ</th>
               <th>Pixel</th>
               <th>บัตรชำระเงิน</th>
             </tr></thead>
-            <tbody id="healthAcctRows"><tr><td colspan="5" class="tbl-msg">กำลังโหลด...</td></tr></tbody>
+            <tbody id="healthAcctRows"><tr><td colspan="3" class="tbl-msg">กำลังโหลด...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -742,11 +761,10 @@
           <table>
             <thead><tr>
               <th>เพจ</th>
-              <th>สถานะเพจ</th>
               <th>ลงโฆษณาได้ไหม</th>
               <th></th>
             </tr></thead>
-            <tbody id="healthPageRows"><tr><td colspan="4" class="tbl-msg">กำลังโหลด...</td></tr></tbody>
+            <tbody id="healthPageRows"><tr><td colspan="3" class="tbl-msg">กำลังโหลด...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -1269,12 +1287,12 @@ async function loadHealthPage(force) {
   const pageRows = document.getElementById('healthPageRows');
   const tokenProfiles = profiles.filter(p => p.hasToken);
   if (!tokenProfiles.length) {
-    acctRows.innerHTML = '<tr><td colspan="5" class="tbl-msg">เพิ่มบัญชีในเมนู "บัญชี FB" ก่อน</td></tr>';
-    pageRows.innerHTML = '<tr><td colspan="4" class="tbl-msg">เพิ่มบัญชีในเมนู "บัญชี FB" ก่อน</td></tr>';
+    acctRows.innerHTML = '<tr><td colspan="3" class="tbl-msg">เพิ่มบัญชีในเมนู "บัญชี FB" ก่อน</td></tr>';
+    pageRows.innerHTML = '<tr><td colspan="3" class="tbl-msg">เพิ่มบัญชีในเมนู "บัญชี FB" ก่อน</td></tr>';
     return;
   }
-  acctRows.innerHTML = '<tr><td colspan="5" class="tbl-msg"><span class="spin"></span>กำลังเช็คสดจาก Facebook...</td></tr>';
-  pageRows.innerHTML = '<tr><td colspan="4" class="tbl-msg"><span class="spin"></span>กำลังเช็คสดจาก Facebook...</td></tr>';
+  acctRows.innerHTML = '<tr><td colspan="3" class="tbl-msg"><span class="spin"></span>กำลังเช็คสดจาก Facebook...</td></tr>';
+  pageRows.innerHTML = '<tr><td colspan="3" class="tbl-msg"><span class="spin"></span>กำลังเช็คสดจาก Facebook...</td></tr>';
   const results = await Promise.all(tokenProfiles.map(async (p) => {
     if (healthCache[p.id] && !force) return { p, ...healthCache[p.id] };
     try {
@@ -1288,58 +1306,69 @@ async function loadHealthPage(force) {
 }
 function renderHealthPage(results) {
   const multi = results.length > 1;
-  const ST = { 1: ['on', 'ใช้ได้'], 2: ['rejected', 'ถูกปิดใช้งาน'], 3: ['issue', 'ค้างชำระ'], 7: ['issue', 'รอตรวจความเสี่ยง'], 8: ['issue', 'รอชำระ'], 9: ['issue', 'ช่วงผ่อนผัน'], 100: ['rejected', 'กำลังปิด'], 101: ['rejected', 'ปิดแล้ว'] };
+  const DEAD = new Set([2, 100, 101]); // ถูกปิดใช้งาน/กำลังปิด/ปิดแล้ว = บิน ไม่ต้องโชว์
+  const WARN = { 3: 'ค้างชำระ', 7: 'รอตรวจความเสี่ยง', 8: 'รอชำระ', 9: 'ช่วงผ่อนผัน' };
 
-  const acctHtml = [];
-  let nAcct = 0, nNoPixel = 0, nNoCard = 0;
+  // รวมบัญชีที่ยังใช้ได้ทุก profile — ตัวที่ขาดอะไรขึ้นก่อน
+  const rows = [];
+  const errHtml = [];
+  let nDeadAcct = 0;
   for (const r of results) {
-    if (r.error) { acctHtml.push(`<tr><td colspan="5" class="tbl-msg err" style="padding:12px 20px">⚠ ${esc(r.p.label)}: ${esc(r.error)}</td></tr>`); continue; }
+    if (r.error) { errHtml.push(`<tr><td colspan="3" class="tbl-msg err" style="padding:12px 20px">⚠ ${esc(r.p.label)}: ${esc(r.error)}</td></tr>`); continue; }
     for (const a of r.accounts) {
-      nAcct++;
-      const [cls, txt] = ST[a.status] || ['issue', 'สถานะ ' + a.status];
-      if (!a.pixels.length) nNoPixel++;
-      if (!a.funding) nNoCard++;
-      const px = a.pixels.length
-        ? a.pixels.map(x => `<span class="chip" title="id ${esc(x.id)}">${esc(x.name)}</span>`).join(' ')
-        : `<span class="st-pill rejected">✕ ไม่มี</span> <button class="btn-light btn-sm" onclick="createPixelHealth('${r.p.id}','${a.id}','${esc(a.name).replace(/'/g, '&#39;')}')">+ สร้าง Pixel</button>`;
-      const card = a.funding
-        ? `<span class="st-pill on">✓ ${esc(a.funding)}</span>`
-        : `<span class="st-pill rejected">✕ ยังไม่เชื่อม</span> <a class="btn-light btn-sm" style="text-decoration:none;display:inline-block" target="_blank" href="https://business.facebook.com/billing_hub/payment_settings?asset_id=${a.id}">เชื่อมบัตร ↗</a>`;
-      acctHtml.push(`<tr>
-        <td style="font-weight:600">${esc(a.name)}<div class="res-label">${multi ? esc(r.p.label) + ' • ' : ''}${a.id}</div></td>
-        <td>${a.business ? `<span class="chip" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle" title="${esc(a.business)}">${esc(a.business)}</span>` : '<span style="color:var(--muted)">—</span>'}</td>
-        <td><span class="st-pill ${cls}">${txt}</span></td>
-        <td>${px}</td>
-        <td>${card}</td>
-      </tr>`);
+      if (DEAD.has(a.status)) { nDeadAcct++; continue; }
+      rows.push({ ...a, pid: r.p.id, plabel: r.p.label, missing: (a.pixels.length ? 0 : 1) + (a.funding ? 0 : 1) });
     }
   }
-  document.getElementById('healthAcctRows').innerHTML = acctHtml.join('') || '<tr><td colspan="5" class="tbl-msg">ไม่พบบัญชีโฆษณา</td></tr>';
-  document.getElementById('healthAcctSub').textContent = `— ${nAcct} บัญชี • ไม่มี Pixel ${nNoPixel} • ยังไม่เชื่อมบัตร ${nNoCard}`;
+  rows.sort((a, b) => b.missing - a.missing);
+  const nReady = rows.filter(a => !a.missing && a.status === 1).length;
+  const nFix = rows.filter(a => a.missing).length;
 
-  // เพจ (เพจเดียวกันโผล่หลาย profile ได้ — โชว์ครั้งเดียว)
+  const acctHtml = rows.map(a => {
+    const warn = WARN[a.status] ? ` <span class="st-pill issue">⚠ ${WARN[a.status]}</span>` : '';
+    const px = a.pixels.length
+      ? `<span class="st-pill on">✓ ${esc(a.pixels.map(x => x.name).join(', '))}</span>`
+      : `<button class="btn-primary btn-sm" onclick="createPixelHealth('${a.pid}','${a.id}','${esc(a.name).replace(/'/g, '&#39;')}')">+ สร้าง Pixel เลย</button>`;
+    const card = a.funding
+      ? `<span class="st-pill on">✓ ${esc(a.funding)}</span>`
+      : `<a class="btn-primary btn-sm" style="text-decoration:none;display:inline-block;color:#fff" target="_blank" href="https://business.facebook.com/billing_hub/payment_settings?asset_id=${a.id}">เชื่อมบัตรเลย ↗</a>`;
+    return `<tr${a.missing ? ' style="background:#fffbf3"' : ''}>
+      <td style="font-weight:600">${a.missing ? '🔧 ' : '✅ '}${esc(a.name)}${warn}<div class="res-label">${multi ? esc(a.plabel) + ' • ' : ''}${a.id}</div></td>
+      <td>${px}</td>
+      <td>${card}</td>
+    </tr>`;
+  });
+  document.getElementById('healthAcctRows').innerHTML = errHtml.join('') + (acctHtml.join('') || '<tr><td colspan="3" class="tbl-msg">ไม่มีบัญชีที่ใช้ได้เลย</td></tr>');
+  document.getElementById('healthAcctSub').textContent = `— ${rows.length} บัญชี (ซ่อนที่ถูกปิด ${nDeadAcct})` + (nFix ? ` • ต้องแก้ ${nFix}` : ' • ครบทุกตัว ✓');
+
+  // เพจ — ใช้ได้ขึ้นก่อน เพจบินจางลง (เพจซ้ำข้าม profile โชว์ครั้งเดียว)
   const seen = new Set();
-  const pageHtml = [];
-  let nPage = 0, nDead = 0;
+  const pages = [];
   for (const r of results) {
     if (r.error) continue;
     for (const g of r.pages) {
       if (seen.has(g.id)) continue;
       seen.add(g.id);
-      nPage++;
-      if (!(g.published && g.eligible)) nDead++;
-      pageHtml.push(`<tr>
-        <td style="font-weight:600">${esc(g.name)}<div class="res-label">${multi ? esc(r.p.label) + ' • ' : ''}${g.id}</div></td>
-        <td>${g.published ? '<span class="st-pill on">● เผยแพร่อยู่</span>' : '<span class="st-pill rejected">✕ ถูกปิดเผยแพร่</span>'}</td>
-        <td>${g.eligible
-          ? '<span class="st-pill on">✓ ใช้ลงโฆษณาได้</span>'
-          : `<span class="st-pill rejected">✕ บิน — ลงโฆษณาไม่ได้</span>${g.reason ? `<div class="res-label">${esc(g.reason)}</div>` : ''}`}</td>
-        <td><a class="btn-light btn-sm" style="text-decoration:none" target="_blank" href="https://www.facebook.com/${g.id}">เปิดเพจ ↗</a></td>
-      </tr>`);
+      pages.push({ ...g, plabel: r.p.label, ok: g.published && g.eligible });
     }
   }
-  document.getElementById('healthPageRows').innerHTML = pageHtml.join('') || '<tr><td colspan="4" class="tbl-msg">ไม่พบเพจ</td></tr>';
-  document.getElementById('healthPageSub').textContent = `— ${nPage} เพจ • ใช้ได้ ${nPage - nDead} • บิน/ใช้ไม่ได้ ${nDead}`;
+  pages.sort((a, b) => (b.ok ? 1 : 0) - (a.ok ? 1 : 0));
+  const nPageOk = pages.filter(g => g.ok).length;
+  document.getElementById('healthPageRows').innerHTML = pages.map(g => `<tr${g.ok ? '' : ' style="opacity:.55"'}>
+      <td style="font-weight:600">${g.ok ? '✅ ' : '💀 '}${esc(g.name)}<div class="res-label">${multi ? esc(g.plabel) + ' • ' : ''}${g.id}</div></td>
+      <td>${g.ok
+        ? '<span class="st-pill on">✓ ใช้ลงโฆษณาได้</span>'
+        : `<span class="st-pill rejected">✕ บิน${!g.published ? ' (ถูกปิดเผยแพร่)' : ''}</span>${g.reason ? `<div class="res-label">${esc(g.reason)}</div>` : ''}`}</td>
+      <td><a class="btn-light btn-sm" style="text-decoration:none" target="_blank" href="https://www.facebook.com/${g.id}">เปิดเพจ ↗</a></td>
+    </tr>`).join('') || '<tr><td colspan="3" class="tbl-msg">ไม่พบเพจ</td></tr>';
+  document.getElementById('healthPageSub').textContent = `— ใช้ได้ ${nPageOk} จาก ${pages.length} เพจ`;
+
+  // สรุปบนสุด
+  document.getElementById('hReady').textContent = nReady;
+  document.getElementById('hFix').textContent = nFix;
+  document.getElementById('hPageOk').textContent = nPageOk;
+  document.getElementById('hPageOkSub').textContent = `จากทั้งหมด ${pages.length} เพจ`;
+  document.getElementById('hDead').textContent = nDeadAcct + (pages.length - nPageOk);
 }
 async function createPixelHealth(pid, acctId, acctName) {
   const name = prompt(`ตั้งชื่อ Pixel ใหม่ของบัญชี "${acctName}"`, 'px');
