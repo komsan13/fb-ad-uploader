@@ -856,6 +856,24 @@ function esc(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 }
 
+// ถูกปิดใช้งาน/กำลังปิด/ปิดแล้ว = บิน — หน้าสุขภาพซ่อนทิ้ง หน้าแดชบอร์ดไม่ต้องยิง API (ได้แต่ error)
+const DEAD_ACCT = new Set([2, 100, 101]);
+
+// ยิงงานพร้อมกันได้ไม่เกิน n ตัว แล้วคืนผลเรียงตามลำดับเดิม
+// ห้ามใช้ Promise.all ตรงๆ กับรายชื่อบัญชี — ทุก request ยิง FB ต่ออีกหลายชุด
+// 20 บัญชีพร้อมกัน = 80+ request ชน rate limit แล้วโดนหน่วง 20-40 วิ ทั้งหน้า
+async function pooled(items, n, fn) {
+  const out = new Array(items.length);
+  let cursor = 0;
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => {
+    while (cursor < items.length) {
+      const i = cursor++;
+      out[i] = await fn(items[i], i);
+    }
+  }));
+  return out;
+}
+
 // ---------- สลับหน้า ----------
 const PAGE_META = {
   dashboard: ['แดชบอร์ด', 'ภาพรวมทุกบัญชี — ใช้จ่าย ผลลัพธ์ และแคมเปญเด่น'],
@@ -896,7 +914,10 @@ function closeUploadModal() {
 
 // ---------- บัญชี FB (profiles) ----------
 async function loadProfiles() {
-  const data = await (await fetch('/api/profiles')).json();
+  // server ตอบ 500/HTML (เช่นเพิ่งรีสตาร์ท) แล้วเรียก .json() ตรงๆ จะ throw ข้อความที่ผู้ใช้อ่านไม่รู้เรื่อง
+  const res = await fetch('/api/profiles');
+  if (!res.ok) throw new Error(`เซิร์ฟเวอร์ตอบ HTTP ${res.status}`);
+  const data = await res.json();
   profiles = data.profiles;
   activeProfileId = data.activeProfileId;
   renderProfileUI();
@@ -1049,15 +1070,15 @@ async function renderHealth() {
       ${pxList}
       <div style="display:flex;gap:8px;margin-top:12px">
         <input id="newPixelName" placeholder="ชื่อ Pixel ใหม่ เช่น ad1" style="flex:1">
-        <button class="btn-primary btn-sm" onclick="createPixel()">+ สร้าง Pixel</button>
+        <button class="btn-primary btn-sm" onclick="createPixel(this)">+ สร้าง Pixel</button>
       </div>
     </div>`;
 }
 function copyPixel(id) { navigator.clipboard.writeText(id); }
-async function createPixel() {
+async function createPixel(btn) {
   const name = document.getElementById('newPixelName').value.trim();
   if (!name) return alert('ตั้งชื่อ Pixel ก่อนครับ');
-  const btn = event.target; btn.disabled = true; btn.textContent = 'กำลังสร้าง...';
+  btn.disabled = true; btn.textContent = 'กำลังสร้าง...';
   const res = await fetch('/api/create-pixel', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ profile: healthCtx.pid, account: healthCtx.acct, name }),
@@ -1174,7 +1195,16 @@ tickClock();
 setInterval(tickClock, 1000);
 
 (async function init() {
-  await loadProfiles();
+  try {
+    await loadProfiles();
+  } catch (e) {
+    // เดิม: throw ตรงนี้ทำให้ init ตายกลางคัน ไม่มีการเรียก showPage() เลย → ผู้ใช้เห็นหน้าขาวเปล่าๆ
+    showPage('settings', true);
+    // ต้องตั้งข้อความ "หลัง" showPage เพราะ showPage เขียน pageDesc ทับทุกครั้ง
+    document.getElementById('pageDesc').innerHTML =
+      `<span style="color:var(--red)">⚠ ต่อกับเซิร์ฟเวอร์ไม่ได้ (${esc(e.message)}) — เช็คว่าโปรแกรมยังรันอยู่ไหม แล้วกด F5</span>`;
+    return;
+  }
   try {
     const env = await (await fetch('/api/env')).json();
     if (env.redirectUri) document.getElementById('redirectUriText').textContent = env.redirectUri;
@@ -1298,16 +1328,21 @@ async function loadDashboard(force) {
     }
   }
   const date = dashDate;
-  const results = await Promise.all(targets.map(async (t) => {
+  const results = await pooled(targets, 4, async (t) => {
+    // บัญชีที่ถูกปิดแล้วยิงไปก็ได้แต่ error — โชว์เป็นแถวปกติ (ยอด 0) พร้อมป้าย "บัญชีมีปัญหา" แทน
+    if (DEAD_ACCT.has(t.acctStatus)) return { ...t, error: null, campaigns: [] };
     try {
       const c = await fetch(`/api/campaigns?profile=${t.pid}&account=${t.acct}&date=${date}&_=${Date.now()}`, { cache: 'no-store' }).then(r => r.json());
       return { ...t, error: c.error || null, campaigns: c.error ? [] : c.campaigns, currency: c.currency || t.currency };
     } catch (e) {
       return { ...t, error: e.message, campaigns: [] };
     }
-  }));
+  });
   const hasErr = results.some(r => r.error);
-  if (!hasErr) { dashCache[date] = { ts: Date.now(), results }; saveCaches(); }
+  // เก็บ cache เสมอ (บัญชีที่ตายอยู่ตัวเดียวไม่ควรทำให้ทั้งหน้าไม่มี cache เลย)
+  // แต่ถ้ามี error ให้ ts=0 = หมดอายุตั้งแต่แรก → รอบหน้าโชว์ของเดิมทันทีแล้วยิงใหม่เบื้องหลังเสมอ ไม่ค้าง error
+  dashCache[date] = { ts: hasErr ? 0 : Date.now(), results };
+  saveCaches();
   if (dashDate !== date) return; // ผู้ใช้เปลี่ยนช่วงเวลาไประหว่างโหลด — เก็บ cache ไว้แต่ไม่ทับจอ
   if (!force && hit) {
     if (hasErr) return; // จอมีของเดิมดีๆ อยู่ — refresh เบื้องหลังพลาดก็คงของเดิม
@@ -1414,7 +1449,6 @@ async function loadHealthPage(force) {
 }
 function renderHealthPage(results) {
   const multi = results.length > 1;
-  const DEAD = new Set([2, 100, 101]); // ถูกปิดใช้งาน/กำลังปิด/ปิดแล้ว = บิน ไม่ต้องโชว์
   const WARN = { 3: 'ค้างชำระ', 7: 'รอตรวจความเสี่ยง', 8: 'รอชำระ', 9: 'ช่วงผ่อนผัน' };
 
   // รวมบัญชีที่ยังใช้ได้ทุก profile — ตัวที่ขาดอะไรขึ้นก่อน
@@ -1424,7 +1458,7 @@ function renderHealthPage(results) {
   for (const r of results) {
     if (r.error) { errHtml.push(`<tr><td colspan="3" class="tbl-msg err" style="padding:12px 20px">⚠ ${esc(r.p.label)}: ${esc(r.error)}</td></tr>`); continue; }
     for (const a of r.accounts) {
-      if (DEAD.has(a.status)) { nDeadAcct++; continue; }
+      if (DEAD_ACCT.has(a.status)) { nDeadAcct++; continue; }
       rows.push({ ...a, pid: r.p.id, plabel: r.p.label, missing: (a.pixels.length ? 0 : 1) + (a.funding ? 0 : 1) });
     }
   }
@@ -1741,7 +1775,7 @@ async function loadCampaigns(force) {
   }
 
   // โหลดทุกบัญชีโฆษณาที่ติ๊กพร้อมกัน (v = "profileId:adAccountId")
-  const results = await Promise.all(sels.map(async (v) => {
+  const results = await pooled(sels, 4, async (v) => {
     const [pid, acct] = v.split(':');
     try {
       const res = await fetch(`/api/campaigns?profile=${pid}&account=${acct}&date=${date}&_=${Date.now()}`, { cache: 'no-store' });
@@ -1749,10 +1783,12 @@ async function loadCampaigns(force) {
     } catch (e) {
       return { pid, acct, error: e.message };
     }
-  }));
-  // มี error สักบัญชี = ไม่ cache — ให้รอบถัดไปได้ลองใหม่ ไม่ใช่เห็น error ค้าง
+  });
+  // มี error สักบัญชี = cache ไว้แต่ให้ ts=0 (หมดอายุทันที) — ยังโชว์ของเดิมได้ไม่มีจอหมุน
+  // แต่รอบหน้าจะยิงใหม่เบื้องหลังเสมอ ไม่ใช่เห็น error ค้าง และไม่ใช่ไม่มี cache เลย
   const hasErr = results.some(r => r.error);
-  if (!hasErr) { campCache[key] = { ts: Date.now(), results }; saveCaches(); }
+  campCache[key] = { ts: hasErr ? 0 : Date.now(), results };
+  saveCaches();
   // กันผลรอบเก่ามาทับ ถ้าผู้ใช้เปลี่ยนติ๊ก "หรือช่วงเวลา" ระหว่างโหลด (เทียบ key เต็ม)
   const nowSels = [...document.querySelectorAll('#campProfiles input:checked')].map(i => i.value);
   const nowKey = nowSels.join(',') + '|' + document.getElementById('campDate').value;
@@ -2118,27 +2154,37 @@ function updateLaunchGate() {
   btn.disabled = mediaUploadsInFlight > 0;
   btn.textContent = mediaUploadsInFlight > 0 ? `⏫ รออัปโหลดวิดีโอให้เสร็จก่อน (${mediaUploadsInFlight} ไฟล์)...` : '🚀 ขึ้นแอดทั้งหมด';
 }
+let uploadSeq = 0;
 function uploadMedia(card, file) {
+  // เปลี่ยนไฟล์ระหว่างที่ตัวเก่ายังอัปไม่เสร็จ = ตัวเก่าต้องไม่เขียน mediaId ทับตัวใหม่ (จะได้วิดีโอผิดตัว)
+  const mySeq = String(++uploadSeq);
+  card.dataset.uploadSeq = mySeq;
+  const isCurrent = () => card.dataset.uploadSeq === mySeq;
   card.dataset.mediaId = '';
   card.dataset.uploading = '1';
   mediaUploadsInFlight++;
   updateLaunchGate();
-  const done = () => { delete card.dataset.uploading; mediaUploadsInFlight--; updateLaunchGate(); };
+  const done = () => {
+    if (isCurrent()) delete card.dataset.uploading; // รอบเก่าห้ามลบธงของรอบใหม่
+    mediaUploadsInFlight--;
+    updateLaunchGate();
+  };
   const form = new FormData();
   form.append('file', file);
   const xhr = new XMLHttpRequest();
   xhr.open('POST', '/api/media');
   xhr.upload.onprogress = (e) => {
-    if (e.lengthComputable) setBadge(card, 'run', `⏫ อัปโหลดวิดีโอ ${Math.round(e.loaded / e.total * 100)}%`);
+    if (e.lengthComputable && isCurrent()) setBadge(card, 'run', `⏫ อัปโหลดวิดีโอ ${Math.round(e.loaded / e.total * 100)}%`);
   };
   xhr.onload = () => {
     done();
+    if (!isCurrent()) return; // ผู้ใช้เปลี่ยนไฟล์ไปแล้ว ผลรอบนี้ใช้ไม่ได้
     let d = null;
     try { d = JSON.parse(xhr.responseText); } catch { /* ตอบไม่เป็น JSON */ }
     if (d && d.id) { card.dataset.mediaId = d.id; setBadge(card, 'wait', '🎬 วิดีโอพร้อมขึ้น'); }
     else setBadge(card, 'err', 'อัปโหลดวิดีโอไม่สำเร็จ — จะลองส่งอีกทีตอนกดขึ้นแอด');
   };
-  xhr.onerror = () => { done(); setBadge(card, 'err', 'อัปโหลดวิดีโอไม่สำเร็จ — จะลองส่งอีกทีตอนกดขึ้นแอด'); };
+  xhr.onerror = () => { done(); if (isCurrent()) setBadge(card, 'err', 'อัปโหลดวิดีโอไม่สำเร็จ — จะลองส่งอีกทีตอนกดขึ้นแอด'); };
   xhr.send(form);
 }
 function imgChanged(input) {

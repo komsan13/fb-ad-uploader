@@ -64,7 +64,11 @@ function saveConfig(cfg) {
       }
     }
   } catch { /* ข้าม */ }
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
+  // เขียนลงไฟล์ชั่วคราวแล้ว rename ทับ — rename เป็น atomic ระดับไฟล์ระบบ
+  // ไฟดับ/ถูก kill กลางคันจะได้ config ตัวเก่าครบๆ ไม่ใช่ไฟล์ที่เขียนค้างครึ่งทาง (token ทุกบัญชีอยู่ในนี้)
+  const tmp = CONFIG_PATH + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2));
+  fs.renameSync(tmp, CONFIG_PATH);
 }
 function getProfile(cfg, id) {
   // ระบุ id มา = ต้องเจอตัวนั้นเท่านั้น (กันยิงผิดบัญชีเมื่อ id ไม่ตรง เช่นเพิ่งถูกลบ)
@@ -106,11 +110,12 @@ async function fb(pathname, params, method, token, attempt = 0) {
     try { json = JSON.parse(text); }
     catch { throw new Error(`FB ตอบกลับผิดปกติ (HTTP ${res.status})`); }
   } catch (err) {
-    if (attempt < 2) {
+    // ลองใหม่ได้เฉพาะ GET — POST ที่ FB รับไปแล้วแต่สายหลุดตอนอ่านคำตอบ ถ้ายิงซ้ำจะได้แคมเปญ/แอด/Pixel ซ้ำ
+    if (attempt < 2 && method === 'GET') {
       await new Promise((r) => setTimeout(r, (attempt + 1) * 5000));
       return fb(pathname, params, method, token, attempt + 1);
     }
-    throw new Error(`เชื่อมต่อ FB ไม่สำเร็จ: ${err.message} — ระบบลองซ้ำแล้ว 3 ครั้ง กดขึ้นอีกครั้งได้เลย (ตัวที่สำเร็จแล้วไม่ขึ้นซ้ำ)`);
+    throw new Error(`เชื่อมต่อ FB ไม่สำเร็จ: ${err.message} — กดขึ้นอีกครั้งได้เลย (ตัวที่สำเร็จแล้วไม่ขึ้นซ้ำ)`);
   }
   if (json.error) {
     const e = json.error;
@@ -211,10 +216,16 @@ const OBJECTIVES = {
 const MEDIA_DIR = path.join(os.tmpdir(), 'fbad-media');
 fs.mkdirSync(MEDIA_DIR, { recursive: true });
 const mediaStore = new Map(); // id -> {path, mimetype, originalname, ts}
+// ไล่ลบจากไฟล์จริงบนดิสก์ ไม่ใช่จาก Map — restart แล้ว Map ว่าง แต่ไฟล์เก่ายังอยู่ ถ้าวน Map จะไม่มีวันถูกลบ
 setInterval(() => {
   const cutoff = Date.now() - 24 * 3600 * 1000;
-  for (const [id, m] of mediaStore) {
-    if (m.ts < cutoff) { try { fs.unlinkSync(m.path); } catch { /* ข้าม */ } mediaStore.delete(id); }
+  let names = [];
+  try { names = fs.readdirSync(MEDIA_DIR); } catch { return; }
+  for (const name of names) {
+    const p = path.join(MEDIA_DIR, name);
+    try {
+      if (fs.statSync(p).mtimeMs < cutoff) { fs.unlinkSync(p); mediaStore.delete(name); }
+    } catch { /* ไฟล์หายไปแล้ว/อ่านไม่ได้ ข้าม */ }
   }
 }, 3600 * 1000).unref();
 
@@ -317,8 +328,13 @@ app.get('/auth/callback', async (req, res) => {
       + `&client_secret=${encodeURIComponent(prof.appSecret)}`
       + `&fb_exchange_token=${encodeURIComponent(s.access_token)}`)).json();
     if (l.error) throw new Error(l.error.message);
-    prof.accessToken = l.access_token || s.access_token;
-    saveConfig(cfg);
+    // โหลด config สดก่อนเขียน — ระหว่างรอ FB ตอบ (หลายวินาที) อาจมีการแก้ค่าอื่นเข้ามา
+    // เช่น watchTick ต่ออายุ token ให้บัญชีอื่น ถ้าเขียนทับด้วย cfg ที่โหลดไว้ตั้งแต่ต้น ค่านั้นจะหาย
+    const cfgNow = loadConfig();
+    const profNow = cfgNow.profiles.find((p) => p.id === prof.id);
+    if (!profNow) return done(false, 'บัญชีนี้ถูกลบไประหว่างล็อกอิน');
+    profNow.accessToken = l.access_token || s.access_token;
+    saveConfig(cfgNow);
     done(true, 'ได้ token แล้ว (ต่ออายุ 60 วันอัตโนมัติ) — กลับไปที่โปรแกรมได้เลย');
   } catch (e) {
     done(false, e.message);
@@ -588,6 +604,7 @@ app.post('/api/campaign-status', async (req, res) => {
   const prof = getProfile(cfg, req.body.profile);
   if (!prof || !prof.accessToken) return res.status(400).json({ error: 'ไม่พบบัญชี หรือยังไม่ได้เชื่อมต่อ' });
   if (!['ACTIVE', 'PAUSED'].includes(req.body.status)) return res.status(400).json({ error: 'สถานะไม่ถูกต้อง' });
+  if (!/^\d+$/.test(String(req.body.id || ''))) return res.status(400).json({ error: 'id ไม่ถูกต้อง' });
   try {
     await fb(req.body.id, { status: req.body.status }, 'POST', prof.accessToken);
     res.json({ ok: true });
