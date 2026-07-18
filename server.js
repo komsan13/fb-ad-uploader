@@ -11,7 +11,10 @@ const PORT = process.env.PORT || 4000;
 const PUBLIC_URL = (process.env.PUBLIC_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
 
 const app = express();
+app.set('etag', false);
 app.use(express.json());
+// API ต้องได้ข้อมูลสดเสมอ — ห้าม browser/proxy cache
+app.use('/api', (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 app.use(express.static(path.join(__dirname, 'public')));
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 30 * 1024 * 1024 } });
 
@@ -238,6 +241,18 @@ app.get('/api/campaigns', async (req, res) => {
       }
     } catch { /* ข้าม */ }
 
+    // สถานะระดับ "แอด" — การโดนปฏิเสธ (DISAPPROVED) เกิดที่ระดับนี้ ไม่โผล่ในสถานะแคมเปญ
+    const adStatus = {};
+    try {
+      const ads = await fb(`${acct}/ads`, { fields: 'campaign_id,effective_status', limit: 1000 }, 'GET', token);
+      for (const a of (ads.data || [])) {
+        const st = adStatus[a.campaign_id] || (adStatus[a.campaign_id] = { disapproved: 0, pending: 0, issues: 0 });
+        if (a.effective_status === 'DISAPPROVED') st.disapproved++;
+        else if (a.effective_status === 'PENDING_REVIEW' || a.effective_status === 'IN_PROCESS' || a.effective_status === 'PREAPPROVED') st.pending++;
+        else if (a.effective_status === 'WITH_ISSUES') st.issues++;
+      }
+    } catch { /* ข้าม */ }
+
     const rows = (camps.data || []).map((c) => {
       const ins = insMap[c.id] || {};
       const ra = RESULT_ACTION[c.objective];
@@ -260,6 +275,9 @@ app.get('/api/campaigns', async (req, res) => {
         results,
         resultLabel: ra ? ra.label : null,
         costPerResult: (results && results > 0) ? spend / results : null,
+        adsDisapproved: (adStatus[c.id] || {}).disapproved || 0,
+        adsPending: (adStatus[c.id] || {}).pending || 0,
+        adsIssues: (adStatus[c.id] || {}).issues || 0,
       };
     });
     res.json({ campaigns: rows, account: acct.replace('act_', ''), currency: acctInfo.currency || '', datePreset });
