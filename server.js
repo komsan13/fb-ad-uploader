@@ -5,7 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 
 const CONFIG_PATH = process.env.CONFIG_PATH || path.join(__dirname, 'config.json');
-const API = 'https://graph.facebook.com/v23.0';
+const API = process.env.FB_API_BASE || 'https://graph.facebook.com/v23.0';
 const PORT = process.env.PORT || 4000;
 // URL สาธารณะของแอป (ตั้งผ่าน env ตอน deploy) — ใช้สร้าง redirect URI ของ OAuth
 const PUBLIC_URL = (process.env.PUBLIC_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
@@ -66,8 +66,20 @@ async function fb(pathname, params, method, token, attempt = 0) {
   const opts = { method };
   if (method === 'GET') url += '?' + body.toString();
   else opts.body = body;
-  const res = await fetch(url, opts);
-  const json = await res.json();
+  // เน็ต/FB สะดุด (ตอบว่าง, ตอบไม่เป็น JSON, ต่อไม่ติด) = อาการชั่วคราว → รอสั้นๆ แล้วลองใหม่
+  let json;
+  try {
+    const res = await fetch(url, opts);
+    const text = await res.text();
+    try { json = JSON.parse(text); }
+    catch { throw new Error(`FB ตอบกลับผิดปกติ (HTTP ${res.status})`); }
+  } catch (err) {
+    if (attempt < 2) {
+      await new Promise((r) => setTimeout(r, (attempt + 1) * 5000));
+      return fb(pathname, params, method, token, attempt + 1);
+    }
+    throw new Error(`เชื่อมต่อ FB ไม่สำเร็จ: ${err.message} — ระบบลองซ้ำแล้ว 3 ครั้ง กดขึ้นอีกครั้งได้เลย (ตัวที่สำเร็จแล้วไม่ขึ้นซ้ำ)`);
+  }
   if (json.error) {
     const e = json.error;
     if (THROTTLE_CODES.has(e.code) && attempt < 2) {
@@ -95,12 +107,19 @@ async function fbAll(pathname, params, token, maxPages = 25) {
 }
 
 // อัปโหลดวิดีโอ (multipart) → คืน video_id
-async function uploadVideo(acct, file, token) {
+async function uploadVideo(acct, file, token, attempt = 0) {
   const form = new FormData();
   form.append('access_token', token);
   form.append('source', new Blob([file.buffer], { type: file.mimetype || 'video/mp4' }), file.originalname || 'video.mp4');
-  const res = await fetch(`${API}/${acct}/advideos`, { method: 'POST', body: form });
-  const json = await res.json();
+  let json;
+  try {
+    const res = await fetch(`${API}/${acct}/advideos`, { method: 'POST', body: form });
+    json = JSON.parse(await res.text());
+  } catch {
+    // การเชื่อมต่อสะดุด/FB ตอบไม่เป็น JSON — อัปโหลดใหม่ได้อีก 1 รอบ
+    if (attempt < 1) return uploadVideo(acct, file, token, attempt + 1);
+    throw new Error('อัปโหลดวิดีโอไป FB ไม่สำเร็จ (การเชื่อมต่อสะดุด) — กดขึ้นอีกครั้งได้เลย');
+  }
   if (json.error) throw new Error(json.error.error_user_msg || json.error.message);
   return json.id;
 }
