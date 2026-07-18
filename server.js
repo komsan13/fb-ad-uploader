@@ -16,7 +16,7 @@ app.use(express.json());
 // API ต้องได้ข้อมูลสดเสมอ — ห้าม browser/proxy cache
 app.use('/api', (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 app.use(express.static(path.join(__dirname, 'public')));
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 30 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 512 * 1024 * 1024 } });
 
 function loadConfig() {
   let cfg;
@@ -92,6 +92,50 @@ async function fbAll(pathname, params, token, maxPages = 25) {
     else break;
   }
   return out;
+}
+
+// อัปโหลดวิดีโอ (multipart) → คืน video_id
+async function uploadVideo(acct, file, token) {
+  const form = new FormData();
+  form.append('access_token', token);
+  form.append('source', new Blob([file.buffer], { type: file.mimetype || 'video/mp4' }), file.originalname || 'video.mp4');
+  const res = await fetch(`${API}/${acct}/advideos`, { method: 'POST', body: form });
+  const json = await res.json();
+  if (json.error) throw new Error(json.error.error_user_msg || json.error.message);
+  return json.id;
+}
+// วิดีโอต้องประมวลผลก่อนใช้ — วนเช็คสถานะจน ready (สูงสุด ~3 นาที)
+async function waitVideoReady(videoId, token, onTick) {
+  for (let i = 0; i < 36; i++) {
+    const r = await fb(videoId, { fields: 'status' }, 'GET', token);
+    const s = r.status && r.status.video_status;
+    if (s === 'ready') return;
+    if (s === 'error') throw new Error('วิดีโอประมวลผลไม่สำเร็จ');
+    if (onTick) onTick(s || 'processing');
+    await new Promise((res) => setTimeout(res, 5000));
+  }
+  throw new Error('วิดีโอประมวลผลนานเกินไป (timeout)');
+}
+// รูป thumbnail อัตโนมัติของวิดีโอ (เอาไว้ใส่ในครีเอทีฟ)
+async function videoThumb(videoId, token) {
+  try {
+    const r = await fb(`${videoId}/thumbnails`, {}, 'GET', token);
+    const list = r.data || [];
+    const pick = list.find((t) => t.is_preferred) || list[0];
+    return pick ? pick.uri : null;
+  } catch { return null; }
+}
+
+// locale id ของภาษาไทยใน FB targeting (cache ไว้ใช้ซ้ำ)
+let thaiLocaleId = null;
+async function getThaiLocale(token) {
+  if (thaiLocaleId !== null) return thaiLocaleId;
+  try {
+    const r = await fb('search', { type: 'adlocale', q: 'Thai', limit: 25 }, 'GET', token);
+    const hit = (r.data || []).find((x) => /^thai$/i.test(x.name) || x.key === 'th_TH');
+    thaiLocaleId = hit ? hit.key : 0;
+  } catch { thaiLocaleId = 0; }
+  return thaiLocaleId;
 }
 
 const REDIRECT_URI = `${PUBLIC_URL}/auth/callback`;
@@ -343,6 +387,52 @@ app.post('/api/campaign-delete', async (req, res) => {
   }
 });
 
+// เช็คสภาพบัญชีโฆษณา: มีบัตร/วิธีจ่ายเงินไหม + มี Pixel อะไรบ้าง
+app.get('/api/account-health', async (req, res) => {
+  const cfg = loadConfig();
+  const prof = getProfile(cfg, req.query.profile);
+  if (!prof || !prof.accessToken) return res.status(400).json({ error: 'ยังไม่ได้เชื่อมต่อบัญชี' });
+  const acctId = String(req.query.account || prof.adAccountId || '').replace(/[^0-9]/g, '');
+  if (!acctId) return res.status(400).json({ error: 'ไม่ได้ระบุบัญชีโฆษณา' });
+  const acct = `act_${acctId}`;
+  try {
+    const info = await fb(acct, { fields: 'account_status,funding_source,funding_source_details,currency' }, 'GET', prof.accessToken);
+    let pixels = [];
+    try {
+      const px = await fb(`${acct}/adspixels`, { fields: 'id,name,last_fired_time' }, 'GET', prof.accessToken);
+      pixels = px.data || [];
+    } catch { /* ไม่มีสิทธิ์/ไม่มี pixel */ }
+    const fsd = info.funding_source_details || {};
+    res.json({
+      accountId: acctId,
+      currency: info.currency || '',
+      accountStatus: info.account_status,
+      hasPayment: !!(info.funding_source || fsd.id || fsd.display_string),
+      paymentText: fsd.display_string || '',
+      pixels,
+    });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// สร้าง Pixel (Dataset) ใหม่ให้บัญชีโฆษณา
+app.post('/api/create-pixel', async (req, res) => {
+  const cfg = loadConfig();
+  const prof = getProfile(cfg, req.body.profile);
+  if (!prof || !prof.accessToken) return res.status(400).json({ error: 'ยังไม่ได้เชื่อมต่อบัญชี' });
+  const acctId = String(req.body.account || prof.adAccountId || '').replace(/[^0-9]/g, '');
+  if (!acctId) return res.status(400).json({ error: 'ไม่ได้ระบุบัญชีโฆษณา' });
+  const name = (req.body.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'กรุณาตั้งชื่อ Pixel' });
+  try {
+    const r = await fb(`act_${acctId}/adspixels`, { name }, 'POST', prof.accessToken);
+    res.json({ ok: true, id: r.id });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
 app.get('/api/interests', async (req, res) => {
   const cfg = loadConfig();
   const prof = getProfile(cfg, req.query.profile);
@@ -402,65 +492,105 @@ app.post('/api/launch', upload.any(), async (req, res) => {
     let campaignId = data.campaignId;
     if (!campaignId) {
       send({ type: 'progress', msg: 'กำลังสร้างแคมเปญ...' });
-      const campaign = await fb(`${acct}/campaigns`, {
+      const campaignParams = {
         name: data.campaign.name,
         objective: data.campaign.objective,
         status,
         special_ad_categories: [],
-      }, 'POST', token);
+      };
+      // CBO: ตั้งงบที่ระดับแคมเปญ (FB กระจายให้ชุดโฆษณาเอง)
+      if (data.campaignBudget) {
+        campaignParams.daily_budget = Math.round(Number(data.campaignBudget) * 100);
+        campaignParams.bid_strategy = 'LOWEST_COST_WITHOUT_CAP';
+      }
+      const campaign = await fb(`${acct}/campaigns`, campaignParams, 'POST', token);
       campaignId = campaign.id;
     }
     send({ type: 'campaign', id: campaignId });
+    const thaiLocale = await getThaiLocale(token);
 
     const processAd = async (i) => {
       const ad = data.ads[i];
       try {
         if (aborted) throw new Error('ยกเลิกแล้ว');
-        send({ type: 'status', index: i, msg: 'กำลังสร้าง...' });
-
         const file = files[ad.imageField];
-        if (!file) throw new Error('ไม่ได้แนบรูปภาพ');
-        const imageHash = await getImageHash(file);
+        if (!file) throw new Error('ไม่ได้แนบไฟล์สื่อ');
+        const isVideo = (file.mimetype || '').startsWith('video/');
 
+        // เตรียมสื่อ: รูป = hash, วิดีโอ = อัปโหลด + รอประมวลผล + ดึง thumbnail
+        let imageHash = null, videoId = null, videoThumbUrl = null;
+        if (isVideo) {
+          send({ type: 'status', index: i, msg: 'อัปโหลดวิดีโอ...' });
+          videoId = await uploadVideo(acct, file, token);
+          await waitVideoReady(videoId, token, () => send({ type: 'status', index: i, msg: 'FB กำลังประมวลผลวิดีโอ...' }));
+          videoThumbUrl = await videoThumb(videoId, token);
+        } else {
+          send({ type: 'status', index: i, msg: 'กำลังสร้าง...' });
+          imageHash = await getImageHash(file);
+        }
+
+        // targeting ตายตัวตามแบบที่ตั้งไว้ + ค่าที่ปรับได้ (อายุ/เพศ/ประเทศ/ความสนใจ)
         const targeting = {
           geo_locations: { countries: ad.countries },
           age_min: ad.ageMin,
           age_max: ad.ageMax,
-          targeting_automation: { advantage_audience: 0 },
+          targeting_automation: { advantage_audience: 0 }, // ปิด Advantage+ audience
+          publisher_platforms: ['facebook'],               // FB เท่านั้น
+          facebook_positions: ['feed', 'profile_feed', 'story', 'facebook_reels'],
+          device_platforms: ['mobile'],                    // มือถือเท่านั้น
         };
+        if (thaiLocale) targeting.locales = [thaiLocale];  // ภาษาไทย
         if (ad.gender === 'male') targeting.genders = [1];
         if (ad.gender === 'female') targeting.genders = [2];
         if (ad.interests && ad.interests.length) {
           targeting.flexible_spec = [{ interests: ad.interests.map((x) => ({ id: x.id, name: x.name })) }];
         }
 
+        send({ type: 'status', index: i, msg: 'สร้างชุดโฆษณา...' });
         const adsetParams = {
           name: `${ad.name} - Ad Set`,
           campaign_id: campaignId,
-          daily_budget: Math.round(Number(ad.dailyBudget) * 100),
           billing_event: 'IMPRESSIONS',
           optimization_goal: objInfo.optimization_goal,
-          bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
           targeting,
           status,
         };
+        // ABO: ไม่มี campaignBudget → ตั้งงบที่ ad set. CBO: งบอยู่ที่แคมเปญแล้ว ไม่ต้องใส่
+        if (!data.campaignBudget) {
+          adsetParams.daily_budget = Math.round(Number(ad.dailyBudget) * 100);
+          adsetParams.bid_strategy = 'LOWEST_COST_WITHOUT_CAP';
+        }
         if (objInfo.needsPixel) {
-          adsetParams.promoted_object = { pixel_id: data.pixelId, custom_event_type: objInfo.event };
+          adsetParams.promoted_object = {
+            pixel_id: data.pixelId,
+            custom_event_type: data.conversionEvent || objInfo.event,
+          };
+          adsetParams.destination_type = 'WEBSITE';
         }
         const adset = await fb(`${acct}/adsets`, adsetParams, 'POST', token);
 
+        // ครีเอทีฟ: วิดีโอใช้ video_data, รูปใช้ link_data
+        const spec = { page_id: prof.pageId };
+        if (isVideo) {
+          spec.video_data = {
+            video_id: videoId,
+            message: ad.message,
+            title: ad.headline || undefined,
+            call_to_action: { type: data.cta, value: { link: ad.link } },
+          };
+          if (videoThumbUrl) spec.video_data.image_url = videoThumbUrl;
+        } else {
+          spec.link_data = {
+            link: ad.link,
+            message: ad.message,
+            name: ad.headline || undefined,
+            image_hash: imageHash,
+            call_to_action: { type: data.cta, value: { link: ad.link } },
+          };
+        }
         const creative = await fb(`${acct}/adcreatives`, {
           name: `${ad.name} - Creative`,
-          object_story_spec: {
-            page_id: prof.pageId,
-            link_data: {
-              link: ad.link,
-              message: ad.message,
-              name: ad.headline || undefined,
-              image_hash: imageHash,
-              call_to_action: { type: data.cta, value: { link: ad.link } },
-            },
-          },
+          object_story_spec: spec,
         }, 'POST', token);
 
         const adRes = await fb(`${acct}/ads`, {

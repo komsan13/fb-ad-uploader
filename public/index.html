@@ -223,6 +223,9 @@
   .ad-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
   .thumb { width: 60px; height: 60px; border-radius: var(--r-md); object-fit: cover; border: 1px solid var(--line); background: #f4f5f7 center/24px no-repeat url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%23c3c8d1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>'); cursor: pointer; flex-shrink: 0; transition: border-color 150ms var(--ease); }
   .thumb:hover { border-color: var(--brand); }
+  .thumb-wrap { position: relative; width: 60px; height: 60px; flex-shrink: 0; cursor: pointer; }
+  .thumb-wrap .thumb { width: 60px; height: 60px; }
+  .media-tag { position: absolute; left: 0; bottom: 0; right: 0; background: rgba(13,138,102,.92); color: #fff; font-size: 9.5px; font-weight: 700; text-align: center; padding: 1px 0; border-radius: 0 0 var(--r-md) var(--r-md); }
   .ad-head .name-wrap { flex: 1; min-width: 120px; }
   .ad-head input.f-name { font-weight: 600; }
   .badge { font-size: 11.5px; font-weight: 700; padding: 4px 11px; border-radius: 999px; white-space: nowrap; }
@@ -232,7 +235,7 @@
   .badge.err { background: var(--red-soft); color: var(--red); }
   @keyframes pulse { 50% { opacity: .45; } }
   .ad-err-msg { color: var(--red); font-size: 12.5px; margin-top: 6px; }
-  .grid { display: grid; grid-template-columns: 2.2fr 1.4fr .8fr; gap: 10px; }
+  .grid { display: grid; grid-template-columns: 1.7fr 1fr; gap: 10px; }
   @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
 
   details.target { margin-top: 10px; border-top: 1px dashed var(--line); padding-top: 9px; }
@@ -300,6 +303,22 @@
   #launchBtn:disabled { background: #c6cbd3; cursor: not-allowed; transform: none; }
   #doneBanner { display: none; font-size: 13px; font-weight: 600; }
   #doneBanner a { color: var(--blue); }
+
+  /* ---------- Modal ---------- */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(23,24,28,.45); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 20px; animation: fadeIn .15s var(--ease); }
+  @keyframes fadeIn { from { opacity: 0; } }
+  .modal-box { background: #fff; border-radius: var(--r-lg); box-shadow: 0 20px 60px rgba(0,0,0,.25); width: 100%; max-width: 480px; max-height: 88vh; overflow: hidden; display: flex; flex-direction: column; animation: modalPop .18s var(--ease); }
+  @keyframes modalPop { from { opacity: 0; transform: scale(.96) translateY(6px); } }
+  .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--line); }
+  .modal-head h3 { font-size: 16px; font-weight: 700; }
+  .modal-body { padding: 18px; overflow-y: auto; }
+  .health-item { border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px; margin-bottom: 12px; }
+  .health-item .hi-head { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 14px; margin-bottom: 6px; }
+  .hi-badge { font-size: 11.5px; font-weight: 700; padding: 3px 11px; border-radius: 999px; margin-left: auto; }
+  .hi-badge.ok { background: var(--green-soft); color: var(--green); }
+  .hi-badge.bad { background: var(--red-soft); color: var(--red); }
+  .px-item { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 0; border-top: 1px dashed var(--line); }
+  .px-item code { background: #f0f2f5; padding: 1px 7px; border-radius: 6px; font-size: 12px; }
 
   .page { display: none; }
   .page.active { display: block; }
@@ -396,10 +415,10 @@
           <div class="field">
             <label>วัตถุประสงค์</label>
             <select id="objective" onchange="togglePixel()">
+              <option value="OUTCOME_SALES" selected>ยอดขาย (ต้องมี Pixel)</option>
+              <option value="OUTCOME_LEADS">ลูกค้าเป้าหมาย (ต้องมี Pixel)</option>
               <option value="OUTCOME_TRAFFIC">การเข้าชม (Traffic)</option>
               <option value="OUTCOME_ENGAGEMENT">การมีส่วนร่วม (Engagement)</option>
-              <option value="OUTCOME_SALES">ยอดขาย (ต้องมี Pixel)</option>
-              <option value="OUTCOME_LEADS">ลูกค้าเป้าหมาย (ต้องมี Pixel)</option>
             </select>
           </div>
           <div class="field">
@@ -411,10 +430,29 @@
               <option value="CONTACT_US">ติดต่อเรา</option>
             </select>
           </div>
-          <div class="field" id="pixelField" style="display:none">
-            <label>Pixel ID</label>
+          <div class="field">
+            <label>งบแคมเปญ/วัน (บาท) <span class="h-desc">— CBO</span></label>
+            <input id="campaignBudget" type="number" min="1" value="300" oninput="updateStats()">
+            <div class="hint">งบรวมทั้งแคมเปญ FB กระจายให้แต่ละแอดเอง</div>
+          </div>
+        </div>
+        <div class="row" id="pixelRow" style="display:none">
+          <div class="field">
+            <label>Pixel / Dataset ID</label>
             <input id="pixelId" placeholder="123456789012345">
             <div class="hint">ใช้ pixel เดียวกันทุกบัญชีที่เลือก</div>
+          </div>
+          <div class="field">
+            <label>เหตุการณ์คอนเวอร์ชั่น</label>
+            <select id="conversionEvent">
+              <option value="SUBSCRIBE">สมัครรับข้อมูล (Subscribe)</option>
+              <option value="PURCHASE">การซื้อ (Purchase)</option>
+              <option value="LEAD">ลูกค้าเป้าหมาย (Lead)</option>
+              <option value="COMPLETE_REGISTRATION">ลงทะเบียนเสร็จ (Complete Registration)</option>
+              <option value="ADD_TO_CART">หยิบใส่ตะกร้า (Add to Cart)</option>
+              <option value="INITIATE_CHECKOUT">เริ่มชำระเงิน (Initiate Checkout)</option>
+              <option value="CONTACT">ติดต่อ (Contact)</option>
+            </select>
           </div>
         </div>
         <label class="switch-row">
@@ -436,8 +474,8 @@
               <textarea id="tpl-message" placeholder="ข้อความโฆษณา..."></textarea>
             </div>
             <div class="row">
-              <div class="field" style="flex:1.5"><label>หัวข้อ (Headline)</label><input id="tpl-headline" placeholder="ไม่บังคับ"></div>
-              <div class="field"><label>งบต่อวัน (บาท)</label><input id="tpl-budget" type="number" min="1" value="300"></div>
+              <div class="field"><label>หัวข้อ (Headline)</label><input id="tpl-headline" placeholder="ไม่บังคับ"></div>
+              <input id="tpl-budget" type="hidden" value="300">
             </div>
             <div class="field"><label>ลิงก์ปลายทาง</label><input id="tpl-link" placeholder="https://..."></div>
           </div>
@@ -468,11 +506,11 @@
         </div>
         <div class="dropzone" id="dropzone" onclick="document.getElementById('multiFile').click()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>
-          <div class="big">ลากรูปมาวางที่นี่ (หลายรูปพร้อมกันได้)</div>
-          <div class="small">1 รูป = 1 แอด — ตั้งชื่อตามไฟล์และเติมค่าเริ่มต้นจากขั้นตอนที่ 2 ให้อัตโนมัติ</div>
-          <span class="dz-btn">เลือกรูปจากเครื่อง</span>
+          <div class="big">ลากรูปหรือวิดีโอมาวางที่นี่ (หลายไฟล์พร้อมกันได้)</div>
+          <div class="small">1 ไฟล์ = 1 แอด — รองรับทั้งรูปและวิดีโอ ตั้งชื่อตามไฟล์และเติมค่าเริ่มต้นให้อัตโนมัติ</div>
+          <span class="dz-btn">เลือกไฟล์จากเครื่อง</span>
         </div>
-        <input type="file" id="multiFile" accept="image/*" multiple style="display:none" onchange="filesPicked(this.files); this.value=''">
+        <input type="file" id="multiFile" accept="image/*,video/*" multiple style="display:none" onchange="filesPicked(this.files); this.value=''">
         <div id="adList" style="margin-top:12px"></div>
       </div>
     </section>
@@ -577,6 +615,17 @@
       </div>
     </section>
   </main>
+</div>
+
+<!-- ========== Modal ตรวจสภาพบัญชี ========== -->
+<div id="healthModal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeHealth()">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h3>🩺 ตรวจสภาพบัญชีโฆษณา</h3>
+      <button class="icon-btn btn-light" onclick="closeHealth()"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div id="healthBody" class="modal-body"></div>
+  </div>
 </div>
 
 <!-- ========== แถบขึ้นแอด (เฉพาะหน้าขึ้นแอด) ========== -->
@@ -706,7 +755,13 @@ function profCardHTML(p) {
       </div>
       <div class="pc-col">
         <div class="pc-step"><span class="pc-step-num">2</span> เลือกบัญชีโฆษณาและเพจ</div>
-        <div class="field"><label>บัญชีโฆษณา (Ad Account)</label><select class="p-adaccount" onchange="saveProfileField('${p.id}', {adAccountId: this.value})"><option value="">— เชื่อมต่อในขั้นตอนที่ 1 ก่อน —</option></select></div>
+        <div class="field">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <label style="margin:0">บัญชีโฆษณา (Ad Account)</label>
+            <a onclick="openHealth('${p.id}')" style="font-size:12px;font-weight:600;cursor:pointer">🩺 ตรวจบัตร/Pixel</a>
+          </div>
+          <select class="p-adaccount" onchange="saveProfileField('${p.id}', {adAccountId: this.value})" style="margin-top:5px"><option value="">— เชื่อมต่อในขั้นตอนที่ 1 ก่อน —</option></select>
+        </div>
         <div class="field"><label>เพจ (Facebook Page)</label><select class="p-page" onchange="saveProfileField('${p.id}', {pageId: this.value})"><option value="">— เชื่อมต่อในขั้นตอนที่ 1 ก่อน —</option></select></div>
       </div>
     </div>
@@ -734,6 +789,63 @@ window.addEventListener('message', async (e) => {
 async function setActiveProfileAndRender(id) {
   await setActiveProfile(id);
   renderSettings();
+}
+
+// ---------- Modal ตรวจสภาพบัญชี (บัตร/Pixel) ----------
+let healthCtx = null;
+function closeHealth() { document.getElementById('healthModal').style.display = 'none'; }
+async function openHealth(pid) {
+  const card = document.querySelector(`.prof-card[data-pid="${pid}"]`);
+  const acct = card.querySelector('.p-adaccount').value;
+  if (!acct) return alert('เลือกบัญชีโฆษณาก่อนครับ');
+  healthCtx = { pid, acct };
+  document.getElementById('healthModal').style.display = 'flex';
+  document.getElementById('healthBody').innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted)"><span class="spin"></span> กำลังตรวจสอบ...</div>';
+  await renderHealth();
+}
+async function renderHealth() {
+  const { pid, acct } = healthCtx;
+  const body = document.getElementById('healthBody');
+  const res = await fetch(`/api/account-health?profile=${pid}&account=${acct}&_=${Date.now()}`, { cache: 'no-store' });
+  const d = await res.json();
+  if (d.error) { body.innerHTML = `<div style="color:var(--red)">ตรวจไม่สำเร็จ: ${esc(d.error)}</div>`; return; }
+  const billUrl = `https://business.facebook.com/ads/manager/account_settings/account_billing/?act=${acct}`;
+  const pxList = d.pixels.length
+    ? d.pixels.map(p => `<div class="px-item">📊 ${esc(p.name)} <code>${esc(p.id)}</code> <button class="btn-light btn-sm" style="margin-left:auto" onclick="copyPixel('${esc(p.id)}')">คัดลอก ID</button></div>`).join('')
+    : '<div style="color:var(--muted);font-size:13px;padding:6px 0">ยังไม่มี Pixel</div>';
+  body.innerHTML = `
+    <div class="health-item">
+      <div class="hi-head">💳 วิธีการชำระเงิน
+        <span class="hi-badge ${d.hasPayment ? 'ok' : 'bad'}">${d.hasPayment ? 'เชื่อมบัตรแล้ว' : 'ยังไม่เชื่อมบัตร'}</span>
+      </div>
+      ${d.hasPayment
+        ? `<div style="font-size:13px;color:var(--muted)">${esc(d.paymentText || 'มีวิธีชำระเงินแล้ว')}</div>`
+        : `<div style="font-size:13px;color:var(--muted);margin-bottom:10px">บัญชีนี้ยังไม่มีบัตร/วิธีชำระเงิน — ต้องเพิ่มในหน้า Facebook (เพิ่มผ่าน API ไม่ได้ด้วยเหตุผลด้านความปลอดภัย)</div>
+           <a href="${billUrl}" target="_blank" class="btn-primary btn-sm" style="text-decoration:none;display:inline-block">+ เพิ่มบัตร/วิธีชำระเงิน ↗</a>`}
+    </div>
+    <div class="health-item">
+      <div class="hi-head">📊 Pixel / Dataset
+        <span class="hi-badge ${d.pixels.length ? 'ok' : 'bad'}">${d.pixels.length ? d.pixels.length + ' ตัว' : 'ยังไม่มี'}</span>
+      </div>
+      ${pxList}
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <input id="newPixelName" placeholder="ชื่อ Pixel ใหม่ เช่น ad1" style="flex:1">
+        <button class="btn-primary btn-sm" onclick="createPixel()">+ สร้าง Pixel</button>
+      </div>
+    </div>`;
+}
+function copyPixel(id) { navigator.clipboard.writeText(id); }
+async function createPixel() {
+  const name = document.getElementById('newPixelName').value.trim();
+  if (!name) return alert('ตั้งชื่อ Pixel ก่อนครับ');
+  const btn = event.target; btn.disabled = true; btn.textContent = 'กำลังสร้าง...';
+  const res = await fetch('/api/create-pixel', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profile: healthCtx.pid, account: healthCtx.acct, name }),
+  });
+  const d = await res.json();
+  if (d.error) { alert('สร้างไม่สำเร็จ: ' + d.error); btn.disabled = false; btn.textContent = '+ สร้าง Pixel'; return; }
+  await renderHealth();
 }
 function renderSettings() {
   const el = document.getElementById('profList');
@@ -823,8 +935,8 @@ setInterval(tickClock, 1000);
 
 function togglePixel() {
   const obj = document.getElementById('objective').value;
-  document.getElementById('pixelField').style.display =
-    (obj === 'OUTCOME_SALES' || obj === 'OUTCOME_LEADS') ? 'block' : 'none';
+  document.getElementById('pixelRow').style.display =
+    (obj === 'OUTCOME_SALES' || obj === 'OUTCOME_LEADS') ? 'flex' : 'none';
 }
 
 // ---------- หน้าแคมเปญ ----------
@@ -1036,7 +1148,7 @@ dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('o
 dz.addEventListener('dragleave', () => dz.classList.remove('over'));
 dz.addEventListener('drop', (e) => {
   e.preventDefault(); dz.classList.remove('over');
-  filesPicked([...e.dataTransfer.files].filter(f => f.type.startsWith('image/')));
+  filesPicked([...e.dataTransfer.files].filter(f => f.type.startsWith('image/') || f.type.startsWith('video/')));
 });
 function filesPicked(files) {
   [...files].forEach(f => addAd({ file: f }));
@@ -1083,8 +1195,11 @@ function addAd(opts = {}) {
   div.dataset.id = id;
   div.innerHTML = `
     <div class="ad-head">
-      <img class="thumb" title="คลิกเพื่อเปลี่ยนรูป" onclick="this.closest('.ad-card').querySelector('.f-image').click()">
-      <input type="file" class="f-image" accept="image/*" style="display:none" onchange="imgChanged(this)">
+      <div class="thumb-wrap" title="คลิกเพื่อเปลี่ยนไฟล์" onclick="this.closest('.ad-card').querySelector('.f-image').click()">
+        <img class="thumb">
+        <span class="media-tag" style="display:none">วิดีโอ</span>
+      </div>
+      <input type="file" class="f-image" accept="image/*,video/*" style="display:none" onchange="imgChanged(this)">
       <div class="name-wrap"><input class="f-name" placeholder="ชื่อแอด"></div>
       <span class="badge" style="display:none"></span>
       <button class="btn-light icon-btn" title="ทำซ้ำแอดนี้ (รวมรูป)" onclick="duplicateAd(${id})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="13" height="13" x="9" y="9" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
@@ -1099,7 +1214,7 @@ function addAd(opts = {}) {
         <div class="field"><label>หัวข้อ</label><input class="f-headline"></div>
         <div class="field"><label>ลิงก์</label><input class="f-link" placeholder="https://..."></div>
       </div>
-      <div>
+      <div class="card-budget" style="display:none">
         <div class="field"><label>งบ/วัน (บาท)</label><input class="f-budget" type="number" min="1" oninput="updateStats()"></div>
       </div>
     </div>
@@ -1173,8 +1288,31 @@ function removeAd(id) {
   updateStats();
 }
 function imgChanged(input) {
-  const img = input.closest('.ad-card').querySelector('.thumb');
-  if (input.files[0]) img.src = URL.createObjectURL(input.files[0]);
+  const card = input.closest('.ad-card');
+  const img = card.querySelector('.thumb');
+  const tag = card.querySelector('.media-tag');
+  const f = input.files[0];
+  if (!f) return;
+  const isVideo = f.type.startsWith('video/');
+  tag.style.display = isVideo ? 'block' : 'none';
+  if (isVideo) {
+    // ทำ thumbnail จากเฟรมแรกของวิดีโอ
+    const url = URL.createObjectURL(f);
+    const v = document.createElement('video');
+    v.src = url; v.muted = true; v.playsInline = true;
+    v.onloadeddata = () => { try { v.currentTime = 0.1; } catch {} };
+    v.onseeked = () => {
+      const c = document.createElement('canvas');
+      c.width = 120; c.height = 120;
+      const ratio = Math.min(v.videoWidth / 120, v.videoHeight / 120) || 1;
+      const sw = 120 * ratio, sh = 120 * ratio;
+      c.getContext('2d').drawImage(v, (v.videoWidth - sw) / 2, (v.videoHeight - sh) / 2, sw, sh, 0, 0, 120, 120);
+      img.src = c.toDataURL();
+      URL.revokeObjectURL(url);
+    };
+  } else {
+    img.src = URL.createObjectURL(f);
+  }
 }
 function updateTargetSummary(card) {
   const g = { all: 'ทุกเพศ', male: 'ชาย', female: 'หญิง' }[card.querySelector('.f-gender').value];
@@ -1187,10 +1325,10 @@ function updateStats() {
   document.getElementById('adCount').textContent = `(${cards.length} ตัว)`;
   document.getElementById('statCount').textContent = cards.length;
   document.getElementById('barCount').textContent = cards.length;
-  let total = 0;
-  cards.forEach(c => total += Number(c.querySelector('.f-budget').value) || 0);
-  document.getElementById('statBudget').textContent = '฿' + total.toLocaleString();
-  document.getElementById('barBudget').textContent = total ? `• งบรวม ${total.toLocaleString()} บาท/วัน/บัญชี` : '';
+  const cb = Number((document.getElementById('campaignBudget') || {}).value) || 0;
+  document.getElementById('statBudget').textContent = '฿' + cb.toLocaleString();
+  document.getElementById('barBudget').textContent = cb ? `• งบแคมเปญ ${cb.toLocaleString()} บาท/วัน/บัญชี` : '';
+  document.getElementById('statBudgetSub').textContent = 'งบแคมเปญ (CBO) ต่อ 1 บัญชี';
   const nProf = document.querySelectorAll('#launchProfiles input:checked').length;
   document.getElementById('statProfiles').textContent = nProf;
 }
@@ -1289,7 +1427,7 @@ async function launch() {
   for (const c of allCards) {
     const num = allCards.indexOf(c) + 1;
     const name = c.querySelector('.f-name').value.trim() || `Ad-${num}`;
-    if (!c.querySelector('.f-image').files[0]) return alert(`แอด #${num} (${name}): ยังไม่มีรูป — คลิกที่กรอบรูปเพื่อเลือก`);
+    if (!c.querySelector('.f-image').files[0]) return alert(`แอด #${num} (${name}): ยังไม่มีรูป/วิดีโอ — คลิกที่กรอบเพื่อเลือกไฟล์`);
     if (!c.querySelector('.f-message').value.trim()) return alert(`แอด #${num} (${name}): ยังไม่ได้ใส่ข้อความหลัก`);
     if (!/^https?:\/\//.test(c.querySelector('.f-link').value.trim())) return alert(`แอด #${num} (${name}): ลิงก์ต้องขึ้นต้นด้วย http:// หรือ https://`);
   }
@@ -1348,8 +1486,10 @@ async function launch() {
         profileId: pid,
         campaign: { name: campaignName, objective },
         campaignId: (reuse && reuse.name === campaignName && reuse.objective === objective) ? reuse.id : undefined,
+        campaignBudget: Number(document.getElementById('campaignBudget').value) || 300,
         cta: document.getElementById('cta').value,
         pixelId,
+        conversionEvent: document.getElementById('conversionEvent').value,
         active: document.getElementById('activeNow').checked,
         ads,
       }));
