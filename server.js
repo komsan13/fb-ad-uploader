@@ -7,6 +7,8 @@ const crypto = require('crypto');
 
 const CONFIG_PATH = process.env.CONFIG_PATH || path.join(__dirname, 'config.json');
 const API = process.env.FB_API_BASE || 'https://graph.facebook.com/v23.0';
+// วิดีโอต้องอัปโหลดเข้า host เฉพาะ — host ปกติจะตอบ 413 (ตัวเปล่า) เมื่อไฟล์ใหญ่
+const VIDEO_API = API.includes('graph.facebook.com') ? API.replace('graph.facebook.com', 'graph-video.facebook.com') : API;
 const PORT = process.env.PORT || 4000;
 // URL สาธารณะของแอป (ตั้งผ่าน env ตอน deploy) — ใช้สร้าง redirect URI ของ OAuth
 const PUBLIC_URL = (process.env.PUBLIC_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
@@ -114,15 +116,16 @@ async function uploadVideo(acct, file, token, attempt = 0) {
   form.append('source', new Blob([file.buffer], { type: file.mimetype || 'video/mp4' }), file.originalname || 'video.mp4');
   let json;
   try {
-    const res = await fetch(`${API}/${acct}/advideos`, { method: 'POST', body: form });
-    json = JSON.parse(await res.text());
-  } catch {
+    const res = await fetch(`${VIDEO_API}/${acct}/advideos`, { method: 'POST', body: form });
+    const text = await res.text();
+    try { json = JSON.parse(text); } catch { throw new Error(`FB ตอบกลับผิดปกติ (HTTP ${res.status})`); }
+  } catch (err) {
     // การเชื่อมต่อสะดุด/FB ตอบไม่เป็น JSON — รอแล้วอัปโหลดใหม่ได้อีก 2 รอบ
     if (attempt < 2) {
       await new Promise((r) => setTimeout(r, (attempt + 1) * 5000));
       return uploadVideo(acct, file, token, attempt + 1);
     }
-    throw new Error('อัปโหลดวิดีโอไป FB ไม่สำเร็จ (การเชื่อมต่อสะดุด) — กดขึ้นอีกครั้งได้เลย');
+    throw new Error(`อัปโหลดวิดีโอไป FB ไม่สำเร็จ (${err.message}) — กดขึ้นอีกครั้งได้เลย`);
   }
   if (json.error) throw new Error(json.error.error_user_msg || json.error.message);
   return json.id;
