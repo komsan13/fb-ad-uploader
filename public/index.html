@@ -716,7 +716,7 @@
       <div class="card">
         <div class="filter-bar">
           <div class="hint" style="flex:1;min-width:220px">เช็คสดจาก Facebook ทุกครั้งที่กดรีเฟรช — เพจที่ "บิน" คือเพจที่ FB ปิดเผยแพร่/ตัดสิทธิ์ลงโฆษณา</div>
-          <button class="btn-light" onclick="loadHealth(true)" style="display:inline-flex;align-items:center;gap:7px"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>รีเฟรชข้อมูล</button>
+          <button class="btn-light" onclick="loadHealthPage(true)" style="display:inline-flex;align-items:center;gap:7px"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>รีเฟรชข้อมูล</button>
         </div>
       </div>
 
@@ -827,7 +827,7 @@ function showPage(name) {
   if (name === 'settings') renderSettings();
   if (name === 'campaigns') buildCampFilters().then(loadCampaigns);
   if (name === 'dashboard') loadDashboard();
-  if (name === 'health') loadHealth();
+  if (name === 'health') loadHealthPage();
 }
 
 // ---------- modal ขึ้นแอด ----------
@@ -1264,7 +1264,7 @@ function renderDashboard(results) {
 }
 // ---------- หน้าสุขภาพบัญชี & เพจ ----------
 const healthCache = {}; // pid -> {accounts, pages}
-async function loadHealth(force) {
+async function loadHealthPage(force) {
   const acctRows = document.getElementById('healthAcctRows');
   const pageRows = document.getElementById('healthPageRows');
   const tokenProfiles = profiles.filter(p => p.hasToken);
@@ -1284,9 +1284,9 @@ async function loadHealth(force) {
       return { p, ...d };
     } catch (e) { return { p, error: e.message }; }
   }));
-  renderHealth(results);
+  renderHealthPage(results);
 }
-function renderHealth(results) {
+function renderHealthPage(results) {
   const multi = results.length > 1;
   const ST = { 1: ['on', 'ใช้ได้'], 2: ['rejected', 'ถูกปิดใช้งาน'], 3: ['issue', 'ค้างชำระ'], 7: ['issue', 'รอตรวจความเสี่ยง'], 8: ['issue', 'รอชำระ'], 9: ['issue', 'ช่วงผ่อนผัน'], 100: ['rejected', 'กำลังปิด'], 101: ['rejected', 'ปิดแล้ว'] };
 
@@ -1352,7 +1352,7 @@ async function createPixelHealth(pid, acctId, acctName) {
   alert(`สร้าง Pixel "${name.trim()}" สำเร็จ`);
   delete fullAccountCache[pid]; // ให้หน้าขึ้นแอดเห็น Pixel ใหม่ด้วย
   launchAccountsBuilt = false;
-  loadHealth(true);
+  loadHealthPage(true);
 }
 
 // ---------- คลังบัญชีโฆษณาแบบเต็ม (Pixel + บัตร) ใช้ร่วมทั้งหน้าขึ้นแอดและแคมเปญ ----------
