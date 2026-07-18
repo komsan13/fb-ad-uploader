@@ -455,9 +455,10 @@
           <div class="field">
             <label>ปุ่มบนแอด (CTA)</label>
             <select id="cta">
-              <option value="LEARN_MORE">เรียนรู้เพิ่มเติม</option>
+              <option value="SUBSCRIBE" selected>สมัครเลย (Subscribe)</option>
               <option value="SHOP_NOW">ซื้อเลย</option>
-              <option value="SIGN_UP">สมัคร</option>
+              <option value="LEARN_MORE">เรียนรู้เพิ่มเติม</option>
+              <option value="SIGN_UP">ลงทะเบียน (Sign Up)</option>
               <option value="CONTACT_US">ติดต่อเรา</option>
             </select>
           </div>
@@ -1346,10 +1347,9 @@ function renderLaunchAccounts() {
             ? a.pages.map(g => `<option value="${g.id}" ${g.id === a.chosenPage ? 'selected' : ''}>📄 ${esc(g.name)}</option>`).join('')
             : '<option value="">— ไม่พบเพจ —</option>'}
         </select>
-        <input list="bl-${v}" value="${esc(a.beneficiary || '')}" placeholder="ผู้ลงโฆษณา (ไม่บังคับ)"
-          title="ผู้ลงโฆษณาของบัญชีนี้ — ชื่อธุรกิจที่ยืนยันตัวตนกับ FB แล้ว เว้นว่างได้"
+        <input value="${esc(a.beneficiary || '')}" placeholder="ผู้ลงโฆษณา (ไม่บังคับ)"
+          title="พิมพ์ชื่อธุรกิจที่ยืนยันตัวตนแล้วให้ตรงกับที่เห็นใน dropdown ผู้ลงโฆษณาของ Ads Manager เป๊ะๆ เช่น CROSS CURRENT PRODUCTIONS — เว้นว่างได้"
           onchange="launchSetBeneficiary('${v}', this.value)">
-        <datalist id="bl-${v}">${a.bm && a.bm !== 'ไม่อยู่ใน BM' ? `<option value="${esc(a.bm)}"></option>` : ''}</datalist>
       </div>` : '';
       return `<label class="acct-row ${r.ready ? '' : 'row-off'}" title="${esc(tip)}">
         <input type="checkbox" value="${v}" ${isChecked ? 'checked' : ''} ${r.ready ? '' : 'disabled'} onchange="launchRowToggled()">
@@ -1994,6 +1994,11 @@ async function launch() {
             setProgress(`${label} • เสร็จ ${doneUnits}/${totalUnits} รายการ`);
           }
           if (ev.type === 'campaign') lastCampaignByAcct[key] = { id: ev.id, name: campaignName, objective };
+          if (ev.type === 'warn') {
+            const em = cards[ev.index].querySelector('.ad-err-msg');
+            em.innerHTML += `<div style="color:#b7791f">⚠ ${esc(label)}: ${esc(ev.msg)}</div>`;
+            em.style.display = 'block';
+          }
           if (ev.type === 'fatal') {
             cards.forEach(c => {
               const r = getRes(c);

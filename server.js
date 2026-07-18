@@ -129,12 +129,12 @@ async function videoThumb(videoId, token) {
 // locale id ของภาษาไทยใน FB targeting (cache ไว้ใช้ซ้ำ)
 let thaiLocaleId = null;
 async function getThaiLocale(token) {
-  if (thaiLocaleId !== null) return thaiLocaleId;
+  if (thaiLocaleId) return thaiLocaleId; // ครั้งก่อนล้มเหลว (0/null) = ลองใหม่
   try {
     const r = await fb('search', { type: 'adlocale', q: 'Thai', limit: 25 }, 'GET', token);
-    const hit = (r.data || []).find((x) => /^thai$/i.test(x.name) || x.key === 'th_TH');
-    thaiLocaleId = hit ? hit.key : 0;
-  } catch { thaiLocaleId = 0; }
+    const hit = (r.data || []).find((x) => /^thai$/i.test(x.name));
+    thaiLocaleId = hit ? hit.key : 24; // 24 = รหัสภาษาไทยของ FB (ค่าคงที่)
+  } catch { thaiLocaleId = 24; }
   return thaiLocaleId;
 }
 
@@ -686,7 +686,7 @@ app.post('/api/launch', upload.any(), async (req, res) => {
         } catch (e) {
           // บางบัญชีไม่รองรับ dsa_beneficiary/dsa_payor — ถอดออกแล้วลองใหม่
           if (beneficiary && /dsa|beneficiary|payor/i.test(e.message)) {
-            send({ type: 'status', index: i, msg: 'บัญชีนี้ไม่รองรับ "ผู้ลงโฆษณา" — ขึ้นโดยไม่ระบุ...' });
+            send({ type: 'warn', index: i, msg: `FB ไม่ยอมรับผู้ลงโฆษณา "${beneficiary}" (${e.message}) — ขึ้นต่อโดยไม่ระบุ ตรวจชื่อให้ตรงกับธุรกิจที่ยืนยันตัวตนใน Ads Manager เป๊ะๆ` });
             delete adsetParams.dsa_beneficiary;
             delete adsetParams.dsa_payor;
             adset = await fb(`${acct}/adsets`, adsetParams, 'POST', token);
