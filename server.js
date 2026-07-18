@@ -273,6 +273,8 @@ app.get('/api/accounts', async (req, res) => {
         // รายชื่อ "ผู้ลงโฆษณา" ที่ FB แนะนำสำหรับบัญชีนี้ (ธุรกิจ/บุคคลที่ยืนยันตัวตนแล้ว)
         out.dsaOptions = ((a.dsa_recommendations && a.dsa_recommendations.data) || [])
           .flatMap((r) => r.recommendations || []);
+        // ค่าที่ผู้ใช้เคยตั้งเอง (จำถาวรต่อบัญชี — ชื่อยืนยันธุรกิจจริงดึงจาก API ไม่ได้)
+        out.savedBeneficiary = (cfg.beneficiaries || {})[a.account_id] || '';
       }
       return out;
     });
@@ -280,6 +282,19 @@ app.get('/api/accounts', async (req, res) => {
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
+});
+
+// จำ "ผู้ลงโฆษณา" ที่ผู้ใช้ตั้งไว้ต่อบัญชีโฆษณา (ตั้งครั้งเดียวใช้ตลอด)
+app.post('/api/beneficiary', (req, res) => {
+  const acctId = String(req.body.account || '').replace(/[^0-9]/g, '');
+  if (!acctId) return res.status(400).json({ error: 'ไม่ได้ระบุบัญชีโฆษณา' });
+  const cfg = loadConfig();
+  cfg.beneficiaries = cfg.beneficiaries || {};
+  const name = String(req.body.name || '').trim();
+  if (name) cfg.beneficiaries[acctId] = name;
+  else delete cfg.beneficiaries[acctId];
+  saveConfig(cfg);
+  res.json({ ok: true });
 });
 
 // map objective -> action_type ที่นับเป็น "ผลลัพธ์" ใน Ads Manager

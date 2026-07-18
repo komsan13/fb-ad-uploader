@@ -1288,7 +1288,9 @@ async function loadFullAccounts(force) {
         hasPayment: !!a.hasPayment, pixels, chosenPixel: pixels[0] ? pixels[0].id : null,
         pages, chosenPage: (pages.some(g => g.id === p.pageId) ? p.pageId : (pages[0] || {}).id) || null,
         dsaOptions: a.dsaOptions || [],
-        beneficiary: (a.dsaOptions || [])[0] || '', // default = ตัวที่ FB แนะนำ
+        savedBeneficiary: a.savedBeneficiary || '',
+        // default: ค่าที่เคยตั้งเอง (จำถาวร) > ตัวที่ FB แนะนำ
+        beneficiary: a.savedBeneficiary || (a.dsaOptions || [])[0] || '',
       });
     }
   }
@@ -1349,12 +1351,10 @@ function renderLaunchAccounts() {
             ? a.pages.map(g => `<option value="${g.id}" ${g.id === a.chosenPage ? 'selected' : ''}>📄 ${esc(g.name)}</option>`).join('')
             : '<option value="">— ไม่พบเพจ —</option>'}
         </select>
-        ${a.dsaOptions.length ? `<select onchange="launchSetBeneficiary('${v}', this.value)" title="ผู้ลงโฆษณาของบัญชีนี้ (รายชื่อจาก FB) — ไม่บังคับ">
-          <option value="">— ผู้ลงโฆษณา: ไม่ระบุ —</option>
-          ${a.dsaOptions.map(o => `<option value="${esc(o)}" ${o === a.beneficiary ? 'selected' : ''}>👤 ${esc(o)}</option>`).join('')}
-        </select>` : `<input value="${esc(a.beneficiary || '')}" placeholder="ผู้ลงโฆษณา (ไม่บังคับ)"
-          title="พิมพ์ชื่อธุรกิจ/บุคคลที่ยืนยันตัวตนแล้ว ให้ตรงกับ Ads Manager เป๊ะๆ — เว้นว่างได้"
-          onchange="launchSetBeneficiary('${v}', this.value)">`}
+        <input list="bl-${v}" value="${esc(a.beneficiary || '')}" placeholder="ผู้ลงโฆษณา (ไม่บังคับ)"
+          title="เลือกจากรายการหรือพิมพ์ชื่อตามที่เห็นใน Ads Manager (เช่น CROSS CURRENT PRODUCTIONS) — จำค่าให้ถาวรต่อบัญชี เว้นว่างได้"
+          onchange="launchSetBeneficiary('${v}', this.value)">
+        <datalist id="bl-${v}">${[...new Set([a.savedBeneficiary, ...a.dsaOptions].filter(Boolean))].map(o => `<option value="${esc(o)}"></option>`).join('')}</datalist>
       </div>` : '';
       return `<label class="acct-row ${r.ready ? '' : 'row-off'}" title="${esc(tip)}">
         <input type="checkbox" value="${v}" ${isChecked ? 'checked' : ''} ${r.ready ? '' : 'disabled'} onchange="launchRowToggled()">
@@ -1375,7 +1375,21 @@ function launchRowToggled() { renderLaunchAccounts(); }
 function launchAcct(v) { return launchAccounts.find(a => `${a.pid}:${a.acctId}` === v); }
 function launchSetPixel(v, id) { const a = launchAcct(v); if (a) a.chosenPixel = id || null; }
 function launchSetPage(v, id) { const a = launchAcct(v); if (a) a.chosenPage = id || null; }
-function launchSetBeneficiary(v, name) { const a = launchAcct(v); if (a) a.beneficiary = name.trim(); }
+function launchSetBeneficiary(v, name) {
+  const a = launchAcct(v);
+  if (!a) return;
+  a.beneficiary = name.trim();
+  a.savedBeneficiary = a.beneficiary;
+  // จำถาวรฝั่งเซิร์ฟเวอร์ ครั้งหน้าไม่ต้องพิมพ์ใหม่
+  fetch('/api/beneficiary', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ account: a.acctId, name: a.beneficiary }),
+  });
+  // อัปเดตแคชด้วย ไม่งั้นโหลดหน้าใหม่ก่อน server ตอบจะได้ค่าเก่า
+  const d = fullAccountCache[a.pid];
+  const cached = d && d.adAccounts.find(x => x.account_id === a.acctId);
+  if (cached) cached.savedBeneficiary = a.beneficiary;
+}
 function launchSelectReady() {
   document.querySelectorAll('#launchAccounts input[type=checkbox]').forEach(i => { i.checked = !i.disabled; });
   renderLaunchAccounts();
