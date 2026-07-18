@@ -742,7 +742,9 @@
       </div>
 
       <div class="card">
-        <h2 style="margin-bottom:12px"><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><path d="M2 10h20"/></svg></span>บัญชีโฆษณาที่ใช้ได้ <span class="h-desc" id="healthAcctSub"></span></h2>
+        <h2 style="margin-bottom:12px"><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><path d="M2 10h20"/></svg></span>บัญชีโฆษณาที่ใช้ได้ <span class="h-desc" id="healthAcctSub"></span>
+          <button id="healthBulkPx" class="btn-primary btn-sm" style="margin-left:auto;display:none" onclick="createAllPixelsHealth(this)"></button>
+        </h2>
         <div class="tbl-wrap">
           <table>
             <thead><tr>
@@ -1324,6 +1326,13 @@ function renderHealthPage(results) {
   const nReady = rows.filter(a => !a.missing && a.status === 1).length;
   const nFix = rows.filter(a => a.missing).length;
 
+  // ปุ่มสร้าง Pixel รวบยอด — เฉพาะบัญชีสถานะใช้ได้จริง (ไม่เอาค้างชำระ/มีปัญหา)
+  healthNeedPixel = rows.filter(a => a.status === 1 && !a.pixels.length).map(a => ({ pid: a.pid, id: a.id }));
+  const bulkBtn = document.getElementById('healthBulkPx');
+  bulkBtn.style.display = healthNeedPixel.length ? '' : 'none';
+  bulkBtn.disabled = false;
+  bulkBtn.textContent = `+ สร้าง Pixel ให้ ${healthNeedPixel.length} บัญชีที่ยังไม่มี`;
+
   const acctHtml = rows.map(a => {
     const warn = WARN[a.status] ? ` <span class="st-pill issue">⚠ ${WARN[a.status]}</span>` : '';
     const px = a.pixels.length
@@ -1370,11 +1379,35 @@ function renderHealthPage(results) {
   document.getElementById('hPageOkSub').textContent = `จากทั้งหมด ${pages.length} เพจ`;
   document.getElementById('hDead').textContent = nDeadAcct + (pages.length - nPageOk);
 }
-async function createPixelHealth(pid, acctId, btn) {
-  // ตั้งชื่อให้เองไม่ซ้ำ: px-ปีเดือนวัน-ชั่วโมงนาทีวินาที
+let healthNeedPixel = []; // บัญชี status 1 ที่ยังไม่มี pixel (จากการ render ล่าสุด)
+function pixelAutoName(seq) {
   const d = new Date();
   const pad = (n) => String(n).padStart(2, '0');
-  const name = `px-${String(d.getFullYear()).slice(2)}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  return `px-${String(d.getFullYear()).slice(2)}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}${seq ? '-' + seq : ''}`;
+}
+// สร้าง Pixel ให้ทุกบัญชี (สถานะใช้ได้) ที่ยังไม่มี — ตั้งชื่อไม่ซ้ำให้เอง
+async function createAllPixelsHealth(btn) {
+  if (!healthNeedPixel.length) return;
+  const list = healthNeedPixel.slice();
+  btn.disabled = true;
+  const fails = [];
+  for (let i = 0; i < list.length; i++) {
+    btn.textContent = `กำลังสร้าง ${i + 1}/${list.length}...`;
+    try {
+      const r = await (await fetch('/api/create-pixel', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile: list[i].pid, account: list[i].id, name: pixelAutoName(i) }),
+      })).json();
+      if (r.error) fails.push(`${list[i].id}: ${r.error}`);
+      delete fullAccountCache[list[i].pid];
+    } catch (e) { fails.push(`${list[i].id}: ${e.message}`); }
+  }
+  launchAccountsBuilt = false;
+  if (fails.length) alert(`สร้างไม่สำเร็จ ${fails.length} บัญชี:\n` + fails.join('\n'));
+  loadHealthPage(true);
+}
+async function createPixelHealth(pid, acctId, btn) {
+  const name = pixelAutoName(0); // ตั้งชื่อให้เองไม่ซ้ำ: px-ปีเดือนวัน-ชั่วโมงนาทีวินาที
   if (btn) { btn.disabled = true; btn.textContent = 'กำลังสร้าง...'; }
   const r = await (await fetch('/api/create-pixel', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
