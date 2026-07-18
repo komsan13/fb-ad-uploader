@@ -1179,8 +1179,10 @@ function spendByCurText(items) {
 }
 
 // ---------- หน้าแดชบอร์ด ----------
+// นโยบายโหลดทุกหน้า: มีของเก่า = โชว์ทันทีไม่มีจอหมุน แล้วถ้าเก่าเกิน TTL ค่อยดึงใหม่เงียบๆ เบื้องหลังมาแทน
 let dashDate = 'last_7d';
-const dashCache = {}; // datePreset -> ผลรวบรวมทุกบัญชี
+const dashCache = {}; // datePreset -> {ts, results}
+const DASH_CACHE_MS = 90000;
 function setDashDate(v, btn) {
   dashDate = v;
   document.querySelectorAll('#page-dashboard .date-pill').forEach(b => b.classList.toggle('active', b === btn));
@@ -1194,9 +1196,15 @@ async function loadDashboard(force) {
     acctRows.innerHTML = topRows.innerHTML = '<tr><td colspan="8" class="tbl-msg">เพิ่มบัญชีในเมนู "บัญชี FB" ก่อน</td></tr>';
     return;
   }
-  if (dashCache[dashDate] && !force) { renderDashboard(dashCache[dashDate]); return; }
-  acctRows.innerHTML = '<tr><td colspan="8" class="tbl-msg"><span class="spin"></span>กำลังโหลดข้อมูลทุกบัญชี...</td></tr>';
-  topRows.innerHTML = '<tr><td colspan="6" class="tbl-msg"><span class="spin"></span>กำลังโหลด...</td></tr>';
+  const hit = dashCache[dashDate];
+  if (hit && !force) {
+    renderDashboard(hit.results); // โชว์ของเดิมทันที ไม่มีจอหมุน
+    if (Date.now() - hit.ts < DASH_CACHE_MS) return; // ยังสด ไม่ต้องดึงใหม่
+    // เก่าแล้ว → ดึงใหม่เบื้องหลัง (ไม่แตะจอจนกว่าจะได้ผล)
+  } else {
+    acctRows.innerHTML = '<tr><td colspan="8" class="tbl-msg"><span class="spin"></span>กำลังโหลดข้อมูลทุกบัญชี...</td></tr>';
+    topRows.innerHTML = '<tr><td colspan="6" class="tbl-msg"><span class="spin"></span>กำลังโหลด...</td></tr>';
+  }
 
   // รายชื่อบัญชีโฆษณาของทุก profile (ใช้แคชเดียวกับหน้าแคมเปญ)
   await Promise.all(tokenProfiles.map(async (p) => {
@@ -1223,8 +1231,8 @@ async function loadDashboard(force) {
       return { ...t, error: e.message, campaigns: [] };
     }
   }));
-  if (dashDate !== date) return; // ผู้ใช้เปลี่ยนช่วงเวลาไประหว่างโหลด
-  dashCache[date] = results;
+  dashCache[date] = { ts: Date.now(), results };
+  if (dashDate !== date) return; // ผู้ใช้เปลี่ยนช่วงเวลาไประหว่างโหลด — เก็บ cache ไว้แต่ไม่ทับจอ
   renderDashboard(results);
 }
 function renderDashboard(results) {
@@ -1307,8 +1315,11 @@ async function loadHealthPage(force) {
     pageRows.innerHTML = '<tr><td colspan="3" class="tbl-msg">เพิ่มบัญชีในเมนู "บัญชี FB" ก่อน</td></tr>';
     return;
   }
-  acctRows.innerHTML = '<tr><td colspan="3" class="tbl-msg"><span class="spin"></span>กำลังเช็คสดจาก Facebook...</td></tr>';
-  pageRows.innerHTML = '<tr><td colspan="3" class="tbl-msg"><span class="spin"></span>กำลังเช็คสดจาก Facebook...</td></tr>';
+  // มีครบทุกบัญชีใน cache แล้ว = โชว์ทันที ไม่ต้องหมุน (จอหมุนเฉพาะตอนต้องยิงจริง)
+  if (force || tokenProfiles.some(p => !healthCache[p.id])) {
+    acctRows.innerHTML = '<tr><td colspan="3" class="tbl-msg"><span class="spin"></span>กำลังเช็คสดจาก Facebook...</td></tr>';
+    pageRows.innerHTML = '<tr><td colspan="3" class="tbl-msg"><span class="spin"></span>กำลังเช็คสดจาก Facebook...</td></tr>';
+  }
   const results = await Promise.all(tokenProfiles.map(async (p) => {
     if (healthCache[p.id] && !force) return { p, ...healthCache[p.id] };
     try {
@@ -1640,8 +1651,13 @@ async function loadCampaigns(force) {
   if (!sels.length) { tbody.innerHTML = '<tr><td colspan="12" class="tbl-msg">ติ๊กเลือกอย่างน้อย 1 บัญชีโฆษณาด้านบน</td></tr>'; setCampKpis('—', '—', '—', '—', '—'); return; }
   const key = sels.join(',') + '|' + date;
   const hit = campCache[key];
-  if (!force && hit && Date.now() - hit.ts < CAMP_CACHE_MS) { renderCampaignRows(hit.results, sels); return; }
-  tbody.innerHTML = `<tr><td colspan="12" class="tbl-msg"><span class="spin"></span>กำลังโหลดข้อมูลจาก ${sels.length} บัญชีโฆษณา...</td></tr>`;
+  if (!force && hit) {
+    renderCampaignRows(hit.results, sels); // โชว์ของเดิมทันที
+    if (Date.now() - hit.ts < CAMP_CACHE_MS) return; // ยังสด
+    // เก่าแล้ว → ดึงใหม่เงียบๆ เบื้องหลัง
+  } else {
+    tbody.innerHTML = `<tr><td colspan="12" class="tbl-msg"><span class="spin"></span>กำลังโหลดข้อมูลจาก ${sels.length} บัญชีโฆษณา...</td></tr>`;
+  }
 
   // โหลดทุกบัญชีโฆษณาที่ติ๊กพร้อมกัน (v = "profileId:adAccountId")
   const results = await Promise.all(sels.map(async (v) => {
