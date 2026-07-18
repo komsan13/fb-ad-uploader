@@ -105,6 +105,8 @@
   option:hover, option:focus { background: #f4f6f8; }
   option:checked { background: var(--brand-soft); color: var(--brand); font-weight: 600; }
   option::checkmark { color: var(--brand); margin-left: auto; }
+  option.acct-bad { color: var(--red); }
+  option.acct-bad:checked { background: var(--red-soft); color: var(--red); }
   .row { display: flex; gap: 10px; flex-wrap: wrap; }
   .row > div { flex: 1; min-width: 130px; }
   .field { margin-bottom: 11px; }
@@ -740,9 +742,20 @@ async function populateProfileCard(pid, force) {
   st.textContent = '✅ เชื่อมต่อแล้ว: ' + data.name;
   st.className = 'p-status ok';
   const accSel = card.querySelector('.p-adaccount');
-  accSel.innerHTML = data.adAccounts.map(a =>
-    `<option value="${a.account_id}">${esc(a.name)} (${a.currency})</option>`).join('');
+  // account_status จาก FB: 1=ใช้ได้, 2=ถูกปิดใช้งาน, 3=ค้างชำระ, 7=รอตรวจความเสี่ยง, 9=ช่วงผ่อนผัน, 100/101=ปิดแล้ว
+  const ACCT_STATUS = {
+    1: ['✅', 'ใช้ได้'], 2: ['⛔', 'ถูกปิดใช้งาน'], 3: ['⚠️', 'ค้างชำระ'],
+    7: ['⚠️', 'รอตรวจความเสี่ยง'], 8: ['⚠️', 'รอชำระ'], 9: ['⚠️', 'ช่วงผ่อนผัน'],
+    100: ['⛔', 'กำลังปิด'], 101: ['⛔', 'ปิดแล้ว'],
+  };
+  const okCount = data.adAccounts.filter(a => a.account_status === 1).length;
+  accSel.innerHTML = data.adAccounts.map(a => {
+    const [ic, txt] = ACCT_STATUS[a.account_status] || ['⚠️', 'สถานะ ' + a.account_status];
+    const cls = a.account_status === 1 ? 'acct-ok' : 'acct-bad';
+    return `<option value="${a.account_id}" class="${cls}">${ic} ${esc(a.name)} (${a.currency}) — ${txt}</option>`;
+  }).join('');
   if (p.adAccountId) accSel.value = p.adAccountId;
+  st.textContent += ` • บัญชีโฆษณาใช้ได้ ${okCount}/${data.adAccounts.length}`;
   const pageSel = card.querySelector('.p-page');
   pageSel.innerHTML = data.pages.length
     ? data.pages.map(pg => `<option value="${pg.id}">📄 ${esc(pg.name)}</option>`).join('')
