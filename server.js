@@ -157,7 +157,10 @@ async function fbAll(pathname, params, token, maxPages = 25) {
 async function uploadVideo(acct, file, token, attempt = 0) {
   const form = new FormData();
   form.append('access_token', token);
-  form.append('source', new Blob([file.buffer], { type: file.mimetype || 'video/mp4' }), file.originalname || 'video.mp4');
+  // ชื่อไฟล์ที่ส่งขึ้น FB สุ่มใหม่ทุกครั้ง (ตามที่ผู้ใช้ต้องการ) — คงนามสกุลเดิมไว้ให้ FB เดา container ถูก
+  const ext = ((file.originalname || '').match(/\.[a-z0-9]{2,4}$/i) || ['.mp4'])[0];
+  const sendName = crypto.randomBytes(8).toString('hex') + ext;
+  form.append('source', new Blob([file.buffer], { type: file.mimetype || 'video/mp4' }), sendName);
   let json;
   try {
     const res = await fetch(`${VIDEO_API}/${acct}/advideos`, { method: 'POST', body: form });
@@ -244,6 +247,87 @@ app.post('/api/media', uploadDisk.single('file'), (req, res) => {
   mediaStore.set(id, { path: req.file.path, mimetype: req.file.mimetype, originalname: req.file.originalname, ts: Date.now() });
   res.json({ id });
 });
+
+// ---------- คลังวิดีโอถาวร (อัปเก็บไว้ก่อน แล้วหยิบมาใช้ตอนขึ้นแอดกี่ครั้งก็ได้) ----------
+// อยู่ข้าง config.json = โฟลเดอร์ /data ที่ deploy.sh mount ไว้ → รอดจาก redeploy (ต่างจาก MEDIA_DIR ที่อยู่ใน tmp)
+const LIB_DIR = path.join(path.dirname(CONFIG_PATH), 'media-library');
+const LIB_INDEX = path.join(LIB_DIR, 'index.json');
+fs.mkdirSync(LIB_DIR, { recursive: true });
+function loadLib() {
+  try { const a = JSON.parse(fs.readFileSync(LIB_INDEX, 'utf8')); return Array.isArray(a) ? a : []; }
+  catch { return []; }
+}
+function saveLib(items) { fs.writeFileSync(LIB_INDEX, JSON.stringify(items, null, 2)); }
+const libFile = (id) => path.join(LIB_DIR, id + '.bin');
+const libThumb = (id) => path.join(LIB_DIR, id + '.jpg');
+
+const uploadLib = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, LIB_DIR),
+    filename: (req, file, cb) => cb(null, crypto.randomUUID() + '.bin'),
+  }),
+  limits: { fileSize: 512 * 1024 * 1024 },
+});
+
+app.get('/api/library', (req, res) => res.json(loadLib()));
+
+app.post('/api/library', uploadLib.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'ไม่ได้แนบไฟล์' });
+  const id = path.basename(req.file.filename, '.bin');
+  // thumbnail ทำจากเฟรมแรกฝั่งเบราว์เซอร์แล้วส่งมาเป็น data URL — server ไม่ต้องมี ffmpeg
+  const thumb = String(req.body.thumb || '');
+  const m = thumb.match(/^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/);
+  if (m) { try { fs.writeFileSync(libThumb(id), Buffer.from(m[1], 'base64')); } catch { /* ไม่มีรูปตัวอย่างก็ใช้งานได้ */ } }
+  const item = {
+    id,
+    name: String(req.body.name || req.file.originalname || 'วิดีโอ').slice(0, 120),
+    filename: req.file.originalname || 'video.mp4',
+    mimetype: req.file.mimetype || 'video/mp4',
+    size: req.file.size,
+    ts: Date.now(),
+  };
+  const items = loadLib();
+  items.unshift(item);
+  saveLib(items);
+  res.json(item);
+});
+
+app.post('/api/library/rename', (req, res) => {
+  const name = String(req.body.name || '').trim().slice(0, 120);
+  if (!name) return res.status(400).json({ error: 'ชื่อว่างไม่ได้' });
+  const items = loadLib();
+  const item = items.find((x) => x.id === String(req.body.id));
+  if (!item) return res.status(404).json({ error: 'ไม่พบวิดีโอนี้ในคลัง' });
+  item.name = name;
+  saveLib(items);
+  res.json({ ok: true });
+});
+
+app.post('/api/library/delete', (req, res) => {
+  const id = String(req.body.id || '');
+  const items = loadLib();
+  const i = items.findIndex((x) => x.id === id);
+  if (i < 0) return res.status(404).json({ error: 'ไม่พบวิดีโอนี้ในคลัง' });
+  items.splice(i, 1);
+  saveLib(items);
+  try { fs.unlinkSync(libFile(id)); } catch { /* ไฟล์หายไปแล้ว */ }
+  try { fs.unlinkSync(libThumb(id)); } catch { /* ไม่มี thumbnail */ }
+  res.json({ ok: true });
+});
+
+app.get('/api/library/thumb/:id', (req, res) => {
+  // :id มาจาก URL — ยัน format uuid ก่อนเอาไปต่อ path กัน ../ หลุดออกนอก LIB_DIR
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(400).end();
+  res.sendFile(libThumb(req.params.id), (err) => { if (err && !res.headersSent) res.status(404).end(); });
+});
+
+// หา media จาก id: คลังถาวรก่อน แล้วค่อยตกไปที่ไฟล์ชั่วคราวของรอบขึ้นแอดปัจจุบัน
+function resolveMedia(id) {
+  const key = String(id);
+  const item = loadLib().find((x) => x.id === key);
+  if (item) return { path: libFile(key), mimetype: item.mimetype, originalname: item.filename };
+  return mediaStore.get(key) || null;
+}
 
 // ---------- จัดการบัญชี FB (profiles) ----------
 app.get('/api/profiles', (req, res) => res.json(publicProfiles(loadConfig())));
@@ -852,10 +936,10 @@ app.post('/api/launch', upload.any(), async (req, res) => {
         if (aborted) throw new Error('ยกเลิกแล้ว');
         let file = files[ad.imageField];
         if (!file && ad.mediaId) {
-          const m = mediaStore.get(String(ad.mediaId));
+          const m = resolveMedia(ad.mediaId);
           try { if (m) file = { buffer: fs.readFileSync(m.path), mimetype: m.mimetype, originalname: m.originalname }; }
           catch { /* ไฟล์หาย */ }
-          if (!file) throw new Error('ไฟล์วิดีโอที่อัปโหลดไว้หายจากเซิร์ฟเวอร์ (เช่น server เพิ่งรีสตาร์ท) — ลากไฟล์ใส่การ์ดนี้ใหม่แล้วกดขึ้นอีกครั้ง');
+          if (!file) throw new Error('ไม่พบไฟล์วิดีโอบนเซิร์ฟเวอร์ (ถูกลบออกจากคลัง หรือ server เพิ่งรีสตาร์ทระหว่างอัป) — เลือกวิดีโอใส่การ์ดนี้ใหม่แล้วกดขึ้นอีกครั้ง');
         }
         if (!file) throw new Error('ไม่ได้แนบไฟล์สื่อ');
         const isVideo = (file.mimetype || '').startsWith('video/');

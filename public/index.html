@@ -234,6 +234,23 @@
   .dropzone .big { font-size: 14.5px; font-weight: 700; margin-bottom: 2px; }
   .dropzone .small { font-size: 12.5px; color: var(--muted); }
 
+  /* ---------- คลังวิดีโอ ---------- */
+  .lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-top: 14px; }
+  .lib-item { border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; background: #fff; display: flex; flex-direction: column; transition: border-color 150ms var(--ease), box-shadow 150ms var(--ease); }
+  .lib-item:hover { border-color: var(--brand); box-shadow: var(--shadow-card); }
+  .lib-item.pick { cursor: pointer; }
+  .lib-item .lib-th { width: 100%; aspect-ratio: 1; object-fit: cover; background: #f4f5f7; display: block; }
+  .lib-item .lib-body { padding: 9px 10px; display: flex; flex-direction: column; gap: 6px; }
+  .lib-item .lib-name { width: 100%; font-size: 12.5px; font-weight: 600; border: 1px solid transparent; border-radius: var(--r-md); padding: 4px 6px; background: transparent; color: var(--text); }
+  .lib-item .lib-name:hover { border-color: var(--line); }
+  .lib-item .lib-name:focus { border-color: var(--brand); background: #fff; outline: none; }
+  .lib-item .lib-meta { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .lib-item .lib-meta button { margin-left: auto; }
+  .lib-up { display: flex; align-items: center; gap: 10px; font-size: 12.5px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-md); margin-top: 10px; }
+  .lib-up .bar { flex: 1; height: 6px; border-radius: 999px; background: #eef0f3; overflow: hidden; }
+  .lib-up .bar i { display: block; height: 100%; background: var(--brand); width: 0; transition: width 120ms linear; }
+  .lib-empty { grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: var(--muted); font-size: 13.5px; }
+
   /* ---------- การ์ดแอด ---------- */
   .ad-card { border: 1px solid var(--line); border-radius: var(--r-lg); padding: 14px 16px; margin-bottom: 12px; background: #fff; transition: border-color 150ms var(--ease), background 150ms var(--ease); }
   .ad-card.st-ok { border-color: #b5e2c6; background: #fbfefc; }
@@ -377,7 +394,8 @@
       <a data-page="dashboard" class="active" onclick="showPage('dashboard')"><span class="num">1</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg><span class="lbl">แดชบอร์ด</span></a>
       <a data-page="campaigns" onclick="showPage('campaigns')"><span class="num">2</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg><span class="lbl">แคมเปญของฉัน</span></a>
       <a data-page="health" onclick="showPage('health')"><span class="num">3</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/><path d="M3.22 12H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27"/></svg><span class="lbl">สุขภาพบัญชี</span></a>
-      <a data-page="settings" onclick="showPage('settings')"><span class="num">4</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span class="lbl">บัญชี FB</span></a>
+      <a data-page="library" onclick="showPage('library')"><span class="num">4</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m10 8 6 4-6 4Z"/><rect width="20" height="14" x="2" y="5" rx="2"/></svg><span class="lbl">คลังวิดีโอ</span></a>
+      <a data-page="settings" onclick="showPage('settings')"><span class="num">5</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span class="lbl">บัญชี FB</span></a>
     </nav>
     <div class="side-foot" id="sideConn"><span class="dot"></span>ยังไม่มีบัญชี</div>
   </aside>
@@ -526,7 +544,8 @@
       <div class="card">
         <div class="card-head-row">
           <div class="pc-step"><span class="pc-step-num">3</span> รายการแอด <span class="h-desc" id="adCount"></span></div>
-          <button class="btn-light btn-sm" style="margin-left:auto" onclick="addAd()">+ เพิ่มแอดเปล่า</button>
+          <button class="btn-light btn-sm" style="margin-left:auto" onclick="openLibPick(null)">🎬 เลือกจากคลังวิดีโอ</button>
+          <button class="btn-light btn-sm" onclick="addAd()">+ เพิ่มแอดเปล่า</button>
         </div>
         <div class="dropzone" id="dropzone" onclick="document.getElementById('multiFile').click()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>
@@ -782,6 +801,22 @@
       </div>
     </section>
 
+    <!-- ========== PAGE: คลังวิดีโอ ========== -->
+    <section class="page" id="page-library">
+      <div class="card">
+        <h2><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 8 6 4-6 4Z"/><rect width="20" height="14" x="2" y="5" rx="2"/></svg></span>คลังวิดีโอ <span class="h-desc" id="libCount"></span></h2>
+        <div class="dropzone" id="libDropzone" onclick="document.getElementById('libFile').click()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M20 15v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4"/></svg>
+          <div class="big">ลากวิดีโอมาวางเพื่อเก็บเข้าคลัง (หลายไฟล์พร้อมกันได้)</div>
+          <div class="small">เก็บถาวรจนกว่าจะกดลบเอง — ตั้งชื่อให้จำง่าย แล้วเลือกใช้ตอนขึ้นแอดกี่ครั้งก็ได้</div>
+          <span class="dz-btn">เลือกวิดีโอจากเครื่อง</span>
+        </div>
+        <input type="file" id="libFile" accept="video/*" multiple style="display:none" onchange="libFilesPicked(this.files); this.value=''">
+        <div id="libUploads"></div>
+        <div id="libGrid" class="lib-grid"></div>
+      </div>
+    </section>
+
     <!-- ========== PAGE: บัญชี FB ========== -->
     <section class="page" id="page-settings">
       <div class="card">
@@ -829,6 +864,17 @@
       </div>
     </div>
     <div id="detailBody" class="modal-body"></div>
+  </div>
+</div>
+
+<!-- ========== Modal เลือกวิดีโอจากคลัง ========== -->
+<div id="libPickModal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeLibPick()">
+  <div class="modal-box" style="max-width:900px">
+    <div class="modal-head">
+      <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 8 6 4-6 4Z"/><rect width="20" height="14" x="2" y="5" rx="2"/></svg><span id="libPickTitle">เลือกวิดีโอจากคลัง</span></h3>
+      <button class="icon-btn btn-light" onclick="closeLibPick()"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="modal-body"><div id="libPickGrid" class="lib-grid" style="margin-top:0"></div></div>
   </div>
 </div>
 
@@ -885,6 +931,7 @@ const PAGE_META = {
   dashboard: ['แดชบอร์ด', 'ภาพรวมทุกบัญชี — ใช้จ่าย ผลลัพธ์ และแคมเปญเด่น'],
   campaigns: ['แคมเปญของฉัน', 'ดูสถานะและเปิด/ปิดแคมเปญ แยกตามบัญชี'],
   health: ['สุขภาพบัญชี & เพจ', 'เพจไหนใช้ได้/บิน • บัญชีไหนยังไม่มี Pixel หรือยังไม่เชื่อมบัตร'],
+  library: ['คลังวิดีโอ', 'อัปวิดีโอเก็บไว้ล่วงหน้า ตั้งชื่อให้จำง่าย แล้วหยิบมาใช้ตอนขึ้นแอดได้ทุกเมื่อ'],
   settings: ['บัญชี FB', 'เพิ่ม/จัดการบัญชี FB, บัญชีโฆษณา และเพจ'],
 };
 function showPage(name, fromRoute) {
@@ -900,6 +947,7 @@ function showPage(name, fromRoute) {
   if (name === 'campaigns') buildCampFilters().then(() => loadCampaigns());
   if (name === 'dashboard') loadDashboard();
   if (name === 'health') loadHealthPage();
+  if (name === 'library') loadLibrary();
 }
 window.addEventListener('hashchange', () => {
   const h = location.hash.replace(/^#/, '');
@@ -2003,6 +2051,168 @@ function filesPicked(files) {
   [...files].forEach(f => addAd({ file: f }));
 }
 
+// ---------- คลังวิดีโอ ----------
+let libItems = [];
+let libPickTarget = null;   // การ์ดที่จะเอาวิดีโอไปใส่ (null = เลือกแล้วสร้างการ์ดใหม่)
+
+const libDz = document.getElementById('libDropzone');
+libDz.addEventListener('dragover', (e) => { e.preventDefault(); libDz.classList.add('over'); });
+libDz.addEventListener('dragleave', () => libDz.classList.remove('over'));
+libDz.addEventListener('drop', (e) => {
+  e.preventDefault(); libDz.classList.remove('over');
+  libFilesPicked(e.dataTransfer.files);
+});
+
+function libSize(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+
+async function fetchLib() {
+  const d = await (await fetch('/api/library')).json();
+  libItems = Array.isArray(d) ? d : [];
+}
+
+async function loadLibrary() {
+  const grid = document.getElementById('libGrid');
+  grid.innerHTML = '<div class="lib-empty">กำลังโหลด...</div>';
+  try { await fetchLib(); }
+  catch { grid.innerHTML = '<div class="lib-empty">โหลดคลังไม่สำเร็จ — ลองรีเฟรชหน้า</div>'; return; }
+  renderLibrary();
+}
+
+function renderLibrary() {
+  document.getElementById('libCount').textContent = libItems.length ? `— ${libItems.length} วิดีโอ` : '';
+  const grid = document.getElementById('libGrid');
+  if (!libItems.length) {
+    grid.innerHTML = '<div class="lib-empty">ยังไม่มีวิดีโอในคลัง — ลากไฟล์มาวางด้านบนได้เลย</div>';
+    return;
+  }
+  grid.innerHTML = libItems.map(it => `
+    <div class="lib-item">
+      <img class="lib-th" src="/api/library/thumb/${encodeURIComponent(it.id)}" alt="" onerror="this.removeAttribute('src')">
+      <div class="lib-body">
+        <input class="lib-name" value="${esc(it.name)}" title="คลิกเพื่อเปลี่ยนชื่อ" onchange="renameLib(${jsStr(it.id)}, this)">
+        <div class="lib-meta">${libSize(it.size)}
+          <button class="btn-danger-light icon-btn" title="ลบออกจากคลัง" onclick="deleteLib(${jsStr(it.id)})"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+function libFilesPicked(files) {
+  const vids = [...files].filter(f => f.type.startsWith('video/'));
+  if (vids.length < files.length) alert('คลังนี้เก็บเฉพาะวิดีโอ — ไฟล์ที่ไม่ใช่วิดีโอถูกข้ามไป');
+  vids.forEach(uploadToLib);
+}
+
+async function uploadToLib(file) {
+  const row = document.createElement('div');
+  row.className = 'lib-up';
+  row.innerHTML = `<span style="flex-shrink:0;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(file.name)}</span><span class="bar"><i></i></span><span class="pct" style="width:42px;text-align:right">0%</span>`;
+  document.getElementById('libUploads').appendChild(row);
+
+  const thumb = await videoThumbDataUrl(file, 'image/jpeg');
+  const form = new FormData();
+  // name/thumb ต้องมาก่อน file — multer เติม req.body ตามลำดับที่ field วิ่งเข้ามา
+  form.append('name', file.name.replace(/\.[^.]+$/, '') || file.name);
+  if (thumb) form.append('thumb', thumb);
+  form.append('file', file);
+
+  const fail = (msg) => { row.remove(); alert(`อัป "${file.name}" เข้าคลังไม่สำเร็จ${msg ? ' — ' + msg : ''}`); };
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', '/api/library');
+  xhr.upload.onprogress = (e) => {
+    if (!e.lengthComputable) return;
+    const p = Math.round(e.loaded / e.total * 100);
+    row.querySelector('.bar i').style.width = p + '%';
+    row.querySelector('.pct').textContent = p + '%';
+  };
+  xhr.onload = () => {
+    let d = null;
+    try { d = JSON.parse(xhr.responseText); } catch { /* ตอบไม่เป็น JSON */ }
+    if (!d || !d.id) return fail(d && d.error);
+    row.remove();
+    libItems.unshift(d);
+    renderLibrary();
+  };
+  xhr.onerror = () => fail('การเชื่อมต่อขาด');
+  xhr.send(form);
+}
+
+async function renameLib(id, input) {
+  const item = libItems.find(x => x.id === id);
+  const name = input.value.trim();
+  if (!name) { input.value = item ? item.name : ''; return; }
+  try {
+    const d = await (await fetch('/api/library/rename', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, name }),
+    })).json();
+    if (d.error) throw new Error(d.error);
+    if (item) item.name = name;
+  } catch (e) {
+    alert('เปลี่ยนชื่อไม่สำเร็จ: ' + e.message);
+    if (item) input.value = item.name;
+  }
+}
+
+async function deleteLib(id) {
+  const item = libItems.find(x => x.id === id);
+  if (!confirm(`ลบ "${item ? item.name : ''}" ออกจากคลัง?\nการ์ดแอดที่เลือกวิดีโอนี้ไว้จะขึ้นไม่ได้`)) return;
+  try {
+    const d = await (await fetch('/api/library/delete', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id }),
+    })).json();
+    if (d.error) throw new Error(d.error);
+  } catch (e) { return alert('ลบไม่สำเร็จ: ' + e.message); }
+  libItems = libItems.filter(x => x.id !== id);
+  renderLibrary();
+}
+
+// ---------- เลือกวิดีโอจากคลังมาใช้ขึ้นแอด ----------
+async function openLibPick(card) {
+  libPickTarget = card || null;
+  document.getElementById('libPickTitle').textContent = card
+    ? 'เลือกวิดีโอใส่การ์ดนี้'
+    : 'เลือกวิดีโอจากคลัง — คลิก 1 ตัว = เพิ่ม 1 แอด';
+  document.getElementById('libPickModal').style.display = 'flex';
+  const grid = document.getElementById('libPickGrid');
+  grid.innerHTML = '<div class="lib-empty">กำลังโหลด...</div>';
+  try { await fetchLib(); }
+  catch { grid.innerHTML = '<div class="lib-empty">โหลดคลังไม่สำเร็จ</div>'; return; }
+  if (!libItems.length) {
+    grid.innerHTML = '<div class="lib-empty">คลังยังว่าง — ไปที่เมนู "คลังวิดีโอ" เพื่ออัปไฟล์เก็บไว้ก่อน</div>';
+    return;
+  }
+  grid.innerHTML = libItems.map(it => `
+    <div class="lib-item pick" onclick="pickFromLib(${jsStr(it.id)})">
+      <img class="lib-th" src="/api/library/thumb/${encodeURIComponent(it.id)}" alt="" onerror="this.removeAttribute('src')">
+      <div class="lib-body"><div style="font-size:12.5px;font-weight:600;padding:4px 6px">${esc(it.name)}</div></div>
+    </div>`).join('');
+}
+function closeLibPick() {
+  document.getElementById('libPickModal').style.display = 'none';
+  libPickTarget = null;
+}
+function pickFromLib(id) {
+  const item = libItems.find(x => x.id === id);
+  if (!item) return;
+  if (libPickTarget) { applyLibToCard(libPickTarget, item); closeLibPick(); }
+  else applyLibToCard(addAd(), item);   // เลือกต่อได้เรื่อยๆ ไม่ปิด modal
+}
+function applyLibToCard(card, item) {
+  // เดินเลข seq เพื่อตัดผลอัปโหลดไฟล์รอบเก่าที่ยังค้าง ไม่ให้เขียน mediaId ทับตัวที่เลือกจากคลัง
+  card.dataset.uploadSeq = String(++uploadSeq);
+  card.dataset.mediaId = item.id;
+  card.dataset.libName = item.name;
+  const input = card.querySelector('.f-image');
+  input.value = '';
+  const img = card.querySelector('.thumb');
+  img.onerror = () => img.removeAttribute('src');
+  img.src = '/api/library/thumb/' + encodeURIComponent(item.id);
+  card.querySelector('.media-tag').style.display = 'block';
+  const nameInput = card.querySelector('.f-name');
+  if (!nameInput.value.trim()) nameInput.value = item.name;
+  setBadge(card, 'wait', '🎬 วิดีโอจากคลัง');
+}
+
 // ---------- template ----------
 function tplValues() {
   return {
@@ -2071,6 +2281,7 @@ function addAd(opts = {}) {
       <input type="file" class="f-image" accept="image/*,video/*" style="display:none" onchange="imgChanged(this)">
       <div class="name-wrap"><input class="f-name" placeholder="ชื่อแอด"></div>
       <span class="badge" style="display:none"></span>
+      <button class="btn-light icon-btn" title="เลือกวิดีโอจากคลังมาใส่การ์ดนี้" onclick="openLibPick(this.closest('.ad-card'))"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 8 6 4-6 4Z"/><rect width="20" height="14" x="2" y="5" rx="2"/></svg></button>
       <button class="btn-light icon-btn" title="ทำซ้ำแอดนี้ (รวมรูป)" onclick="duplicateAd(${id})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="13" height="13" x="9" y="9" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
       <button class="btn-danger-light icon-btn" title="ลบแอดนี้" onclick="removeAd(${id})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
     </div>
@@ -2137,6 +2348,9 @@ function addAd(opts = {}) {
     imgChanged(input);
     if (opts.file && !div.querySelector('.f-name').value)
       div.querySelector('.f-name').value = file.name.replace(/\.[^.]+$/, '');
+  } else if (src && src.dataset.mediaId) {
+    // ต้นฉบับใช้วิดีโอจากคลัง (ไม่มี File ใน input ให้ก๊อป) — ชี้ไปที่ id เดิม ไม่ต้องอัปซ้ำ
+    applyLibToCard(div, { id: src.dataset.mediaId, name: src.dataset.libName || '' });
   }
   updateTargetSummary(div);
   updateStats();
@@ -2203,23 +2417,30 @@ function imgChanged(input) {
   if (isVideo) uploadMedia(card, f);
   else { card.dataset.mediaId = ''; card.querySelector('.badge').style.display = 'none'; }
   if (isVideo) {
-    // ทำ thumbnail จากเฟรมแรกของวิดีโอ
-    const url = URL.createObjectURL(f);
+    videoThumbDataUrl(f).then((d) => { if (d) img.src = d; });
+  } else {
+    img.src = URL.createObjectURL(f);
+  }
+}
+// thumbnail 120x120 จากเฟรมแรกของวิดีโอ ทำฝั่งเบราว์เซอร์ — server ไม่ต้องมี ffmpeg
+// คืน null เมื่อเบราว์เซอร์ถอดรหัสวิดีโอไม่ได้ (เช่น codec แปลก) — ผู้เรียกต้องยอมให้ไม่มีรูปตัวอย่าง
+function videoThumbDataUrl(file, type) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const done = (val) => { URL.revokeObjectURL(url); resolve(val); };
     const v = document.createElement('video');
     v.src = url; v.muted = true; v.playsInline = true;
-    v.onloadeddata = () => { try { v.currentTime = 0.1; } catch {} };
+    v.onloadeddata = () => { try { v.currentTime = 0.1; } catch { done(null); } };
     v.onseeked = () => {
       const c = document.createElement('canvas');
       c.width = 120; c.height = 120;
       const ratio = Math.min(v.videoWidth / 120, v.videoHeight / 120) || 1;
       const sw = 120 * ratio, sh = 120 * ratio;
       c.getContext('2d').drawImage(v, (v.videoWidth - sw) / 2, (v.videoHeight - sh) / 2, sw, sh, 0, 0, 120, 120);
-      img.src = c.toDataURL();
-      URL.revokeObjectURL(url);
+      done(c.toDataURL(type || 'image/png', 0.8));
     };
-  } else {
-    img.src = URL.createObjectURL(f);
-  }
+    v.onerror = () => done(null);
+  });
 }
 function updateTargetSummary(card) {
   const g = { all: 'ทุกเพศ', male: 'ชาย', female: 'หญิง' }[card.querySelector('.f-gender').value];
@@ -2333,7 +2554,7 @@ async function launch() {
   for (const c of allCards) {
     const num = allCards.indexOf(c) + 1;
     const name = c.querySelector('.f-name').value.trim() || `Ad-${num}`;
-    if (!c.querySelector('.f-image').files[0]) return alert(`แอด #${num} (${name}): ยังไม่มีรูป/วิดีโอ — คลิกที่กรอบเพื่อเลือกไฟล์`);
+    if (!c.dataset.mediaId && !c.querySelector('.f-image').files[0]) return alert(`แอด #${num} (${name}): ยังไม่มีรูป/วิดีโอ — คลิกที่กรอบเพื่อเลือกไฟล์ หรือกด 🎬 เลือกจากคลังวิดีโอ`);
     if (!c.querySelector('.f-message').value.trim()) return alert(`แอด #${num} (${name}): ยังไม่ได้ใส่ข้อความหลัก`);
     if (!/^https?:\/\//.test(c.querySelector('.f-link').value.trim())) return alert(`แอด #${num} (${name}): ลิงก์ต้องขึ้นต้นด้วย http:// หรือ https://`);
   }
