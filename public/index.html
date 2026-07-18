@@ -1878,19 +1878,10 @@ async function launch() {
         ads,
       }));
 
-      const res = await fetch('/api/launch', { method: 'POST', body: form });
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split('\n');
-        buf = lines.pop();
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          const ev = JSON.parse(line);
+      const handleEvent = (line) => {
+          if (!line.trim()) return;
+          let ev;
+          try { ev = JSON.parse(line); } catch { return; }
           if (ev.type === 'status') setBadge(cards[ev.index], 'run', `⏳ ${ev.msg ? ev.msg + ' • ' : ''}${label}`);
           if (ev.type === 'result') {
             const card = cards[ev.index];
@@ -1925,8 +1916,31 @@ async function launch() {
           if (ev.type === 'done') {
             doneLinks.push({ label, url: `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${ev.account}&selected_campaign_ids=${ev.campaignId}` });
           }
-        }
-      }
+      };
+      // ใช้ XHR แทน fetch เพื่อโชว์ % ตอนส่งไฟล์ขึ้นเซิร์ฟเวอร์ (ไฟล์วิดีโอใหญ่ใช้เวลานาน ไม่ใช่ค้าง)
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/launch');
+        let seen = 0;
+        const pump = () => {
+          const text = xhr.responseText || '';
+          const nl = text.lastIndexOf('\n');
+          if (nl >= seen) { text.slice(seen, nl).split('\n').forEach(handleEvent); seen = nl + 1; }
+        };
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable && e.loaded < e.total) {
+            const pct = Math.round(e.loaded / e.total * 100);
+            document.getElementById('progressFill').style.width = pct + '%';
+            document.getElementById('progressText').textContent = `กำลังส่งไฟล์ขึ้นเซิร์ฟเวอร์ ${pct}% • ${label}`;
+          }
+        };
+        xhr.upload.onload = () => setProgress(`ส่งไฟล์ครบแล้ว กำลังสร้างแอดใน ${label}...`);
+        xhr.onprogress = pump;
+        xhr.onload = () => { pump(); handleEvent((xhr.responseText || '').slice(seen)); resolve(); };
+        xhr.onerror = () => reject(new Error(`การเชื่อมต่อหลุดระหว่างขึ้นแอดใน ${label} — เช็คเน็ตแล้วกดขึ้นอีกครั้ง (ตัวที่สำเร็จแล้วไม่ขึ้นซ้ำ)`));
+        xhr.ontimeout = () => reject(new Error('หมดเวลารอเซิร์ฟเวอร์'));
+        xhr.send(form);
+      });
     }
   } catch (e) {
     alert('ผิดพลาด: ' + e.message);

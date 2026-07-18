@@ -104,9 +104,9 @@ async function uploadVideo(acct, file, token) {
   if (json.error) throw new Error(json.error.error_user_msg || json.error.message);
   return json.id;
 }
-// วิดีโอต้องประมวลผลก่อนใช้ — วนเช็คสถานะจน ready (สูงสุด ~3 นาที)
+// วิดีโอต้องประมวลผลก่อนใช้ — วนเช็คสถานะจน ready (สูงสุด ~10 นาที)
 async function waitVideoReady(videoId, token, onTick) {
-  for (let i = 0; i < 36; i++) {
+  for (let i = 0; i < 120; i++) {
     const r = await fb(videoId, { fields: 'status' }, 'GET', token);
     const s = r.status && r.status.video_status;
     if (s === 'ready') return;
@@ -525,7 +525,10 @@ app.post('/api/launch', upload.any(), async (req, res) => {
   const files = Object.fromEntries((req.files || []).map((f) => [f.fieldname, f]));
   const imageHashCache = {};
   let aborted = false;
-  req.on('close', () => { aborted = true; }); // ผู้ใช้ปิดแท็บ/ยกเลิก = หยุดสร้างแอดที่เหลือ
+  // ผู้ใช้ปิดแท็บ/ยกเลิก = หยุดสร้างแอดที่เหลือ
+  // ห้ามใช้ req.on('close') — ใน Node ใหม่ event นี้ยิงตอนรับ request ครบด้วย (ไม่ใช่แค่ตอนหลุด)
+  // ทำให้ aborted=true ทันทีทุกครั้ง → สร้างแคมเปญแล้วข้ามการสร้างแอดทั้งหมด
+  res.on('close', () => { if (!res.writableEnded) aborted = true; });
 
   // รูปเดิมอัปโหลดครั้งเดียว — เก็บเป็น promise กันอัปโหลดซ้ำตอนวิ่งขนานกัน
   function getImageHash(file) {
