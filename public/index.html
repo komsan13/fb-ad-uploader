@@ -1849,7 +1849,7 @@ function imgChanged(input) {
   const isVideo = f.type.startsWith('video/');
   tag.style.display = isVideo ? 'block' : 'none';
   if (isVideo) uploadMedia(card, f);
-  else card.dataset.mediaId = '';
+  else { card.dataset.mediaId = ''; card.querySelector('.badge').style.display = 'none'; }
   if (isVideo) {
     // ทำ thumbnail จากเฟรมแรกของวิดีโอ
     const url = URL.createObjectURL(f);
