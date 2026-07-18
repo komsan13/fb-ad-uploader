@@ -459,7 +459,6 @@
             </select>
           </div>
         </div>
-        <datalist id="beneficiaryList"></datalist>
         <label class="switch-row">
           <span class="switch"><input type="checkbox" id="activeNow"><span class="sl"></span></span>
           <span><b>เปิดแอดทันที (ACTIVE)</b> — ปิดไว้ = ขึ้นเป็น PAUSED ให้เข้าไปตรวจใน Ads Manager ก่อนเปิดเอง (แนะนำ)</span>
@@ -1329,9 +1328,10 @@ function renderLaunchAccounts() {
             ? a.pages.map(g => `<option value="${g.id}" ${g.id === a.chosenPage ? 'selected' : ''}>📄 ${esc(g.name)}</option>`).join('')
             : '<option value="">— ไม่พบเพจ —</option>'}
         </select>
-        <input list="beneficiaryList" value="${esc(a.beneficiary || '')}" placeholder="ผู้ลงโฆษณา (ไม่บังคับ)"
+        <input list="bl-${v}" value="${esc(a.beneficiary || '')}" placeholder="ผู้ลงโฆษณา (ไม่บังคับ)"
           title="ผู้ลงโฆษณาของบัญชีนี้ — ชื่อธุรกิจที่ยืนยันตัวตนกับ FB แล้ว เว้นว่างได้"
           onchange="launchSetBeneficiary('${v}', this.value)">
+        <datalist id="bl-${v}">${a.bm && a.bm !== 'ไม่อยู่ใน BM' ? `<option value="${esc(a.bm)}"></option>` : ''}</datalist>
       </div>` : '';
       return `<label class="acct-row ${r.ready ? '' : 'row-off'}" title="${esc(tip)}">
         <input type="checkbox" value="${v}" ${isChecked ? 'checked' : ''} ${r.ready ? '' : 'disabled'} onchange="launchRowToggled()">
@@ -1346,10 +1346,6 @@ function renderLaunchAccounts() {
   }).join('');
   el.innerHTML = html || '<span class="hint">ไม่พบบัญชีโฆษณา</span>';
   document.getElementById('launchAcctSummary').textContent = `พร้อม ${readyCount}/${launchAccounts.length} บัญชี`;
-  // ตัวเลือก "ผู้ลงโฆษณา" — เดาจากชื่อ BM ที่มี (พิมพ์เองได้)
-  const dl = document.getElementById('beneficiaryList');
-  if (dl) dl.innerHTML = [...new Set(launchAccounts.map(a => a.bm).filter(b => b && b !== 'ไม่อยู่ใน BM'))]
-    .map(b => `<option value="${esc(b)}"></option>`).join('');
   updateStats();
 }
 function launchRowToggled() { renderLaunchAccounts(); }
