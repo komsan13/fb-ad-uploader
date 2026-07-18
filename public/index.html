@@ -887,9 +887,22 @@ async function loadCampaigns() {
       <td class="num-cell">${num(c.impressions)}</td>
       <td class="num-cell">${num(c.reach)}</td>
       <td style="white-space:nowrap">${ends}</td>
-      <td><a href="${link}" target="_blank" class="btn-light btn-sm" style="text-decoration:none;display:inline-block;padding:5px 11px">↗</a></td>
+      <td style="white-space:nowrap">
+        <a href="${link}" target="_blank" title="เปิดใน Ads Manager" class="btn-light icon-btn" style="text-decoration:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></a>
+        <button class="btn-danger-light icon-btn" title="ลบแคมเปญนี้" onclick="deleteCampaign('${c.id}', '${esc(c.name).replace(/'/g, '&#39;')}', '${pid}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+      </td>
     </tr>`;
   }).join('');
+}
+async function deleteCampaign(id, name, pid) {
+  if (!confirm(`ลบแคมเปญ "${name}" ?\n\n⚠ ลบแล้วกู้คืนไม่ได้ แอดทั้งหมดในแคมเปญจะถูกลบด้วย\n(สถิติย้อนหลังยังดูได้ใน Ads Manager)`)) return;
+  const res = await fetch('/api/campaign-delete', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, profile: pid }),
+  });
+  const data = await res.json();
+  if (data.error) return alert('ลบไม่สำเร็จ: ' + data.error);
+  loadCampaigns();
 }
 async function toggleCampaign(id, cur, pid) {
   const to = cur === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';

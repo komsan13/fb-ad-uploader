@@ -309,6 +309,18 @@ app.post('/api/campaign-status', async (req, res) => {
   }
 });
 
+// ลบแคมเปญ (FB ใช้วิธีตั้ง status = DELETED — ลบแล้วกู้คืนไม่ได้ แต่สถิติยังดูย้อนหลังได้ใน Ads Manager)
+app.post('/api/campaign-delete', async (req, res) => {
+  const cfg = loadConfig();
+  const prof = getProfile(cfg, req.body.profile);
+  try {
+    await fb(req.body.id, { status: 'DELETED' }, 'POST', prof.accessToken);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
 app.get('/api/interests', async (req, res) => {
   const cfg = loadConfig();
   const prof = getProfile(cfg, req.query.profile);
