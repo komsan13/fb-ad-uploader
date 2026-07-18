@@ -549,12 +549,13 @@
       <div class="card">
         <div class="card-head-row">
           <div class="pc-step"><span class="pc-step-num">3</span> รายการแอด <span class="h-desc" id="adCount"></span></div>
-          <button class="btn-primary btn-sm" style="margin-left:auto" onclick="autoPlan(this)">🤖 จัดแผนอัตโนมัติ</button>
+          <button class="btn-primary btn-sm" style="margin-left:auto" onclick="autoLaunch(this)" title="จัดแผน + สร้างแคมเปญ + ขึ้นแอดทุกบัญชี แล้วเปิดยิงทันที">⚡ ขึ้นอัตโนมัติทั้งหมด</button>
+          <button class="btn-light btn-sm" onclick="autoPlan(this)" title="จัดแผนใส่การ์ดให้ตรวจก่อน ยังไม่ขึ้นจริง">🤖 จัดแผนอย่างเดียว</button>
           <button class="btn-light btn-sm" onclick="openLibPick(null)">🎬 เลือกจากคลังวิดีโอ</button>
           <button class="btn-light btn-sm" onclick="addAd()">+ เพิ่มแอดเปล่า</button>
         </div>
         <div class="hint" style="margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <span>จัดแผนอัตโนมัติ = หยิบวิดีโอ+แคปชั่นจากคลังใส่ให้ทุกบัญชีที่ติ๊กไว้ (ขั้นตอนที่ 4) ไม่ให้ซ้ำกัน —</span>
+          <span><b>⚡ ขึ้นอัตโนมัติทั้งหมด</b> = หยิบวิดีโอ+แคปชั่นจากคลังใส่ให้ทุกบัญชีที่ติ๊กไว้ (ขั้นตอนที่ 4) ไม่ให้ซ้ำกัน แล้วสร้างแคมเปญ+ขึ้นแอดเปิดยิงเลย (มีสรุปให้ยืนยันก่อน) —</span>
           <label style="display:inline-flex;align-items:center;gap:6px">แอดต่อบัญชี
             <input id="planPerAccount" type="number" min="1" max="10" value="3" style="width:60px;padding:4px 6px">
           </label>
@@ -2316,18 +2317,19 @@ async function aiPause(pid, campaignId, btn) {
 
 // ---------- จัดแผนขึ้นแอดอัตโนมัติ ----------
 // การ์ดที่จัดแผนมาจะถูกล็อกไว้กับบัญชีเดียว (dataset.onlyAcct) เพราะแต่ละบัญชีได้วิดีโอคนละตัว
-async function autoPlan(btn) {
+// จัดแผน + สร้างการ์ด คืนสรุปให้ผู้เรียกไปใช้ต่อ (null = ยกเลิก/พลาด)
+async function runAutoPlan(btn, opts = {}) {
   const keys = [...document.querySelectorAll('#launchAccounts input:checked')].map(i => i.value);
-  if (!keys.length) return alert('ติ๊กเลือกบัญชีที่จะขึ้นในแผงด้านซ้าย (ขั้นตอนที่ 4) ก่อนครับ');
+  if (!keys.length) { alert('ติ๊กเลือกบัญชีที่จะขึ้นในแผงด้านซ้าย (ขั้นตอนที่ 4) ก่อนครับ'); return null; }
   const accounts = keys.map(k => launchAccounts.find(a => `${a.pid}:${a.acctId}` === k)).filter(Boolean)
     .map(a => ({ pid: a.pid, acctId: a.acctId, name: a.name }));
   const perAccount = Number(document.getElementById('planPerAccount').value) || 3;
 
   const existing = document.querySelectorAll('.ad-card').length;
-  if (existing && !confirm(`มีการ์ดอยู่แล้ว ${existing} ใบ — จัดแผนใหม่จะลบทิ้งทั้งหมด ไปต่อไหม?`)) return;
+  if (existing && !opts.replaceOk && !confirm(`มีการ์ดอยู่แล้ว ${existing} ใบ — จัดแผนใหม่จะลบทิ้งทั้งหมด ไปต่อไหม?`)) return null;
 
-  btn.disabled = true;
   const oldText = btn.textContent;
+  btn.disabled = true;
   btn.textContent = 'กำลังจัดแผน...';
   let d;
   try {
@@ -2337,10 +2339,11 @@ async function autoPlan(btn) {
     })).json();
     if (d.error) throw new Error(d.error);
   } catch (e) {
+    alert('จัดแผนไม่สำเร็จ: ' + e.message);
+    return null;
+  } finally {
     btn.disabled = false; btn.textContent = oldText;
-    return alert('จัดแผนไม่สำเร็จ: ' + e.message);
   }
-  btn.disabled = false; btn.textContent = oldText;
 
   document.querySelectorAll('.ad-card').forEach(c => { cardResults.delete(c.dataset.id); c.remove(); });
   const link = document.getElementById('tpl-link').value.trim();
@@ -2358,12 +2361,56 @@ async function autoPlan(btn) {
     }
   }
   updateStats();
+  return { plan: d.plan, warnings: d.warnings, total: d.plan.reduce((s, a) => s + a.ads.length, 0), link };
+}
 
-  const total = d.plan.reduce((s, a) => s + a.ads.length, 0);
-  let msg = `จัดแผนให้แล้ว ${total} แอด ใน ${d.plan.length} บัญชี\nแต่ละการ์ดล็อกไว้กับบัญชีของตัวเอง — ตรวจแล้วกด "ขึ้นแอดทั้งหมด" ได้เลย`;
-  if (d.warnings.length) msg += `\n\n⚠️ ข้อควรรู้:\n- ${d.warnings.join('\n- ')}`;
-  if (!link) msg += '\n\n⚠️ ยังไม่ได้ใส่ลิงก์ในค่าเริ่มต้น (ขั้นตอนที่ 2) — ต้องใส่ก่อนถึงจะขึ้นแอดได้';
+async function autoPlan(btn) {
+  const r = await runAutoPlan(btn);
+  if (!r) return;
+  let msg = `จัดแผนให้แล้ว ${r.total} แอด ใน ${r.plan.length} บัญชี\nแต่ละการ์ดล็อกไว้กับบัญชีของตัวเอง — ตรวจแล้วกด "ขึ้นแอดทั้งหมด" ได้เลย`;
+  if (r.warnings.length) msg += `\n\n⚠️ ข้อควรรู้:\n- ${r.warnings.join('\n- ')}`;
+  if (!r.link) msg += '\n\n⚠️ ยังไม่ได้ใส่ลิงก์ในค่าเริ่มต้น (ขั้นตอนที่ 2) — ต้องใส่ก่อนถึงจะขึ้นแอดได้';
   alert(msg);
+}
+
+// ปุ่มเดียวจบ: จัดแผน → ยืนยัน → ขึ้นจริง (เปิดยิงทันที)
+async function autoLaunch(btn) {
+  const link = document.getElementById('tpl-link').value.trim();
+  if (!/^https?:\/\//.test(link)) return alert('ใส่ "ลิงก์" ในค่าเริ่มต้น (ขั้นตอนที่ 2) ก่อนครับ — ทุกแอดใช้ลิงก์นี้');
+  const budget = Number(document.getElementById('campaignBudget').value) || 0;
+  if (budget <= 0) return alert('ใส่ "งบแคมเปญ/วัน" (ขั้นตอนที่ 1) ก่อนครับ');
+
+  const nameEl = document.getElementById('campaignName');
+  if (!nameEl.value.trim()) {
+    const d = new Date();
+    nameEl.value = `ขึ้นอัตโนมัติ ${d.getDate()}/${d.getMonth() + 1} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+
+  const r = await runAutoPlan(btn);
+  if (!r) return;
+
+  const nAcct = r.plan.length;
+  const totalDaily = budget * nAcct;
+  const ruleOn = document.getElementById('ruleOn').checked;
+  const objText = document.getElementById('objective').selectedOptions[0].textContent.trim();
+
+  // สรุปให้เห็นตัวเลขเงินก่อนกด — นี่คือจุดที่เงินเริ่มไหลจริง
+  let msg = `กำลังจะขึ้นแอดจริงและ ⚡ เปิดยิงทันที\n\n`
+    + `• ${nAcct} บัญชี × ${r.total / nAcct} แอด = ${r.total} แอด\n`
+    + `• แคมเปญ: "${nameEl.value.trim()}" (${objText})\n`
+    + `• งบ ${budget.toLocaleString()} บาท/วัน/บัญชี → รวม ${totalDaily.toLocaleString()} บาท/วัน\n`
+    + `• ลิงก์: ${link}\n`
+    + `• สถานะ: ACTIVE — เงินเริ่มเดินทันทีที่ FB อนุมัติ\n`;
+  msg += ruleOn
+    ? `• กฎหยุดอัตโนมัติ: เปิดอยู่ (CPA เกิน ${document.getElementById('ruleCpr').value} บาท)\n`
+    : `\n⚠️ ยังไม่ได้เปิด "กฎหยุดอัตโนมัติ" — ถ้าแอดไม่เวิร์กมันจะยิงเงินต่อจนคุณเข้ามาปิดเอง\n`;
+  if (r.warnings.length) msg += `\n⚠️ ${r.warnings.join('\n⚠️ ')}\n`;
+  msg += `\nยืนยันขึ้นเลยไหม?`;
+
+  if (!confirm(msg)) return;
+
+  document.getElementById('activeNow').checked = true;
+  await launch();
 }
 
 // ---------- คลังแคปชั่น ----------
