@@ -50,8 +50,11 @@ function publicProfiles(cfg) {
   };
 }
 
-// เรียก Graph API — โยน Error พร้อมข้อความจาก FB ถ้าพลาด
-async function fb(pathname, params, method, token) {
+// error code ของ FB ที่แปลว่า "ยิงเร็วเกิน" — รอแล้วลองใหม่ได้ ไม่ใช่ความผิดของแอด
+const THROTTLE_CODES = new Set([4, 17, 613, 80000, 80003, 80004, 80014]);
+
+// เรียก Graph API — โดน rate limit จะรอแล้ว retry อัตโนมัติ (สูงสุด 2 ครั้ง), error อื่นโยนพร้อมข้อความจาก FB
+async function fb(pathname, params, method, token, attempt = 0) {
   const body = new URLSearchParams();
   for (const [k, v] of Object.entries(params || {})) {
     if (v === undefined || v === null) continue;
@@ -66,6 +69,10 @@ async function fb(pathname, params, method, token) {
   const json = await res.json();
   if (json.error) {
     const e = json.error;
+    if (THROTTLE_CODES.has(e.code) && attempt < 2) {
+      await new Promise((r) => setTimeout(r, (attempt + 1) * 20000));
+      return fb(pathname, params, method, token, attempt + 1);
+    }
     throw new Error(e.error_user_msg || e.message || 'FB API error');
   }
   return json;
