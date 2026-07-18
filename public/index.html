@@ -1328,7 +1328,7 @@ function renderHealthPage(results) {
     const warn = WARN[a.status] ? ` <span class="st-pill issue">⚠ ${WARN[a.status]}</span>` : '';
     const px = a.pixels.length
       ? a.pixels.map(x => `<span style="white-space:nowrap"><span class="st-pill on" title="Pixel ID: ${esc(x.id)}">✓ ${esc(x.name)}</span> <button class="btn-light btn-sm" title="คัดลอก Pixel ID ${esc(x.id)}" onclick="copyPixel('${x.id}');this.textContent='✓ คัดลอกแล้ว';setTimeout(()=>this.textContent='คัดลอก ID',1200)">คัดลอก ID</button></span>`).join(' ')
-      : `<button class="btn-primary btn-sm" onclick="createPixelHealth('${a.pid}','${a.id}','${esc(a.name).replace(/'/g, '&#39;')}')">+ สร้าง Pixel เลย</button>`;
+      : `<button class="btn-primary btn-sm" onclick="createPixelHealth('${a.pid}','${a.id}',this)">+ สร้าง Pixel เลย</button>`;
     const card = a.funding
       ? `<span class="st-pill on">✓ ${esc(a.funding)}</span>`
       : `<a class="btn-primary btn-sm" style="text-decoration:none;display:inline-block;color:#fff" target="_blank" href="https://business.facebook.com/billing_hub/payment_settings?asset_id=${a.id}">เชื่อมบัตรเลย ↗</a>`;
@@ -1370,15 +1370,20 @@ function renderHealthPage(results) {
   document.getElementById('hPageOkSub').textContent = `จากทั้งหมด ${pages.length} เพจ`;
   document.getElementById('hDead').textContent = nDeadAcct + (pages.length - nPageOk);
 }
-async function createPixelHealth(pid, acctId, acctName) {
-  const name = prompt(`ตั้งชื่อ Pixel ใหม่ของบัญชี "${acctName}"`, 'px');
-  if (!name || !name.trim()) return;
+async function createPixelHealth(pid, acctId, btn) {
+  // ตั้งชื่อให้เองไม่ซ้ำ: px-ปีเดือนวัน-ชั่วโมงนาทีวินาที
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const name = `px-${String(d.getFullYear()).slice(2)}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  if (btn) { btn.disabled = true; btn.textContent = 'กำลังสร้าง...'; }
   const r = await (await fetch('/api/create-pixel', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ profile: pid, account: acctId, name: name.trim() }),
+    body: JSON.stringify({ profile: pid, account: acctId, name }),
   })).json();
-  if (r.error) return alert('สร้าง Pixel ไม่สำเร็จ: ' + r.error);
-  alert(`สร้าง Pixel "${name.trim()}" สำเร็จ`);
+  if (r.error) {
+    if (btn) { btn.disabled = false; btn.textContent = '+ สร้าง Pixel เลย'; }
+    return alert('สร้าง Pixel ไม่สำเร็จ: ' + r.error);
+  }
   delete fullAccountCache[pid]; // ให้หน้าขึ้นแอดเห็น Pixel ใหม่ด้วย
   launchAccountsBuilt = false;
   loadHealthPage(true);
