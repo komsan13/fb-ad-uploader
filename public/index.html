@@ -856,7 +856,8 @@ function esc(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 }
 
-// ถูกปิดใช้งาน/กำลังปิด/ปิดแล้ว = บิน — หน้าสุขภาพซ่อนทิ้ง หน้าแดชบอร์ดไม่ต้องยิง API (ได้แต่ error)
+// ถูกปิดใช้งาน/กำลังปิด/ปิดแล้ว = บิน — ใช้ซ่อนแถวในหน้าสุขภาพเท่านั้น
+// ห้ามใช้ข้ามการดึงสถิติ: บัญชีสถานะนี้ยังมียอดใช้จ่ายจริงที่ต้องโชว์
 const DEAD_ACCT = new Set([2, 100, 101]);
 
 // ยิงงานพร้อมกันได้ไม่เกิน n ตัว แล้วคืนผลเรียงตามลำดับเดิม
@@ -1328,9 +1329,9 @@ async function loadDashboard(force) {
     }
   }
   const date = dashDate;
+  // ห้ามข้ามบัญชีที่สถานะ "ถูกปิด" — พิสูจน์กับบัญชีจริงแล้วว่า FB ยังคืนแคมเปญ
+  // พร้อมยอดใช้จ่ายจริงของบัญชีพวกนี้ตามปกติ ข้ามเมื่อไหร่ = เงินจริงหายจากแดชบอร์ด
   const results = await pooled(targets, 4, async (t) => {
-    // บัญชีที่ถูกปิดแล้วยิงไปก็ได้แต่ error — โชว์เป็นแถวปกติ (ยอด 0) พร้อมป้าย "บัญชีมีปัญหา" แทน
-    if (DEAD_ACCT.has(t.acctStatus)) return { ...t, error: null, campaigns: [] };
     try {
       const c = await fetch(`/api/campaigns?profile=${t.pid}&account=${t.acct}&date=${date}&_=${Date.now()}`, { cache: 'no-store' }).then(r => r.json());
       return { ...t, error: c.error || null, campaigns: c.error ? [] : c.campaigns, currency: c.currency || t.currency };
