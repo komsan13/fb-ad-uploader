@@ -30,9 +30,9 @@
   /* ---------- โครง layout ---------- */
   .app { display: flex; min-height: 100vh; }
   .sidebar { width: var(--sidebar-w); background: var(--card); border-right: 1px solid var(--line); position: fixed; top: 0; bottom: 0; left: 0; display: flex; flex-direction: column; z-index: 90; }
-  .logo { height: var(--header-h); padding: 0 16px; display: flex; align-items: center; gap: 11px; font-size: 15.5px; font-weight: 700; letter-spacing: -.01em; line-height: 1.25; color: var(--text); border-bottom: 1px solid var(--line); flex-shrink: 0; }
-  .logo .mark { width: 36px; height: 36px; border-radius: 11px; background: var(--brand); color: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 3px 8px rgba(14,146,104,.28); }
-  .logo small { display: block; font-size: 10.5px; font-weight: 500; color: var(--muted); letter-spacing: 0; }
+  .logo { height: var(--header-h); padding: 0 16px; display: flex; align-items: center; gap: 11px; font-size: 15.5px; font-weight: 700; letter-spacing: -.01em; line-height: 1.25; color: #fff; background: var(--brand); flex-shrink: 0; }
+  .logo .mark { width: 36px; height: 36px; border-radius: 11px; background: #fff; color: var(--brand); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .logo small { display: block; font-size: 10.5px; font-weight: 500; color: rgba(255,255,255,.78); letter-spacing: 0; }
   nav { padding: 12px 10px; flex: 1; display: flex; flex-direction: column; gap: 2px; }
   nav a { display: flex; align-items: center; gap: 11px; padding: 10px 12px; border-radius: var(--r-md); color: var(--muted); text-decoration: none; font-size: 13.5px; font-weight: 600; cursor: pointer; transition: background 150ms var(--ease), color 150ms var(--ease); }
   nav a svg { width: 18px; height: 18px; flex-shrink: 0; }
@@ -44,11 +44,11 @@
 
   main { flex: 1; margin-left: var(--sidebar-w); padding: 0 28px 40px; min-width: 0; }
 
-  /* แถบบน */
-  .topstrip { margin: 0 -28px; background: var(--card); color: var(--text); height: var(--header-h); padding: 0 28px; display: flex; align-items: center; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--line); }
-  .ts-clock { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+  /* แถบบนสีเขียว */
+  .topstrip { margin: 0 -28px; background: var(--brand); color: #fff; height: var(--header-h); padding: 0 28px; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+  .ts-clock { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; }
   .ts-clock svg { width: 16px; height: 16px; }
-  .top-profile { display: flex; align-items: center; gap: 7px; background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 5px 10px 5px 13px; font-size: 13px; color: var(--muted); }
+  .top-profile { display: flex; align-items: center; gap: 7px; background: #fff; border-radius: 999px; padding: 6px 10px 6px 13px; font-size: 13px; color: var(--muted); }
   .top-profile svg { width: 16px; height: 16px; flex-shrink: 0; }
   .top-profile select { border: none; font-weight: 600; font-size: 13px; padding: 2px; background: transparent; min-width: 120px; color: var(--text); width: auto; }
   .top-profile select:focus { outline: none; box-shadow: none; }
@@ -353,7 +353,7 @@
   /* ---------- มือถือ ---------- */
   @media (max-width: 860px) {
     .sidebar { position: static; width: 100%; flex-direction: row; align-items: center; border-right: none; border-bottom: 1px solid var(--line); }
-    .logo { padding: 12px 14px; border-bottom: none; }
+    .logo { padding: 12px 14px; border-radius: 0 0 12px 0; }
     .logo small { display: none; }
     nav { display: flex; padding: 0 8px; }
     nav a { padding: 10px 10px; border-left: none; border-radius: var(--r-md); }
