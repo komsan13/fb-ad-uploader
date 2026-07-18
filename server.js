@@ -194,7 +194,7 @@ app.get('/api/accounts', async (req, res) => {
   if (!prof || !prof.accessToken) return res.status(400).json({ error: 'ยังไม่ได้ใส่ Access Token' });
   try {
     const me = await fb('me', { fields: 'name' }, 'GET', prof.accessToken);
-    const adAccounts = await fb('me/adaccounts', { fields: 'name,account_id,currency,account_status', limit: 200 }, 'GET', prof.accessToken);
+    const adAccounts = await fb('me/adaccounts', { fields: 'name,account_id,currency,account_status,business{id,name}', limit: 200 }, 'GET', prof.accessToken);
     const pages = await fb('me/accounts', { fields: 'name,id', limit: 200 }, 'GET', prof.accessToken);
     res.json({ name: me.name, adAccounts: adAccounts.data || [], pages: pages.data || [] });
   } catch (e) {
@@ -215,8 +215,10 @@ app.get('/api/campaigns', async (req, res) => {
   const cfg = loadConfig();
   const prof = getProfile(cfg, req.query.profile);
   if (!prof || !prof.accessToken) return res.status(400).json({ error: 'ยังไม่ได้เชื่อมต่อบัญชี' });
-  if (!prof.adAccountId) return res.status(400).json({ error: `บัญชี "${prof.label}" ยังไม่ได้เลือกบัญชีโฆษณา` });
-  const acct = `act_${String(prof.adAccountId).replace(/^act_/, '')}`;
+  // ?account=... ระบุบัญชีโฆษณาตรงๆ ได้ (หน้าแคมเปญแบบหลายบัญชี) — ไม่ระบุใช้ตัวที่ตั้งไว้ใน profile
+  const acctId = String(req.query.account || prof.adAccountId || '').replace(/[^0-9]/g, '');
+  if (!acctId) return res.status(400).json({ error: `บัญชี "${prof.label}" ยังไม่ได้เลือกบัญชีโฆษณา` });
+  const acct = `act_${acctId}`;
   const token = prof.accessToken;
   const datePreset = ['today', 'last_7d', 'last_30d', 'maximum'].includes(req.query.date) ? req.query.date : 'maximum';
   try {

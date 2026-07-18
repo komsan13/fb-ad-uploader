@@ -140,6 +140,11 @@
   .filter-bar { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; }
   .filter-bar > button { margin-left: auto; height: 38px; }
   .filter-bar select { height: 38px; }
+  .camp-group { margin-bottom: 8px; }
+  .camp-group-title { font-size: 11.5px; font-weight: 700; color: var(--muted); margin-bottom: 5px; display: flex; align-items: center; gap: 6px; }
+  .camp-group-title svg { width: 13px; height: 13px; }
+  .camp-group-chips { display: flex; gap: 7px; flex-wrap: wrap; }
+  .lp-chip.chip-off { opacity: .55; }
 
   /* ปุ่มช่วงเวลาแบบ pill */
   .date-pill { background: #fff; border: 1px solid var(--brand); color: var(--brand); border-radius: 999px; height: 38px; padding: 0 16px; display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 600; transition: background 150ms var(--ease), color 150ms var(--ease), transform 160ms var(--ease); }
@@ -454,9 +459,9 @@
     <section class="page" id="page-campaigns">
       <div class="card">
         <div class="filter-bar">
-          <div class="field" style="margin:0">
-            <label>บัญชี FB (ติ๊กเลือกที่จะแสดง)</label>
-            <div id="campProfiles" style="display:flex;gap:7px;flex-wrap:wrap;min-height:38px;align-items:center"></div>
+          <div class="field" style="margin:0;flex:2;min-width:300px">
+            <label>บัญชีโฆษณา (ติ๊กเลือกที่จะแสดง — จัดกลุ่มตาม BM)</label>
+            <div id="campProfiles" style="min-height:38px"></div>
           </div>
           <select id="campDate" style="display:none">
             <option value="today" selected>วันนี้</option>
@@ -585,7 +590,7 @@ function showPage(name) {
   document.getElementById('pageDesc').textContent = PAGE_META[name][1];
   document.getElementById('bottomBar').style.display = name === 'upload' ? 'block' : 'none';
   if (name === 'settings') renderSettings();
-  if (name === 'campaigns') loadCampaigns();
+  if (name === 'campaigns') buildCampFilters().then(loadCampaigns);
 }
 
 // ---------- บัญชี FB (profiles) ----------
@@ -614,14 +619,8 @@ function renderProfileUI() {
       ${prevChecked.size ? (prevChecked.has(p.id) ? 'checked' : '') : (p.id === activeProfileId ? 'checked' : '')}> ${esc(p.label)}</label>`
   ).join('');
   if (!profiles.some(p => p.hasToken)) lp.innerHTML += '<span class="hint">เพิ่มบัญชีในหน้า "บัญชี FB" ก่อน</span>';
-  // chips เลือกบัญชีหน้าแคมเปญ (default ติ๊กทุกบัญชี)
-  const cp = document.getElementById('campProfiles');
-  const prevCamp = new Set([...cp.querySelectorAll('input:checked')].map(i => i.value));
-  const hadAny = cp.querySelectorAll('input').length > 0;
-  cp.innerHTML = profiles.filter(p => p.hasToken).map(p =>
-    `<label class="lp-chip"><input type="checkbox" value="${p.id}" onchange="loadCampaigns()"
-      ${hadAny ? (prevCamp.has(p.id) ? 'checked' : '') : 'checked'}> ${esc(p.label)}</label>`
-  ).join('') || '<span class="hint">เพิ่มบัญชีในหน้า "บัญชี FB" ก่อน</span>';
+  // รายชื่อบัญชีโฆษณาหน้าแคมเปญต้อง rebuild เมื่อ profiles เปลี่ยน
+  campFiltersBuilt = false;
   updateStats();
 }
 async function setActiveProfile(id) {
@@ -828,6 +827,56 @@ function setCampDate(v, btn) {
   document.querySelectorAll('.date-pill').forEach(b => b.classList.toggle('active', b === btn));
   loadCampaigns();
 }
+// สร้างรายการติ๊กบัญชีโฆษณา: ทุกบัญชีที่ทุก token เห็น จัดกลุ่มตาม BM (default ติ๊กเฉพาะบัญชีที่ใช้ได้)
+let campFiltersBuilt = false;
+async function buildCampFilters() {
+  const cp = document.getElementById('campProfiles');
+  const tokenProfiles = profiles.filter(p => p.hasToken);
+  if (!tokenProfiles.length) { cp.innerHTML = '<span class="hint">เพิ่มบัญชีในหน้า "บัญชี FB" ก่อน</span>'; return; }
+  if (campFiltersBuilt) return;
+  const prev = new Set([...cp.querySelectorAll('input:checked')].map(i => i.value));
+  const hadAny = cp.querySelectorAll('input').length > 0;
+  cp.innerHTML = '<span class="hint"><span class="spin"></span>กำลังโหลดรายชื่อบัญชีโฆษณา...</span>';
+
+  const groups = [];
+  await Promise.all(tokenProfiles.map(async (p) => {
+    if (!accountCache[p.id]) {
+      try {
+        const d = await (await fetch('/api/accounts?profile=' + p.id)).json();
+        if (d.error) { groups.push({ title: `${p.label} — โหลดไม่สำเร็จ: ${d.error}`, chips: '' }); return; }
+        accountCache[p.id] = d;
+      } catch { return; }
+    }
+    const data = accountCache[p.id];
+    const byBm = {};
+    for (const a of data.adAccounts) {
+      const bm = a.business ? a.business.name : 'ไม่อยู่ใน BM';
+      (byBm[bm] = byBm[bm] || []).push(a);
+    }
+    for (const [bm, accts] of Object.entries(byBm)) {
+      const chips = accts.map(a => {
+        const v = p.id + ':' + a.account_id;
+        const usable = a.account_status === 1;
+        const checked = hadAny ? (prev.has(v) ? 'checked' : '') : (usable ? 'checked' : '');
+        return `<label class="lp-chip ${usable ? '' : 'chip-off'}" title="${usable ? '' : 'บัญชีนี้ถูกปิด/มีปัญหา'}"><input type="checkbox" value="${v}" onchange="loadCampaigns()" ${checked}> ${esc(a.name)}${usable ? '' : ' ⛔'}</label>`;
+      }).join('');
+      groups.push({ title: `${tokenProfiles.length > 1 ? p.label + ' • ' : ''}${bm}`, chips });
+    }
+  }));
+
+  cp.innerHTML = groups.length
+    ? groups.map(g => `<div class="camp-group">
+        <div class="camp-group-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/></svg>${esc(g.title)}</div>
+        <div class="camp-group-chips">${g.chips}</div>
+      </div>`).join('')
+    : '<span class="hint">ไม่พบบัญชีโฆษณา</span>';
+  campFiltersBuilt = true;
+}
+function acctLabel(pid, acctId) {
+  const d = accountCache[pid];
+  const a = d && d.adAccounts.find(x => x.account_id === acctId);
+  return a ? a.name : acctId;
+}
 function setCampKpis(count, spend, results, reach, imp) {
   document.getElementById('kCount').textContent = count;
   document.getElementById('kSpend').textContent = spend;
@@ -836,31 +885,32 @@ function setCampKpis(count, spend, results, reach, imp) {
   document.getElementById('kReachSub').textContent = 'อิมเพรสชัน ' + imp;
 }
 async function loadCampaigns() {
-  const pids = [...document.querySelectorAll('#campProfiles input:checked')].map(i => i.value);
+  const sels = [...document.querySelectorAll('#campProfiles input:checked')].map(i => i.value);
   const date = document.getElementById('campDate').value;
   const tbody = document.getElementById('campaignRows');
   document.getElementById('campSummary').textContent = '';
-  if (!pids.length) { tbody.innerHTML = '<tr><td colspan="12" class="tbl-msg">ติ๊กเลือกอย่างน้อย 1 บัญชีด้านบน</td></tr>'; setCampKpis('—', '—', '—', '—', '—'); return; }
-  tbody.innerHTML = `<tr><td colspan="12" class="tbl-msg"><span class="spin"></span>กำลังโหลดข้อมูลจาก ${pids.length} บัญชี...</td></tr>`;
+  if (!sels.length) { tbody.innerHTML = '<tr><td colspan="12" class="tbl-msg">ติ๊กเลือกอย่างน้อย 1 บัญชีโฆษณาด้านบน</td></tr>'; setCampKpis('—', '—', '—', '—', '—'); return; }
+  tbody.innerHTML = `<tr><td colspan="12" class="tbl-msg"><span class="spin"></span>กำลังโหลดข้อมูลจาก ${sels.length} บัญชีโฆษณา...</td></tr>`;
 
-  // โหลดทุกบัญชีที่ติ๊กพร้อมกัน
-  const results = await Promise.all(pids.map(async (pid) => {
+  // โหลดทุกบัญชีโฆษณาที่ติ๊กพร้อมกัน (v = "profileId:adAccountId")
+  const results = await Promise.all(sels.map(async (v) => {
+    const [pid, acct] = v.split(':');
     try {
-      const res = await fetch(`/api/campaigns?profile=${pid}&date=${date}&_=${Date.now()}`, { cache: 'no-store' });
-      return { pid, ...(await res.json()) };
+      const res = await fetch(`/api/campaigns?profile=${pid}&account=${acct}&date=${date}&_=${Date.now()}`, { cache: 'no-store' });
+      return { pid, acct, ...(await res.json()) };
     } catch (e) {
-      return { pid, error: e.message };
+      return { pid, acct, error: e.message };
     }
   }));
   // กันผลรอบเก่ามาทับ ถ้าผู้ใช้เปลี่ยนติ๊กระหว่างโหลด
-  const nowPids = [...document.querySelectorAll('#campProfiles input:checked')].map(i => i.value);
-  if (nowPids.join(',') !== pids.join(',')) return;
+  const nowSels = [...document.querySelectorAll('#campProfiles input:checked')].map(i => i.value);
+  if (nowSels.join(',') !== sels.join(',')) return;
 
   const errs = results.filter(r => r.error);
   const rows = [];
   for (const r of results) {
     if (r.error) continue;
-    for (const c of r.campaigns) rows.push({ ...c, pid: r.pid, account: r.account, currency: r.currency });
+    for (const c of r.campaigns) rows.push({ ...c, pid: r.pid, acctId: r.acct, account: r.account, currency: r.currency });
   }
   rows.sort((a, b) => new Date(b.created_time) - new Date(a.created_time));
 
@@ -875,11 +925,10 @@ async function loadCampaigns() {
   const mainCur = rows.length ? curOf(rows[0]) : '฿';
   setCampKpis(num(rows.length), mainCur + tot.spend.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }), num(tot.results), num(tot.reach), num(tot.impressions));
   document.getElementById('campSummary').textContent =
-    `— ${pids.length - errs.length}/${pids.length} บัญชี • ตัวเลขจาก FB API อาจช้ากว่าหน้า Ads Manager ~15-60 นาที`;
+    `— ${sels.length - errs.length}/${sels.length} บัญชีโฆษณา • ตัวเลขจาก FB API อาจช้ากว่าหน้า Ads Manager ~15-60 นาที`;
 
   const errRows = errs.map(r => {
-    const label = (profiles.find(x => x.id === r.pid) || {}).label || r.pid;
-    return `<tr><td colspan="12" class="tbl-msg err" style="padding:14px 20px">⚠ ${esc(label)}: ${esc(r.error)}</td></tr>`;
+    return `<tr><td colspan="12" class="tbl-msg err" style="padding:14px 20px">⚠ ${esc(acctLabel(r.pid, r.acct))}: ${esc(r.error)}</td></tr>`;
   }).join('');
 
   if (!rows.length) {
@@ -888,7 +937,7 @@ async function loadCampaigns() {
   }
 
   tbody.innerHTML = errRows + rows.map(c => {
-    const label = (profiles.find(x => x.id === c.pid) || {}).label || '';
+    const label = acctLabel(c.pid, c.acctId);
     const toggleable = c.status === 'ACTIVE' || c.status === 'PAUSED';
     const checked = c.status === 'ACTIVE' ? 'checked' : '';
     const toggle = toggleable
@@ -905,7 +954,7 @@ async function loadCampaigns() {
     const link = `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${c.account}&selected_campaign_ids=${c.id}`;
     return `<tr>
       <td>${toggle}</td>
-      <td><span class="chip" style="white-space:nowrap">${esc(label)}</span></td>
+      <td><span class="chip" style="white-space:nowrap;max-width:170px;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:middle" title="${esc(label)}">${esc(label)}</span></td>
       <td style="font-weight:600;min-width:150px">${esc(c.name)}<div class="res-label">${OBJ_TH[c.objective] || c.objective}</div></td>
       <td>${statusPill(c)}</td>
       <td>${results}</td>
