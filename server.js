@@ -739,14 +739,15 @@ app.post('/api/launch', upload.any(), async (req, res) => {
           adsetParams.daily_budget = Math.round(Number(ad.dailyBudget) * 100);
           adsetParams.bid_strategy = 'LOWEST_COST_WITHOUT_CAP';
         }
+        // กลยุทธ์วงจรลูกค้า — เลือกจากหน้าเว็บ: '100' = รับทุกกลุ่ม, '0' = หาลูกค้าใหม่, '' = ไม่ส่ง ปล่อยตาม default ของ FB
+        const lifecycleStrategy = data.lifecycleStrategy === undefined ? '100' : String(data.lifecycleStrategy);
         if (objInfo.needsPixel) {
           adsetParams.promoted_object = {
             pixel_id: data.pixelId,
             custom_event_type: data.conversionEvent || objInfo.event,
           };
           adsetParams.destination_type = 'WEBSITE';
-          // กลยุทธ์วงจรลูกค้า = "รับคอนเวอร์ชั่นจากกลุ่มเป้าหมายทั้งหมด" (งบไปหาลูกค้าเดิมได้เต็ม 100%)
-          adsetParams.existing_customer_budget_percentage = 100;
+          if (lifecycleStrategy !== '') adsetParams.existing_customer_budget_percentage = Number(lifecycleStrategy);
         }
         // ผู้ลงโฆษณา = id ธุรกิจที่ยืนยันตัวตนแล้ว (regional_regulation_identities — พิสูจน์แล้วว่า FB บันทึกจริง)
         const beneficiaryId = String(data.beneficiaryId || '').replace(/[^0-9]/g, '');
@@ -788,7 +789,12 @@ app.post('/api/launch', upload.any(), async (req, res) => {
             const rri = av.regional_regulation_identities || {};
             const items = [{ ok: /ไทย|Thai/.test(lang), label: `ภาษา: ${lang}` }];
             if (objInfo.needsPixel) {
-              items.push({ ok: Number(av.existing_customer_budget_percentage) === 100, label: 'กลยุทธ์วงจรลูกค้า: รับคอนเวอร์ชั่นจากกลุ่มเป้าหมายทั้งหมด' });
+              items.push(lifecycleStrategy !== ''
+                ? {
+                    ok: Number(av.existing_customer_budget_percentage) === Number(lifecycleStrategy),
+                    label: `กลยุทธ์วงจรลูกค้า: ${lifecycleStrategy === '0' ? 'หาลูกค้าใหม่ (0)' : 'รับคอนเวอร์ชั่นจากกลุ่มเป้าหมายทั้งหมด (100)'}`,
+                  }
+                : { ok: !av.existing_customer_budget_percentage, label: 'กลยุทธ์วงจรลูกค้า: ไม่ส่งค่า (ตามค่าเริ่มต้นของ FB)' });
             }
             items.push({ ok: !av.daily_min_spend_target && !av.daily_spend_cap, label: 'วงเงินใช้จ่ายชุดโฆษณา: ไม่จำกัด' });
             items.push(beneficiaryId

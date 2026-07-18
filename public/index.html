@@ -452,6 +452,14 @@
               <option value="CONTACT">ติดต่อ (Contact)</option>
             </select>
           </div>
+          <div class="field" id="lifecycleField" style="display:none">
+            <label>กลยุทธ์วงจรลูกค้า</label>
+            <select id="lifecycleStrategy">
+              <option value="100" selected>รับคอนเวอร์ชั่นจากกลุ่มเป้าหมายทั้งหมด</option>
+              <option value="0">หาลูกค้าใหม่ (ไม่ใช้งบกับลูกค้าเดิม)</option>
+              <option value="">ไม่ส่งค่า — ปล่อยตามค่าเริ่มต้นของ Facebook</option>
+            </select>
+          </div>
           <div class="field">
             <label>ปุ่มบนแอด (CTA)</label>
             <select id="cta">
@@ -468,7 +476,7 @@
           <span class="switch"><input type="checkbox" id="activeNow"><span class="sl"></span></span>
           <span><b>เปิดแอดทันที (ACTIVE)</b> — ปิดไว้ = ขึ้นเป็น PAUSED ให้เข้าไปตรวจใน Ads Manager ก่อนเปิดเอง (แนะนำ)</span>
         </label>
-        <div class="hint" style="margin-top:9px">ตั้งให้อัตโนมัติทุกครั้ง: ภาษาไทย • เฉพาะ Facebook บนมือถือ • กลยุทธ์วงจรลูกค้า = รับคอนเวอร์ชั่นจากกลุ่มเป้าหมายทั้งหมด • ไม่จำกัดวงเงินใช้จ่ายชุดโฆษณา — <b>หลังขึ้นเสร็จระบบอ่านค่าจริงจาก FB กลับมาแสดงยืนยันที่แถบล่าง</b></div>
+        <div class="hint" style="margin-top:9px">ตั้งให้อัตโนมัติทุกครั้ง: ภาษาไทย • เฉพาะ Facebook บนมือถือ • กลยุทธ์วงจรลูกค้า = ตามที่เลือกด้านบน • ไม่จำกัดวงเงินใช้จ่ายชุดโฆษณา — <b>หลังขึ้นเสร็จระบบอ่านค่าจริงจาก FB กลับมาแสดงยืนยันที่แถบล่าง</b></div>
       </div>
 
       <div class="card">
@@ -1061,8 +1069,9 @@ setInterval(tickClock, 1000);
 
 function togglePixel() {
   const obj = document.getElementById('objective').value;
-  document.getElementById('convField').style.display =
-    (obj === 'OUTCOME_SALES' || obj === 'OUTCOME_LEADS') ? '' : 'none';
+  const pixelOn = (obj === 'OUTCOME_SALES' || obj === 'OUTCOME_LEADS') ? '' : 'none';
+  document.getElementById('convField').style.display = pixelOn;
+  document.getElementById('lifecycleField').style.display = pixelOn;
   // วัตถุประสงค์เปลี่ยน → เกณฑ์ความพร้อม (ต้องมี Pixel ไหม) เปลี่ยน → re-render
   if (launchAccountsBuilt) renderLaunchAccounts();
 }
@@ -2045,6 +2054,7 @@ async function launch() {
         cta: document.getElementById('cta').value,
         pixelId: t.chosenPixel || '',
         conversionEvent: document.getElementById('conversionEvent').value,
+        lifecycleStrategy: document.getElementById('lifecycleStrategy').value,
         active: document.getElementById('activeNow').checked,
         ads,
       }));
