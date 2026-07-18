@@ -551,6 +551,27 @@ app.post('/api/ai-advice', async (req, res) => {
   }
 });
 
+// ---------- ค่าตั้งต้นของการขึ้นแอด (จำไว้ข้ามการรีเฟรช + autopilot ใช้ชุดเดียวกันนี้) ----------
+app.get('/api/launch-defaults', (req, res) => res.json(loadConfig().launchDefaults || {}));
+app.post('/api/launch-defaults', (req, res) => {
+  const d = req.body || {};
+  const cfg = loadConfig();
+  // เก็บเฉพาะคีย์ที่รู้จัก ไม่ให้ client ยัดอะไรก็ได้ลง config
+  const allow = ['campaignBudget', 'objective', 'conversionEvent', 'lifecycleStrategy', 'cta',
+    'activeNow', 'ruleOn', 'ruleCpr', 'ruleSpend', 'perAccount',
+    'message', 'headline', 'link', 'ageMin', 'ageMax', 'gender', 'countries', 'interests'];
+  const out = {};
+  for (const k of allow) if (d[k] !== undefined) out[k] = d[k];
+  if (Array.isArray(out.interests)) {
+    out.interests = out.interests.slice(0, 50)
+      .map((x) => ({ id: String(x.id || '').slice(0, 40), name: String(x.name || '').slice(0, 120) }))
+      .filter((x) => x.id);
+  }
+  cfg.launchDefaults = out;
+  saveConfig(cfg);
+  res.json({ ok: true });
+});
+
 app.get('/api/ai-key', (req, res) => {
   const cfg = loadConfig();
   res.json({ hasKey: !!(cfg.anthropicKey || process.env.ANTHROPIC_API_KEY), fromEnv: !cfg.anthropicKey && !!process.env.ANTHROPIC_API_KEY });

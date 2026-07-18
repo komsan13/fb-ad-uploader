@@ -440,7 +440,7 @@
       </aside>
       <div class="camp-main">
       <div class="card">
-        <div class="pc-step"><span class="pc-step-num">1</span> ตั้งค่าแคมเปญ <span class="h-desc">— สร้างชื่อเดียวกันในทุกบัญชีที่เลือก</span></div>
+        <div class="pc-step"><span class="pc-step-num">1</span> ตั้งค่าแคมเปญ <span class="h-desc">— จำค่าที่ตั้งไว้ให้อัตโนมัติ ยกเว้นชื่อแคมเปญ</span> <span id="ldSaved" style="margin-left:8px;font-size:12px;color:var(--brand-dark);font-weight:600"></span></div>
         <div class="fgrid">
           <div class="field fg-2">
             <label>ชื่อแคมเปญ</label>
@@ -1338,6 +1338,7 @@ setInterval(tickClock, 1000);
   const startPage = profiles.length ? (PAGE_META[route] ? route : 'dashboard') : 'settings';
   history.replaceState(null, '', '#' + startPage); // เขียน hash ตั้งแต่แรก ให้ back ครั้งแรกทำงานถูก
   showPage(startPage, true);
+  loadLaunchDefaults();
 })();
 
 function togglePixel() {
@@ -2263,6 +2264,70 @@ async function loadAiKeyState() {
   } catch { /* โหลดสถานะไม่ได้ ไม่กระทบการใช้งาน */ }
 }
 
+// ---------- ค่าตั้งต้นการขึ้นแอด: จำไว้ข้ามการรีเฟรช ----------
+// ชื่อแคมเปญไม่เก็บ — ควรต่างกันทุกรอบ (ปุ่มขึ้นอัตโนมัติเติมวันเวลาให้เอง)
+const LD_FIELDS = [
+  ['campaignBudget', 'campaignBudget'], ['objective', 'objective'], ['conversionEvent', 'conversionEvent'],
+  ['lifecycleStrategy', 'lifecycleStrategy'], ['cta', 'cta'], ['perAccount', 'planPerAccount'],
+  ['message', 'tpl-message'], ['headline', 'tpl-headline'], ['link', 'tpl-link'],
+  ['ageMin', 'tpl-agemin'], ['ageMax', 'tpl-agemax'], ['gender', 'tpl-gender'], ['countries', 'tpl-countries'],
+  ['ruleCpr', 'ruleCpr'], ['ruleSpend', 'ruleSpend'],
+];
+const LD_TOGGLES = [['activeNow', 'activeNow'], ['ruleOn', 'ruleOn']];
+
+function collectLaunchDefaults() {
+  const d = {};
+  for (const [k, id] of LD_FIELDS) { const el = document.getElementById(id); if (el) d[k] = el.value; }
+  for (const [k, id] of LD_TOGGLES) { const el = document.getElementById(id); if (el) d[k] = el.checked; }
+  d.interests = [...document.querySelectorAll('#tpl-chips .chip')].map(c => ({ id: c.dataset.iid, name: c.dataset.iname }));
+  return d;
+}
+function applyLaunchDefaults(d) {
+  if (!d || !Object.keys(d).length) return;
+  for (const [k, id] of LD_FIELDS) {
+    const el = document.getElementById(id);
+    if (el && d[k] !== undefined && d[k] !== '') el.value = d[k];
+  }
+  for (const [k, id] of LD_TOGGLES) {
+    const el = document.getElementById(id);
+    if (el && typeof d[k] === 'boolean') el.checked = d[k];
+  }
+  const box = document.getElementById('tpl-chips');
+  if (box && Array.isArray(d.interests)) {
+    box.innerHTML = '';
+    d.interests.forEach(x => addChip(box.closest('.interest-box') || box.parentElement, x.id, x.name));
+  }
+  // ช่องที่ซ่อน/โชว์ตามค่าอื่นต้องอัปเดตตาม ไม่งั้นโหลดมาแล้วช่องหาย
+  if (typeof togglePixel === 'function') togglePixel();
+  const rf = document.getElementById('ruleFields');
+  if (rf) rf.style.display = document.getElementById('ruleOn').checked ? '' : 'none';
+}
+let ldTimer, ldLoaded = false;
+function saveLaunchDefaultsSoon() {
+  if (!ldLoaded) return; // อย่าเพิ่งเขียนทับก่อนโหลดค่าเดิมเสร็จ
+  clearTimeout(ldTimer);
+  ldTimer = setTimeout(async () => {
+    const tag = document.getElementById('ldSaved');
+    try {
+      await fetch('/api/launch-defaults', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(collectLaunchDefaults()),
+      });
+      if (tag) { tag.textContent = '✓ จำค่าไว้แล้ว'; setTimeout(() => { tag.textContent = ''; }, 2000); }
+    } catch { if (tag) tag.textContent = '⚠️ จำค่าไม่สำเร็จ'; }
+  }, 800);
+}
+async function loadLaunchDefaults() {
+  try { applyLaunchDefaults(await (await fetch('/api/launch-defaults')).json()); }
+  catch { /* โหลดไม่ได้ก็ใช้ค่าเริ่มต้นในหน้า */ }
+  ldLoaded = true;
+  // ผูก listener หลังโหลดเสร็จ กันการ apply ไปกระตุ้น save ย้อนกลับ
+  for (const [, id] of [...LD_FIELDS, ...LD_TOGGLES]) {
+    const el = document.getElementById(id);
+    if (el) { el.addEventListener('change', saveLaunchDefaultsSoon); el.addEventListener('input', saveLaunchDefaultsSoon); }
+  }
+}
+
 // ---------- ระบบอัตโนมัติ (autopilot) ----------
 const AP_LEVEL = { fixed: '🔧', dead: '⛔', freeze: '🧊', manual: '✕', warn: '⚠️', info: 'ℹ️' };
 async function loadAutopilot() {
@@ -2885,6 +2950,7 @@ function pickInterest(el, id, name) {
   ibox.querySelector('input').value = '';
   const card = el.closest('.ad-card');
   if (card) updateTargetSummary(card);
+  else saveLaunchDefaultsSoon(); // ความสนใจในชุดค่าเริ่มต้น = ต้องจำด้วย
 }
 function addChip(scope, id, name) {
   const chips = scope.querySelector('.chips');
@@ -2900,6 +2966,7 @@ function removeChip(x) {
   const card = x.closest('.ad-card');
   x.parentElement.remove();
   if (card) updateTargetSummary(card);
+  else saveLaunchDefaultsSoon(); // ลบความสนใจออกจากชุดค่าเริ่มต้น = ต้องจำด้วย
 }
 document.addEventListener('click', (e) => {
   if (!e.target.closest('.interest-box'))
