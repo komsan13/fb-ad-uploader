@@ -376,7 +376,8 @@
     <nav>
       <a data-page="dashboard" class="active" onclick="showPage('dashboard')"><span class="num">1</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg><span class="lbl">แดชบอร์ด</span></a>
       <a data-page="campaigns" onclick="showPage('campaigns')"><span class="num">2</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg><span class="lbl">แคมเปญของฉัน</span></a>
-      <a data-page="settings" onclick="showPage('settings')"><span class="num">3</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span class="lbl">บัญชี FB</span></a>
+      <a data-page="health" onclick="showPage('health')"><span class="num">3</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/><path d="M3.22 12H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27"/></svg><span class="lbl">สุขภาพบัญชี</span></a>
+      <a data-page="settings" onclick="showPage('settings')"><span class="num">4</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span class="lbl">บัญชี FB</span></a>
     </nav>
     <div class="side-foot" id="sideConn"><span class="dot"></span>ยังไม่มีบัญชี</div>
   </aside>
@@ -710,6 +711,47 @@
       </div>
     </section>
 
+    <!-- ========== PAGE: สุขภาพบัญชี & เพจ ========== -->
+    <section class="page" id="page-health">
+      <div class="card">
+        <div class="filter-bar">
+          <div class="hint" style="flex:1;min-width:220px">เช็คสดจาก Facebook ทุกครั้งที่กดรีเฟรช — เพจที่ "บิน" คือเพจที่ FB ปิดเผยแพร่/ตัดสิทธิ์ลงโฆษณา</div>
+          <button class="btn-light" onclick="loadHealth(true)" style="display:inline-flex;align-items:center;gap:7px"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>รีเฟรชข้อมูล</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 style="margin-bottom:12px"><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><path d="M2 10h20"/></svg></span>บัญชีโฆษณา <span class="h-desc" id="healthAcctSub"></span></h2>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr>
+              <th>บัญชีโฆษณา</th>
+              <th>ธุรกิจ (BM)</th>
+              <th>สถานะ</th>
+              <th>Pixel</th>
+              <th>บัตรชำระเงิน</th>
+            </tr></thead>
+            <tbody id="healthAcctRows"><tr><td colspan="5" class="tbl-msg">กำลังโหลด...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 style="margin-bottom:12px"><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M18 9h1a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-3"/><path d="M8 6h4"/><path d="M8 10h4"/><path d="M8 14h4"/></svg></span>เพจ <span class="h-desc" id="healthPageSub"></span></h2>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr>
+              <th>เพจ</th>
+              <th>สถานะเพจ</th>
+              <th>ลงโฆษณาได้ไหม</th>
+              <th></th>
+            </tr></thead>
+            <tbody id="healthPageRows"><tr><td colspan="4" class="tbl-msg">กำลังโหลด...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <!-- ========== PAGE: บัญชี FB ========== -->
     <section class="page" id="page-settings">
       <div class="card">
@@ -773,6 +815,7 @@ function esc(s) {
 const PAGE_META = {
   dashboard: ['แดชบอร์ด', 'ภาพรวมทุกบัญชี — ใช้จ่าย ผลลัพธ์ และแคมเปญเด่น'],
   campaigns: ['แคมเปญของฉัน', 'ดูสถานะและเปิด/ปิดแคมเปญ แยกตามบัญชี'],
+  health: ['สุขภาพบัญชี & เพจ', 'เพจไหนใช้ได้/บิน • บัญชีไหนยังไม่มี Pixel หรือยังไม่เชื่อมบัตร'],
   settings: ['บัญชี FB', 'เพิ่ม/จัดการบัญชี FB, บัญชีโฆษณา และเพจ'],
 };
 function showPage(name) {
@@ -784,6 +827,7 @@ function showPage(name) {
   if (name === 'settings') renderSettings();
   if (name === 'campaigns') buildCampFilters().then(loadCampaigns);
   if (name === 'dashboard') loadDashboard();
+  if (name === 'health') loadHealth();
 }
 
 // ---------- modal ขึ้นแอด ----------
@@ -1218,6 +1262,99 @@ function renderDashboard(results) {
       <td class="num-cell">${money(c.currency, c.spend)}</td>
     </tr>`).join('') : '<tr><td colspan="6" class="tbl-msg">ยังไม่มีแคมเปญในช่วงเวลานี้</td></tr>';
 }
+// ---------- หน้าสุขภาพบัญชี & เพจ ----------
+const healthCache = {}; // pid -> {accounts, pages}
+async function loadHealth(force) {
+  const acctRows = document.getElementById('healthAcctRows');
+  const pageRows = document.getElementById('healthPageRows');
+  const tokenProfiles = profiles.filter(p => p.hasToken);
+  if (!tokenProfiles.length) {
+    acctRows.innerHTML = '<tr><td colspan="5" class="tbl-msg">เพิ่มบัญชีในเมนู "บัญชี FB" ก่อน</td></tr>';
+    pageRows.innerHTML = '<tr><td colspan="4" class="tbl-msg">เพิ่มบัญชีในเมนู "บัญชี FB" ก่อน</td></tr>';
+    return;
+  }
+  acctRows.innerHTML = '<tr><td colspan="5" class="tbl-msg"><span class="spin"></span>กำลังเช็คสดจาก Facebook...</td></tr>';
+  pageRows.innerHTML = '<tr><td colspan="4" class="tbl-msg"><span class="spin"></span>กำลังเช็คสดจาก Facebook...</td></tr>';
+  const results = await Promise.all(tokenProfiles.map(async (p) => {
+    if (healthCache[p.id] && !force) return { p, ...healthCache[p.id] };
+    try {
+      const d = await (await fetch(`/api/health-overview?profile=${p.id}&_=${Date.now()}`, { cache: 'no-store' })).json();
+      if (d.error) return { p, error: d.error };
+      healthCache[p.id] = d;
+      return { p, ...d };
+    } catch (e) { return { p, error: e.message }; }
+  }));
+  renderHealth(results);
+}
+function renderHealth(results) {
+  const multi = results.length > 1;
+  const ST = { 1: ['on', 'ใช้ได้'], 2: ['rejected', 'ถูกปิดใช้งาน'], 3: ['issue', 'ค้างชำระ'], 7: ['issue', 'รอตรวจความเสี่ยง'], 8: ['issue', 'รอชำระ'], 9: ['issue', 'ช่วงผ่อนผัน'], 100: ['rejected', 'กำลังปิด'], 101: ['rejected', 'ปิดแล้ว'] };
+
+  const acctHtml = [];
+  let nAcct = 0, nNoPixel = 0, nNoCard = 0;
+  for (const r of results) {
+    if (r.error) { acctHtml.push(`<tr><td colspan="5" class="tbl-msg err" style="padding:12px 20px">⚠ ${esc(r.p.label)}: ${esc(r.error)}</td></tr>`); continue; }
+    for (const a of r.accounts) {
+      nAcct++;
+      const [cls, txt] = ST[a.status] || ['issue', 'สถานะ ' + a.status];
+      if (!a.pixels.length) nNoPixel++;
+      if (!a.funding) nNoCard++;
+      const px = a.pixels.length
+        ? a.pixels.map(x => `<span class="chip" title="id ${esc(x.id)}">${esc(x.name)}</span>`).join(' ')
+        : `<span class="st-pill rejected">✕ ไม่มี</span> <button class="btn-light btn-sm" onclick="createPixelHealth('${r.p.id}','${a.id}','${esc(a.name).replace(/'/g, '&#39;')}')">+ สร้าง Pixel</button>`;
+      const card = a.funding
+        ? `<span class="st-pill on">✓ ${esc(a.funding)}</span>`
+        : `<span class="st-pill rejected">✕ ยังไม่เชื่อม</span> <a class="btn-light btn-sm" style="text-decoration:none;display:inline-block" target="_blank" href="https://business.facebook.com/billing_hub/payment_settings?asset_id=${a.id}">เชื่อมบัตร ↗</a>`;
+      acctHtml.push(`<tr>
+        <td style="font-weight:600">${esc(a.name)}<div class="res-label">${multi ? esc(r.p.label) + ' • ' : ''}${a.id}</div></td>
+        <td>${a.business ? `<span class="chip" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle" title="${esc(a.business)}">${esc(a.business)}</span>` : '<span style="color:var(--muted)">—</span>'}</td>
+        <td><span class="st-pill ${cls}">${txt}</span></td>
+        <td>${px}</td>
+        <td>${card}</td>
+      </tr>`);
+    }
+  }
+  document.getElementById('healthAcctRows').innerHTML = acctHtml.join('') || '<tr><td colspan="5" class="tbl-msg">ไม่พบบัญชีโฆษณา</td></tr>';
+  document.getElementById('healthAcctSub').textContent = `— ${nAcct} บัญชี • ไม่มี Pixel ${nNoPixel} • ยังไม่เชื่อมบัตร ${nNoCard}`;
+
+  // เพจ (เพจเดียวกันโผล่หลาย profile ได้ — โชว์ครั้งเดียว)
+  const seen = new Set();
+  const pageHtml = [];
+  let nPage = 0, nDead = 0;
+  for (const r of results) {
+    if (r.error) continue;
+    for (const g of r.pages) {
+      if (seen.has(g.id)) continue;
+      seen.add(g.id);
+      nPage++;
+      if (!(g.published && g.eligible)) nDead++;
+      pageHtml.push(`<tr>
+        <td style="font-weight:600">${esc(g.name)}<div class="res-label">${multi ? esc(r.p.label) + ' • ' : ''}${g.id}</div></td>
+        <td>${g.published ? '<span class="st-pill on">● เผยแพร่อยู่</span>' : '<span class="st-pill rejected">✕ ถูกปิดเผยแพร่</span>'}</td>
+        <td>${g.eligible
+          ? '<span class="st-pill on">✓ ใช้ลงโฆษณาได้</span>'
+          : `<span class="st-pill rejected">✕ บิน — ลงโฆษณาไม่ได้</span>${g.reason ? `<div class="res-label">${esc(g.reason)}</div>` : ''}`}</td>
+        <td><a class="btn-light btn-sm" style="text-decoration:none" target="_blank" href="https://www.facebook.com/${g.id}">เปิดเพจ ↗</a></td>
+      </tr>`);
+    }
+  }
+  document.getElementById('healthPageRows').innerHTML = pageHtml.join('') || '<tr><td colspan="4" class="tbl-msg">ไม่พบเพจ</td></tr>';
+  document.getElementById('healthPageSub').textContent = `— ${nPage} เพจ • ใช้ได้ ${nPage - nDead} • บิน/ใช้ไม่ได้ ${nDead}`;
+}
+async function createPixelHealth(pid, acctId, acctName) {
+  const name = prompt(`ตั้งชื่อ Pixel ใหม่ของบัญชี "${acctName}"`, 'px');
+  if (!name || !name.trim()) return;
+  const r = await (await fetch('/api/create-pixel', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profile: pid, account: acctId, name: name.trim() }),
+  })).json();
+  if (r.error) return alert('สร้าง Pixel ไม่สำเร็จ: ' + r.error);
+  alert(`สร้าง Pixel "${name.trim()}" สำเร็จ`);
+  delete fullAccountCache[pid]; // ให้หน้าขึ้นแอดเห็น Pixel ใหม่ด้วย
+  launchAccountsBuilt = false;
+  loadHealth(true);
+}
+
 // ---------- คลังบัญชีโฆษณาแบบเต็ม (Pixel + บัตร) ใช้ร่วมทั้งหน้าขึ้นแอดและแคมเปญ ----------
 const fullAccountCache = {}; // pid -> {name, adAccounts:[{...,pixels,hasPayment}], pages}
 async function loadFullAccounts(force) {

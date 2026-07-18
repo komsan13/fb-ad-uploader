@@ -603,6 +603,35 @@ app.get('/api/account-health', async (req, res) => {
   }
 });
 
+// ภาพรวมสุขภาพ: บัญชีโฆษณา (สถานะ/Pixel/บัตร) + เพจ (เผยแพร่/สิทธิ์ลงโฆษณา) ของ profile เดียว
+// promotion_eligible = FB บอกตรงๆ ว่าเพจนี้ใช้ลงโฆษณา/บูสต์ได้ไหม (พิสูจน์กับบัญชีจริงแล้ว: เพจบิน = false)
+app.get('/api/health-overview', async (req, res) => {
+  const cfg = loadConfig();
+  const prof = getProfile(cfg, req.query.profile);
+  if (!prof || !prof.accessToken) return res.status(400).json({ error: 'ยังไม่ได้เชื่อมต่อบัญชี' });
+  const token = prof.accessToken;
+  try {
+    const [accts, pages] = await Promise.all([
+      fbAll('me/adaccounts', { fields: 'name,account_id,account_status,business{name},funding_source_details,adspixels.limit(15){id,name}', limit: 100 }, token),
+      fbAll('me/accounts', { fields: 'name,is_published,promotion_eligible,promotion_ineligible_reason', limit: 100 }, token),
+    ]);
+    res.json({
+      accounts: accts.map((a) => ({
+        id: a.account_id, name: a.name, status: a.account_status,
+        business: a.business ? a.business.name : null,
+        pixels: ((a.adspixels || {}).data || []).map((x) => ({ id: x.id, name: x.name })),
+        funding: (a.funding_source_details && (a.funding_source_details.display_string || 'เชื่อมแล้ว')) || null,
+      })),
+      pages: (pages || []).map((p) => ({
+        id: p.id, name: p.name, published: !!p.is_published,
+        eligible: !!p.promotion_eligible, reason: p.promotion_ineligible_reason || null,
+      })),
+    });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
 // สร้าง Pixel (Dataset) ใหม่ให้บัญชีโฆษณา
 app.post('/api/create-pixel', async (req, res) => {
   const cfg = loadConfig();
