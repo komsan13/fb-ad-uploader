@@ -1634,6 +1634,33 @@ async function apCreateOneAd(acct, token, campaignId, pageId, pixelId, d, objInf
   return ad.id;
 }
 
+// เช็คว่าบัญชีนี้ยังยิงเงินได้อีกไหมวันนี้
+// เติมแอดตอนงบเต็มแล้ว = เผาครีเอทีฟทิ้งฟรี เพราะแอดใหม่ไม่ได้ยิงอยู่ดี
+const apToday = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10); // วันตามเวลาไทย
+
+async function apSpendRoom(acct, token) {
+  const out = { full: false, capped: false, spent: 0, budget: 0 };
+  // 1) วงเงินสะสมของบัญชี (spend_cap) — เต็มแล้วบัญชีหยุดยิงถาวรจนกว่าจะขยายเอง
+  try {
+    const info = await fb(acct, { fields: 'spend_cap,amount_spent' }, 'GET', token);
+    const cap = Number(info.spend_cap) || 0;
+    const used = Number(info.amount_spent) || 0;
+    if (cap > 0 && used >= cap) { out.capped = true; out.capUsed = used / 100; out.capTotal = cap / 100; }
+  } catch { /* อ่านไม่ได้ก็ข้ามการเช็คนี้ */ }
+
+  // 2) งบรายวัน: ใช้จ่ายวันนี้ เทียบงบรวมของแคมเปญที่ยิงอยู่
+  try {
+    const camps = await fbAll(`${acct}/campaigns`, { fields: 'status,daily_budget', limit: 200 }, token);
+    out.budget = camps.filter((c) => c.status === 'ACTIVE' && c.daily_budget)
+      .reduce((n, c) => n + Number(c.daily_budget) / 100, 0);
+    const ins = await fbAll(`${acct}/insights`, { fields: 'spend', date_preset: 'today', limit: 1 }, token);
+    out.spent = Number((ins[0] || {}).spend) || 0;
+    // 95% ถือว่าเต็ม — FB ปล่อยให้เกินงบได้เล็กน้อยระหว่างวัน รอให้ถึง 100% พอดีจะไม่มีวันเข้าเงื่อนไข
+    if (out.budget > 0 && out.spent >= out.budget * 0.95) out.full = true;
+  } catch { /* อ่านไม่ได้ก็ปล่อยผ่าน ดีกว่าหยุดการทำงานเพราะอ่านสถิติไม่ได้ */ }
+  return out;
+}
+
 async function apRefill(cfg, prof, a, ads, s, alerts) {
   const ap = cfg.autopilot || {};
   const target = Math.max(0, Math.min(50, Number(ap.minAds) || 0));
@@ -1659,6 +1686,25 @@ async function apRefill(cfg, prof, a, ads, s, alerts) {
     return;
   }
   s.warned[acctId] = '';
+
+  // งบวันนี้เต็มแล้วหรือยัง — เต็มแล้วไม่ต้องเติม รอวันถัดไปเอง (สถิติรีเซ็ตเองตอนข้ามวัน)
+  const spendRoom = await apSpendRoom(acct, prof.accessToken);
+  const capKey = 'spend:' + acctId;
+  if (spendRoom.capped) {
+    if (s.warned[capKey] !== 'capped') {
+      const m = `🛑 ${a.name}: ใช้วงเงินสะสมของบัญชีครบแล้ว (${Math.round(spendRoom.capUsed).toLocaleString()}/${Math.round(spendRoom.capTotal).toLocaleString()} บาท) — บัญชีหยุดยิงจนกว่าจะเข้าไปขยายวงเงินใน Ads Manager`;
+      alerts.push(m); apLog(s, 'warn', m, acctId); s.warned[capKey] = 'capped';
+    }
+    return;
+  }
+  if (spendRoom.full) {
+    if (s.warned[capKey] !== apToday()) {
+      const m = `💤 ${a.name}: ใช้งบวันนี้ครบแล้ว (${Math.round(spendRoom.spent).toLocaleString()}/${Math.round(spendRoom.budget).toLocaleString()} บาท) — ไม่เติมแอดเพิ่ม รอพรุ่งนี้`;
+      alerts.push(m); apLog(s, 'sleep', m, acctId); s.warned[capKey] = apToday();
+    }
+    return;
+  }
+  if (s.warned[capKey]) s.warned[capKey] = '';
 
   // เพดานแอดใหม่ต่อบัญชีต่อวัน
   s.created[acctId] = apRecent(s.created[acctId], 24 * 3600 * 1000);

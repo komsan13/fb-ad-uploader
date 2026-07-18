@@ -2343,7 +2343,8 @@ async function loadLaunchDefaults() {
 }
 
 // ---------- ระบบอัตโนมัติ (autopilot) ----------
-const AP_LEVEL = { fixed: '🔧', dead: '⛔', freeze: '🧊', manual: '✕', warn: '⚠️', info: 'ℹ️' };
+const AP_LEVEL = { fixed: '🔧', dead: '⛔', freeze: '🧊', manual: '✕', warn: '⚠️', info: 'ℹ️',
+  refill: '➕', scale: '📈', stock: '📦', sleep: '💤', empty: '📭' };
 async function loadAutopilot() {
   if (!document.getElementById('apEnabled')) return;
   let d;
