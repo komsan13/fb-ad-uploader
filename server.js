@@ -295,8 +295,12 @@ app.get('/api/interests', async (req, res) => {
 // ---------- ขึ้นแอดทั้งชุด — ตอบเป็น NDJSON stream ----------
 app.post('/api/launch', upload.any(), async (req, res) => {
   const cfg = loadConfig();
+  // header กัน proxy/Traefik สะสม response — ให้ส่งทีละบรรทัดแบบเรียลไทม์
   res.setHeader('Content-Type', 'application/x-ndjson');
-  const send = (obj) => res.write(JSON.stringify(obj) + '\n');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+  const send = (obj) => { res.write(JSON.stringify(obj) + '\n'); if (res.flush) res.flush(); };
 
   const data = JSON.parse(req.body.data);
   const prof = getProfile(cfg, data.profileId);
