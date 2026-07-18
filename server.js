@@ -346,13 +346,36 @@ app.post('/api/beneficiary', (req, res) => {
   res.json({ ok: true });
 });
 
-// map objective -> action_type ที่นับเป็น "ผลลัพธ์" ใน Ads Manager
-const RESULT_ACTION = {
-  OUTCOME_TRAFFIC: { type: 'link_click', label: 'คลิกลิงก์' },
-  OUTCOME_ENGAGEMENT: { type: 'post_engagement', label: 'การมีส่วนร่วม' },
-  OUTCOME_SALES: { type: 'offsite_conversion.fb_pixel_purchase', label: 'การซื้อ' },
-  OUTCOME_LEADS: { type: 'offsite_conversion.fb_pixel_lead', label: 'ลูกค้าเป้าหมาย' },
+// "ผลลัพธ์" ของแคมเปญ pixel (Sales/Leads) ขึ้นกับ "เหตุการณ์คอนเวอร์ชั่น" ของชุดโฆษณา ไม่ใช่วัตถุประสงค์
+// พิสูจน์จากบัญชีจริง: event สมัครรับข้อมูล (SUBSCRIBE) มาใน insights เป็น offsite_conversion.fb_pixel_custom
+// จึงไล่หา action_type เป็นลิสต์ตามลำดับ ตัวแรกที่เจอ = ผลลัพธ์
+const EVENT_RESULT = {
+  PURCHASE: { types: ['offsite_conversion.fb_pixel_purchase', 'omni_purchase', 'purchase'], label: 'การซื้อ' },
+  LEAD: { types: ['offsite_conversion.fb_pixel_lead', 'lead'], label: 'ลูกค้าเป้าหมาย' },
+  SUBSCRIBE: { types: ['subscribe_total', 'offsite_conversion.fb_pixel_subscribe', 'offsite_conversion.fb_pixel_custom'], label: 'สมัครรับข้อมูล' },
+  COMPLETE_REGISTRATION: { types: ['offsite_conversion.fb_pixel_complete_registration', 'omni_complete_registration', 'complete_registration'], label: 'ลงทะเบียนเสร็จ' },
+  ADD_TO_CART: { types: ['offsite_conversion.fb_pixel_add_to_cart', 'omni_add_to_cart', 'add_to_cart'], label: 'หยิบใส่ตะกร้า' },
+  INITIATE_CHECKOUT: { types: ['offsite_conversion.fb_pixel_initiate_checkout', 'omni_initiated_checkout', 'initiate_checkout'], label: 'เริ่มชำระเงิน' },
+  CONTACT: { types: ['contact_total', 'offsite_conversion.fb_pixel_custom'], label: 'ติดต่อ' },
 };
+const OBJECTIVE_RESULT = {
+  OUTCOME_TRAFFIC: { types: ['link_click'], label: 'คลิกลิงก์' },
+  OUTCOME_ENGAGEMENT: { types: ['post_engagement'], label: 'การมีส่วนร่วม' },
+  OUTCOME_SALES: { types: ['offsite_conversion.fb_pixel_purchase', 'omni_purchase', 'offsite_conversion.fb_pixel_custom'], label: 'คอนเวอร์ชั่น' },
+  OUTCOME_LEADS: { types: ['offsite_conversion.fb_pixel_lead', 'lead', 'offsite_conversion.fb_pixel_custom'], label: 'คอนเวอร์ชั่น' },
+};
+// เลือกเกณฑ์ผลลัพธ์: รู้ event ของชุดโฆษณา → ใช้ event, ไม่รู้ → ใช้วัตถุประสงค์
+function resultSpec(objective, event) {
+  return (event && EVENT_RESULT[event]) || OBJECTIVE_RESULT[objective] || null;
+}
+function pickResult(spec, actions) {
+  if (!spec || !Array.isArray(actions)) return null;
+  for (const t of spec.types) {
+    const hit = actions.find((a) => a.action_type === t);
+    if (hit) return Number(hit.value);
+  }
+  return null;
+}
 
 // รายการแคมเปญพร้อมสถิติ (Insights) แบบ Ads Manager
 app.get('/api/campaigns', async (req, res) => {
@@ -385,12 +408,15 @@ app.get('/api/campaigns', async (req, res) => {
     } catch { /* ไม่มีข้อมูล */ }
     const insMap = Object.fromEntries(insights.map((r) => [r.campaign_id, r]));
 
-    // งบรวมจาก ad set (กรณีตั้งงบระดับ ad set ไม่ใช่ระดับแคมเปญ)
+    // งบรวมจาก ad set (กรณีตั้งงบระดับ ad set ไม่ใช่ระดับแคมเปญ) + เหตุการณ์คอนเวอร์ชั่นของแคมเปญ
     const adsetBudget = {};
+    const campaignEvent = {};
     try {
-      const as = await fbAll(`${acct}/adsets`, { fields: 'campaign_id,daily_budget', limit: 200 }, token);
+      const as = await fbAll(`${acct}/adsets`, { fields: 'campaign_id,daily_budget,promoted_object', limit: 200 }, token);
       for (const s of as) {
         if (s.daily_budget) adsetBudget[s.campaign_id] = (adsetBudget[s.campaign_id] || 0) + Number(s.daily_budget);
+        const ev = s.promoted_object && s.promoted_object.custom_event_type;
+        if (ev && !campaignEvent[s.campaign_id]) campaignEvent[s.campaign_id] = ev;
       }
     } catch { /* ข้าม */ }
 
@@ -410,12 +436,8 @@ app.get('/api/campaigns', async (req, res) => {
 
     const rows = (camps.data || []).map((c) => {
       const ins = insMap[c.id] || {};
-      const ra = RESULT_ACTION[c.objective];
-      let results = null;
-      if (ra && Array.isArray(ins.actions)) {
-        const hit = ins.actions.find((a) => a.action_type === ra.type);
-        if (hit) results = Number(hit.value);
-      }
+      const ra = resultSpec(c.objective, campaignEvent[c.id]);
+      const results = pickResult(ra, ins.actions);
       const spend = ins.spend ? Number(ins.spend) : 0;
       const dailyBudget = c.daily_budget ? Number(c.daily_budget) : (adsetBudget[c.id] || 0);
       return {
@@ -484,7 +506,7 @@ app.get('/api/campaign-detail', async (req, res) => {
   const datePreset = ['today', 'last_7d', 'last_30d', 'last_90d', 'maximum'].includes(req.query.date) ? req.query.date : 'maximum';
   try {
     const camp = await fb(id, { fields: 'name,objective' }, 'GET', token);
-    const adsets = await fbAll(`${id}/adsets`, { fields: 'name,status,effective_status,daily_budget', limit: 100 }, token);
+    const adsets = await fbAll(`${id}/adsets`, { fields: 'name,status,effective_status,daily_budget,promoted_object', limit: 100 }, token);
     const ads = await fbAll(`${id}/ads`, { fields: 'name,status,effective_status,adset_id,creative{thumbnail_url}', limit: 200 }, token);
     let ins = [];
     try {
@@ -493,13 +515,10 @@ app.get('/api/campaign-detail', async (req, res) => {
         date_preset: datePreset, limit: 500,
       }, token);
     } catch { /* ไม่มีข้อมูล */ }
-    const ra = RESULT_ACTION[camp.objective];
+    const campEvent = (adsets.find((s) => s.promoted_object && s.promoted_object.custom_event_type) || { promoted_object: {} }).promoted_object.custom_event_type;
+    const ra = resultSpec(camp.objective, campEvent);
     const insByAd = Object.fromEntries(ins.map((r) => [r.ad_id, r]));
-    const resultOf = (r) => {
-      if (!ra || !r || !Array.isArray(r.actions)) return null;
-      const hit = r.actions.find((a) => a.action_type === ra.type);
-      return hit ? Number(hit.value) : null;
-    };
+    const resultOf = (r) => pickResult(ra, r && r.actions);
     const adRows = ads.map((a) => {
       const r = insByAd[a.id] || {};
       return {
