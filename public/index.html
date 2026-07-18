@@ -1586,7 +1586,9 @@ async function renderCampaignDetail() {
   const { pid, id, cur } = detailCtx;
   const body = document.getElementById('detailBody');
   body.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted)"><span class="spin"></span> กำลังโหลดชุดโฆษณา + โฆษณา...</div>';
-  const date = document.getElementById('campDate').value;
+  // เปิดจากแดชบอร์ด → ใช้ช่วงเวลาของแดชบอร์ด, เปิดจากหน้าแคมเปญ → ใช้ของหน้าแคมเปญ (ให้เลขตรงกับแถวที่กด)
+  const date = document.getElementById('page-dashboard').classList.contains('active')
+    ? dashDate : document.getElementById('campDate').value;
   const d = await (await fetch(`/api/campaign-detail?profile=${pid}&id=${id}&date=${date}&_=${Date.now()}`, { cache: 'no-store' })).json();
   if (d.error) { body.innerHTML = `<div style="color:var(--red)">โหลดไม่สำเร็จ: ${esc(d.error)}</div>`; return; }
   const num = (n) => Number(n || 0).toLocaleString();
@@ -1615,7 +1617,7 @@ async function renderCampaignDetail() {
     </tr>`).join('');
   const dateTxt = { today: 'วันนี้', last_7d: '7 วันล่าสุด', last_30d: '30 วันล่าสุด', last_90d: '90 วันล่าสุด', maximum: 'ทั้งหมด' }[d.datePreset] || d.datePreset;
   body.innerHTML = `
-    <div class="hint" style="margin-bottom:10px">สถิติช่วง: ${dateTxt} (ตามที่เลือกในหน้าแคมเปญ) • ${OBJ_TH[d.objective] || d.objective}</div>
+    <div class="hint" style="margin-bottom:10px">สถิติช่วง: ${dateTxt} (ตามช่วงเวลาที่เลือกอยู่) • ${OBJ_TH[d.objective] || d.objective}</div>
     <h2 style="margin-bottom:10px">ชุดโฆษณา <span class="h-desc">— ${d.adsets.length} ชุด</span></h2>
     <div class="tbl-wrap" style="margin-bottom:18px"><table>
       <thead><tr><th>เปิด/ปิด</th><th>ชุดโฆษณา</th><th>สถานะ</th><th class="num-cell">งบ/วัน</th><th>ผลลัพธ์</th><th class="num-cell">ใช้จ่าย</th><th class="num-cell">อิมเพรสชัน</th></tr></thead>
@@ -1635,6 +1637,7 @@ async function toggleDetailObj(id, cur) {
     body: JSON.stringify({ id, status: to, profile: detailCtx.pid }),
   })).json();
   if (r.error) alert('เปลี่ยนสถานะไม่สำเร็จ: ' + r.error);
+  else Object.keys(dashCache).forEach(k => delete dashCache[k]); // สถานะเปลี่ยน → เลขแดชบอร์ดที่ cache ไว้ไม่จริงแล้ว
   renderCampaignDetail();
 }
 
@@ -1646,6 +1649,7 @@ async function deleteCampaign(id, name, pid) {
   });
   const data = await res.json();
   if (data.error) return alert('ลบไม่สำเร็จ: ' + data.error);
+  Object.keys(dashCache).forEach(k => delete dashCache[k]);
   loadCampaigns();
 }
 async function toggleCampaign(id, cur, pid) {
@@ -1657,6 +1661,7 @@ async function toggleCampaign(id, cur, pid) {
   });
   const data = await res.json();
   if (data.error) { alert('เปลี่ยนสถานะไม่สำเร็จ: ' + data.error); return loadCampaigns(); }
+  Object.keys(dashCache).forEach(k => delete dashCache[k]);
   loadCampaigns();
 }
 
