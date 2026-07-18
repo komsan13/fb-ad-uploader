@@ -890,15 +890,13 @@ function renderProfileUI() {
   // รายชื่อบัญชีโฆษณา (หน้าแคมเปญ + หน้าขึ้นแอด + แดชบอร์ด) ต้อง rebuild เมื่อ profiles เปลี่ยน
   campFiltersBuilt = false;
   launchAccountsBuilt = false;
-  Object.keys(dashCache).forEach(k => delete dashCache[k]);
-  Object.keys(campCache).forEach(k => delete campCache[k]);
-  Object.keys(healthCache).forEach(k => delete healthCache[k]);
   updateStats();
 }
 async function setActiveProfile(id) {
   if (!id) return;
   await fetch('/api/profiles/active', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
   activeProfileId = id;
+  bustCaches(); // เปลี่ยนบัญชีที่ใช้งาน = ข้อมูลทุกหน้าต้องดึงใหม่
   renderProfileUI();
 }
 async function addProfile() {
@@ -912,6 +910,7 @@ async function deleteProfile(id) {
   if (!confirm(`ลบบัญชี "${p.label}" ออกจากโปรแกรม? (ไม่มีผลกับบัญชีจริงบน FB)`)) return;
   await fetch('/api/profiles/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
   delete accountCache[id];
+  bustCaches();
   await loadProfiles();
   renderSettings();
 }
@@ -976,6 +975,7 @@ function fbLogin(pid) {
 }
 window.addEventListener('message', async (e) => {
   if (e.data === 'fb-auth-done') {
+    bustCaches(); // login ใหม่ = token ใหม่ ข้อมูลต้องดึงใหม่
     await loadProfiles();
     renderSettings();
   }
@@ -1060,6 +1060,7 @@ async function connectProfile(pid) {
     await fetch('/api/profiles/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: pid, accessToken: token }) });
     profiles.find(x => x.id === pid).hasToken = true;
     delete accountCache[pid];
+    bustCaches(); // token ใหม่ = ข้อมูลชุดใหม่
   }
   st.textContent = 'กำลังเชื่อมต่อ...';
   st.className = 'p-status hint';
@@ -1124,6 +1125,7 @@ setInterval(tickClock, 1000);
     const env = await (await fetch('/api/env')).json();
     if (env.redirectUri) document.getElementById('redirectUriText').textContent = env.redirectUri;
   } catch {}
+  restoreCaches(); // ดึงข้อมูลที่จำไว้จากรอบก่อน (sessionStorage) — F5 แล้วหน้าโชว์ทันที
   const route = location.hash.replace(/^#/, '');
   // ไม่มีบัญชี = บังคับหน้าตั้งค่าเสมอ (hash ค้างจาก session เก่าห้ามชนะ), มีบัญชีค่อยเคารพ hash
   const startPage = profiles.length ? (PAGE_META[route] ? route : 'dashboard') : 'settings';
@@ -1180,9 +1182,28 @@ function spendByCurText(items) {
 
 // ---------- หน้าแดชบอร์ด ----------
 // นโยบายโหลดทุกหน้า: มีของเก่า = โชว์ทันทีไม่มีจอหมุน แล้วถ้าเก่าเกิน TTL ค่อยดึงใหม่เงียบๆ เบื้องหลังมาแทน
+// cache เก็บลง sessionStorage ด้วย — กด F5 หรือเปิดแท็บเดิมซ้ำ ข้อมูลเดิมโชว์ทันทีไม่ต้องโหลดใหม่ทั้งกระดาน
 let dashDate = 'last_7d';
 const dashCache = {}; // datePreset -> {ts, results}
-const DASH_CACHE_MS = 90000;
+const DASH_CACHE_MS = 300000;
+function saveCaches() {
+  try { sessionStorage.setItem('fbadCache', JSON.stringify({ dash: dashCache, camp: campCache, health: healthCache })); } catch { /* เต็ม/ปิดใช้ก็ข้าม */ }
+}
+function restoreCaches() {
+  try {
+    const s = JSON.parse(sessionStorage.getItem('fbadCache') || 'null');
+    if (!s) return;
+    Object.assign(dashCache, s.dash || {});
+    Object.assign(campCache, s.camp || {});
+    Object.assign(healthCache, s.health || {});
+  } catch { /* พังก็เริ่มเปล่า */ }
+}
+function bustCaches(o) { // ล้าง cache ตามชนิด แล้วบันทึกสถานะใหม่ลง sessionStorage ทันที
+  if (!o || o.dash) Object.keys(dashCache).forEach(k => delete dashCache[k]);
+  if (!o || o.camp) Object.keys(campCache).forEach(k => delete campCache[k]);
+  if (!o || o.health) Object.keys(healthCache).forEach(k => delete healthCache[k]);
+  saveCaches();
+}
 function setDashDate(v, btn) {
   dashDate = v;
   document.querySelectorAll('#page-dashboard .date-pill').forEach(b => b.classList.toggle('active', b === btn));
@@ -1231,8 +1252,13 @@ async function loadDashboard(force) {
       return { ...t, error: e.message, campaigns: [] };
     }
   }));
-  dashCache[date] = { ts: Date.now(), results };
+  const hasErr = results.some(r => r.error);
+  if (!hasErr) { dashCache[date] = { ts: Date.now(), results }; saveCaches(); }
   if (dashDate !== date) return; // ผู้ใช้เปลี่ยนช่วงเวลาไประหว่างโหลด — เก็บ cache ไว้แต่ไม่ทับจอ
+  if (!force && hit) {
+    if (hasErr) return; // จอมีของเดิมดีๆ อยู่ — refresh เบื้องหลังพลาดก็คงของเดิม
+    if (JSON.stringify(hit.results) === JSON.stringify(results)) return; // ไม่เปลี่ยน = ไม่วาดใหม่
+  }
   renderDashboard(results);
 }
 function renderDashboard(results) {
@@ -1329,6 +1355,7 @@ async function loadHealthPage(force) {
       return { p, ...d };
     } catch (e) { return { p, error: e.message }; }
   }));
+  saveCaches();
   renderHealthPage(results);
 }
 function renderHealthPage(results) {
@@ -1642,7 +1669,7 @@ function setCampKpis(count, spend, results, reach, imp) {
   document.getElementById('kReachSub').textContent = 'อิมเพรสชัน ' + imp;
 }
 const campCache = {}; // "sels|date" -> {ts, results} — กันโหลดซ้ำตอนสลับหน้าไปมา
-const CAMP_CACHE_MS = 60000;
+const CAMP_CACHE_MS = 300000;
 async function loadCampaigns(force) {
   const sels = [...document.querySelectorAll('#campProfiles input:checked')].map(i => i.value);
   const date = document.getElementById('campDate').value;
@@ -1669,12 +1696,18 @@ async function loadCampaigns(force) {
       return { pid, acct, error: e.message };
     }
   }));
+  // มี error สักบัญชี = ไม่ cache — ให้รอบถัดไปได้ลองใหม่ ไม่ใช่เห็น error ค้าง
+  const hasErr = results.some(r => r.error);
+  if (!hasErr) { campCache[key] = { ts: Date.now(), results }; saveCaches(); }
   // กันผลรอบเก่ามาทับ ถ้าผู้ใช้เปลี่ยนติ๊ก "หรือช่วงเวลา" ระหว่างโหลด (เทียบ key เต็ม)
   const nowSels = [...document.querySelectorAll('#campProfiles input:checked')].map(i => i.value);
   const nowKey = nowSels.join(',') + '|' + document.getElementById('campDate').value;
   if (nowKey !== key) return;
-  // มี error สักบัญชี = ไม่ cache — ให้เข้าหน้ารอบถัดไปได้ลองใหม่ ไม่ใช่เห็น error ค้าง 60 วิ
-  if (!results.some(r => r.error)) campCache[key] = { ts: Date.now(), results };
+  if (!force && hit) {
+    // จอโชว์ของเดิมอยู่ (ไม่มี spinner) — refresh เบื้องหลังพลาดก็เงียบไว้ / ข้อมูลไม่เปลี่ยนก็ไม่ต้องวาดใหม่ให้กระพริบ
+    if (hasErr) return;
+    if (JSON.stringify(hit.results) === JSON.stringify(results)) return;
+  }
   renderCampaignRows(results, sels);
 }
 function renderCampaignRows(results, sels) {
@@ -1815,10 +1848,7 @@ async function toggleDetailObj(id, cur) {
     body: JSON.stringify({ id, status: to, profile: detailCtx.pid }),
   })).json();
   if (r.error) alert('เปลี่ยนสถานะไม่สำเร็จ: ' + r.error);
-  else { // สถานะเปลี่ยน → เลขที่ cache ไว้ทั้งแดชบอร์ดและหน้าแคมเปญไม่จริงแล้ว
-    Object.keys(dashCache).forEach(k => delete dashCache[k]);
-    Object.keys(campCache).forEach(k => delete campCache[k]);
-  }
+  else bustCaches({ dash: 1, camp: 1 }); // สถานะเปลี่ยน → เลขที่ cache ไว้ทั้งแดชบอร์ดและหน้าแคมเปญไม่จริงแล้ว
   renderCampaignDetail();
 }
 
@@ -1830,8 +1860,7 @@ async function deleteCampaign(id, name, pid) {
   });
   const data = await res.json();
   if (data.error) return alert('ลบไม่สำเร็จ: ' + data.error);
-  Object.keys(dashCache).forEach(k => delete dashCache[k]);
-  Object.keys(campCache).forEach(k => delete campCache[k]); // ทุกช่วงเวลา/ทุกชุดบัญชีต้องโหลดใหม่ ไม่ให้แคมเปญที่ลบแล้วหลอนกลับมา
+  bustCaches({ dash: 1, camp: 1 }); // ทุกช่วงเวลา/ทุกชุดบัญชีต้องโหลดใหม่ ไม่ให้แคมเปญที่ลบแล้วหลอนกลับมา
   loadCampaigns(true);
 }
 async function toggleCampaign(id, cur, pid) {
@@ -1843,8 +1872,7 @@ async function toggleCampaign(id, cur, pid) {
   });
   const data = await res.json();
   if (data.error) { alert('เปลี่ยนสถานะไม่สำเร็จ: ' + data.error); return loadCampaigns(true); }
-  Object.keys(dashCache).forEach(k => delete dashCache[k]);
-  Object.keys(campCache).forEach(k => delete campCache[k]);
+  bustCaches({ dash: 1, camp: 1 });
   loadCampaigns(true);
 }
 
@@ -2345,9 +2373,8 @@ async function launch() {
     }</div>`;
   }
   if (okCount) {
-    Object.keys(campCache).forEach(k => delete campCache[k]); // แคมเปญใหม่ต้องโผล่ทุกช่วงเวลา
+    bustCaches({ dash: 1, camp: 1 }); // แคมเปญใหม่ต้องโผล่ทุกช่วงเวลา + แดชบอร์ดโหลดใหม่รอบหน้า
     loadCampaigns(true); // รีเฟรชตารางแคมเปญเบื้องหลังให้เห็นแคมเปญใหม่
-    Object.keys(dashCache).forEach(k => delete dashCache[k]); // แดชบอร์ดโหลดใหม่รอบหน้า
   }
 
   pw.style.display = 'none';
