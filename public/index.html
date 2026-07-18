@@ -472,6 +472,17 @@
           <span class="switch"><input type="checkbox" id="activeNow"><span class="sl"></span></span>
           <span><b>เปิดแอดทันที (ACTIVE)</b> — ปิดไว้ = ขึ้นเป็น PAUSED ให้เข้าไปตรวจใน Ads Manager ก่อนเปิดเอง (แนะนำ)</span>
         </label>
+        <label class="switch-row">
+          <span class="switch"><input type="checkbox" id="ruleOn" onchange="document.getElementById('ruleFields').style.display=this.checked?'':'none'"><span class="sl"></span></span>
+          <span><b>กฎหยุดอัตโนมัติ</b> — ให้เซิร์ฟเวอร์ Meta หยุดแคมเปญเองเมื่อแพง (ทำงานตลอดแม้ปิดโปรแกรม เช็คทุก 30 นาที)</span>
+        </label>
+        <div id="ruleFields" style="display:none;margin:8px 0 0 48px">
+          <div class="row" style="max-width:520px">
+            <div class="field"><label>หยุดเมื่อต้นทุน/ผลลัพธ์เกิน (บาท)</label><input id="ruleCpr" type="number" min="1" value="100"></div>
+            <div class="field"><label>เริ่มเช็คหลังใช้จ่ายเกิน (บาท)</label><input id="ruleSpend" type="number" min="0" value="150"></div>
+          </div>
+          <div class="hint">ตัวอย่าง: ค่าข้างบน = ถ้าใช้เงินเกิน 150 บาทแล้ว CPA ยังแพงกว่า 100 บาท แคมเปญโดนหยุดอัตโนมัติ — เปิดกลับเองได้ใน Ads Manager</div>
+        </div>
         <div class="hint" style="margin-top:9px">ตั้งให้อัตโนมัติทุกครั้ง: ภาษาไทย • เฉพาะ Facebook บนมือถือ • กลยุทธ์วงจรลูกค้า = ตามที่เลือกด้านบน • ไม่จำกัดวงเงินใช้จ่ายชุดโฆษณา — <b>หลังขึ้นเสร็จระบบอ่านค่าจริงจาก FB กลับมาแสดงยืนยันที่แถบล่าง</b></div>
       </div>
 
@@ -1858,6 +1869,7 @@ async function renderCampaignDetail() {
       <td>${resTxt(s.results)}</td>
       <td class="num-cell">${money(s.spend)}</td>
       <td class="num-cell">${num(s.impressions)}</td>
+      <td><button class="btn-light btn-sm" style="white-space:nowrap" title="ก๊อปชุดโฆษณานี้พร้อมแอดข้างใน (ขึ้นเป็น PAUSED) — ไว้สเกลตัวที่ผลงานดี" onclick="copyAdset('${s.id}', this)">⧉ ก๊อปสเกล</button></td>
     </tr>`).join('');
   const adsetName = (aid) => (d.adsets.find(s => s.id === aid) || {}).name || '';
   const adRows = d.ads.map(a => `<tr>
@@ -1874,14 +1886,26 @@ async function renderCampaignDetail() {
     <div class="hint" style="margin-bottom:10px">สถิติช่วง: ${dateTxt} (ตามช่วงเวลาที่เลือกอยู่) • ${OBJ_TH[d.objective] || d.objective}</div>
     <h2 style="margin-bottom:10px">ชุดโฆษณา <span class="h-desc">— ${d.adsets.length} ชุด</span></h2>
     <div class="tbl-wrap" style="margin-bottom:18px"><table>
-      <thead><tr><th>เปิด/ปิด</th><th>ชุดโฆษณา</th><th>สถานะ</th><th class="num-cell">งบ/วัน</th><th>ผลลัพธ์</th><th class="num-cell">ใช้จ่าย</th><th class="num-cell">อิมเพรสชัน</th></tr></thead>
-      <tbody>${asRows || '<tr><td colspan="7" class="tbl-msg">ไม่มีชุดโฆษณาในแคมเปญนี้</td></tr>'}</tbody>
+      <thead><tr><th>เปิด/ปิด</th><th>ชุดโฆษณา</th><th>สถานะ</th><th class="num-cell">งบ/วัน</th><th>ผลลัพธ์</th><th class="num-cell">ใช้จ่าย</th><th class="num-cell">อิมเพรสชัน</th><th></th></tr></thead>
+      <tbody>${asRows || '<tr><td colspan="8" class="tbl-msg">ไม่มีชุดโฆษณาในแคมเปญนี้</td></tr>'}</tbody>
     </table></div>
     <h2 style="margin-bottom:10px">โฆษณา <span class="h-desc">— ${d.ads.length} ตัว</span></h2>
     <div class="tbl-wrap"><table>
       <thead><tr><th>เปิด/ปิด</th><th></th><th>โฆษณา</th><th>สถานะ</th><th>ผลลัพธ์</th><th class="num-cell">ใช้จ่าย</th><th class="num-cell">อิมเพรสชัน</th></tr></thead>
       <tbody>${adRows || '<tr><td colspan="7" class="tbl-msg">ไม่มีโฆษณาในแคมเปญนี้</td></tr>'}</tbody>
     </table></div>`;
+}
+async function copyAdset(id, btn) {
+  if (!confirm('ก๊อปชุดโฆษณานี้ (พร้อมแอดข้างใน) เป็นตัวใหม่ในแคมเปญเดิม?\n\nตัวก๊อปจะขึ้นเป็น PAUSED — เข้าไปเปิดเองเมื่อพร้อม')) return;
+  btn.disabled = true; btn.textContent = 'กำลังก๊อป...';
+  const r = await (await fetch('/api/adset-copy', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, profile: detailCtx.pid }),
+  })).json();
+  btn.disabled = false; btn.textContent = '⧉ ก๊อปสเกล';
+  if (r.error) return alert('ก๊อปไม่สำเร็จ: ' + r.error);
+  bustCaches({ dash: 1, camp: 1 });
+  renderCampaignDetail(); // โชว์ตัวก๊อปทันที
 }
 async function toggleDetailObj(id, cur) {
   const to = cur === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
@@ -2324,6 +2348,9 @@ async function launch() {
         pixelId: t.chosenPixel || '',
         conversionEvent: document.getElementById('conversionEvent').value,
         lifecycleStrategy: document.getElementById('lifecycleStrategy').value,
+        autoRule: document.getElementById('ruleOn').checked
+          ? { cpr: Number(document.getElementById('ruleCpr').value) || 0, minSpend: Number(document.getElementById('ruleSpend').value) || 0 }
+          : undefined,
         active: document.getElementById('activeNow').checked,
         ads,
       }));

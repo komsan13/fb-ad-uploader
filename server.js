@@ -668,6 +668,25 @@ app.get('/api/health-overview', async (req, res) => {
   }
 });
 
+// ก๊อปชุดโฆษณา (พร้อมแอดข้างใน) เป็น PAUSED ในแคมเปญเดิม — ไว้สเกลตัวชนะ
+app.post('/api/adset-copy', async (req, res) => {
+  const cfg = loadConfig();
+  const prof = getProfile(cfg, req.body.profile);
+  if (!prof || !prof.accessToken) return res.status(400).json({ error: 'ยังไม่ได้เชื่อมต่อบัญชี' });
+  const id = String(req.body.id || '');
+  if (!/^\d+$/.test(id)) return res.status(400).json({ error: 'adset id ไม่ถูกต้อง' });
+  try {
+    const r = await fb(`${id}/copies`, {
+      deep_copy: true,
+      status_option: 'PAUSED',
+      rename_options: { rename_strategy: 'ONLY_TOP_LEVEL_RENAME', rename_suffix: ' - Copy' },
+    }, 'POST', prof.accessToken);
+    res.json({ ok: true, newId: r.copied_adset_id || null });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
 // สร้าง Pixel (Dataset) ใหม่ให้บัญชีโฆษณา
 app.post('/api/create-pixel', async (req, res) => {
   const cfg = loadConfig();
@@ -763,6 +782,30 @@ app.post('/api/launch', upload.any(), async (req, res) => {
       }
       const campaign = await fb(`${acct}/campaigns`, campaignParams, 'POST', token);
       campaignId = campaign.id;
+      // กฎหยุดอัตโนมัติบนเซิร์ฟเวอร์ Meta (ทำงานแม้โปรแกรมปิด): ใช้จ่ายเกิน minSpend และ CPA เกิน cpr → pause แคมเปญ
+      // ต้องเป็นระดับ CAMPAIGN เท่านั้น (ADSET+เงื่อนไขต้นทุน FB ไม่ให้ใช้กับงบ CBO — พิสูจน์แล้ว), หน่วยเงิน = สตางค์
+      if (data.autoRule && Number(data.autoRule.cpr) > 0) {
+        try {
+          await fb(`${acct}/adrules_library`, {
+            name: `หยุดอัตโนมัติ: ${data.campaign.name}`,
+            schedule_spec: { schedule_type: 'SEMI_HOURLY' },
+            evaluation_spec: {
+              evaluation_type: 'SCHEDULE',
+              filters: [
+                { field: 'entity_type', value: 'CAMPAIGN', operator: 'EQUAL' },
+                { field: 'campaign.id', value: [campaignId], operator: 'IN' },
+                { field: 'time_preset', value: 'LIFETIME', operator: 'EQUAL' },
+                { field: 'spent', value: Math.round(Number(data.autoRule.minSpend || 0) * 100), operator: 'GREATER_THAN' },
+                { field: 'cpa', value: Math.round(Number(data.autoRule.cpr) * 100), operator: 'GREATER_THAN' },
+              ],
+            },
+            execution_spec: { execution_type: 'PAUSE' },
+          }, 'POST', token);
+          send({ type: 'progress', msg: `ตั้งกฎหยุดอัตโนมัติแล้ว (CPA เกิน ${data.autoRule.cpr} บาท หลังใช้เกิน ${data.autoRule.minSpend || 0} บาท)` });
+        } catch (e) {
+          send({ type: 'warn', index: 0, msg: `ตั้งกฎหยุดอัตโนมัติไม่สำเร็จ (${e.message}) — แอดขึ้นต่อตามปกติ` });
+        }
+      }
     }
     send({ type: 'campaign', id: campaignId });
     const thaiLocale = await getThaiLocale();
