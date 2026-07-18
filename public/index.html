@@ -140,11 +140,33 @@
   .filter-bar { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; }
   .filter-bar > button { margin-left: auto; height: 38px; }
   .filter-bar select { height: 38px; }
-  .camp-group { margin-bottom: 8px; }
-  .camp-group-title { font-size: 11.5px; font-weight: 700; color: var(--muted); margin-bottom: 5px; display: flex; align-items: center; gap: 6px; }
-  .camp-group-title svg { width: 13px; height: 13px; }
-  .camp-group-chips { display: flex; gap: 7px; flex-wrap: wrap; }
-  .lp-chip.chip-off { opacity: .55; }
+  /* panel เลือกบัญชีโฆษณาฝั่งซ้ายของหน้าแคมเปญ */
+  .camp-layout { display: flex; gap: 14px; align-items: flex-start; }
+  .camp-side { width: 264px; flex-shrink: 0; position: sticky; top: 14px; max-height: calc(100vh - 110px); overflow-y: auto; padding: 16px; }
+  .camp-main { flex: 1; min-width: 0; }
+  .cs-head { display: flex; justify-content: space-between; align-items: center; font-size: 13.5px; font-weight: 700; margin-bottom: 10px; }
+  .cs-actions { font-size: 12px; font-weight: 600; color: var(--muted); }
+  .cs-actions a { cursor: pointer; }
+  details.camp-bm { margin-bottom: 4px; }
+  details.camp-bm summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 700; color: var(--muted); padding: 7px 8px; border-radius: 8px; user-select: none; }
+  details.camp-bm summary:hover { background: #f4f6f8; }
+  details.camp-bm summary::before { content: '▸'; font-size: 10px; }
+  details.camp-bm[open] summary::before { content: '▾'; }
+  details.camp-bm summary svg { width: 13px; height: 13px; flex-shrink: 0; }
+  .bm-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bm-count { background: #f0f2f5; border-radius: 10px; padding: 1px 8px; font-size: 11px; flex-shrink: 0; }
+  .acct-row { display: flex; align-items: center; gap: 8px; padding: 7px 8px 7px 22px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+  .acct-row:hover { background: #f4f6f8; }
+  .acct-row input { width: auto; accent-color: var(--brand); flex-shrink: 0; }
+  .acct-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .acct-dot.ok { background: var(--green); }
+  .acct-dot.bad { background: var(--red); }
+  .acct-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .acct-row.row-off { opacity: .55; }
+  @media (max-width: 1000px) {
+    .camp-layout { flex-direction: column; }
+    .camp-side { position: static; width: 100%; max-height: 280px; }
+  }
 
   /* ปุ่มช่วงเวลาแบบ pill */
   .date-pill { background: #fff; border: 1px solid var(--brand); color: var(--brand); border-radius: 999px; height: 38px; padding: 0 16px; display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 600; transition: background 150ms var(--ease), color 150ms var(--ease), transform 160ms var(--ease); }
@@ -457,12 +479,17 @@
 
     <!-- ========== PAGE: แคมเปญของฉัน ========== -->
     <section class="page" id="page-campaigns">
+      <div class="camp-layout">
+      <aside class="camp-side card">
+        <div class="cs-head">
+          <span>บัญชีโฆษณา</span>
+          <span class="cs-actions"><a onclick="campSelectAll(true)">ทั้งหมด</a> · <a onclick="campSelectAll(false)">ล้าง</a></span>
+        </div>
+        <div id="campProfiles"></div>
+      </aside>
+      <div class="camp-main">
       <div class="card">
         <div class="filter-bar">
-          <div class="field" style="margin:0;flex:2;min-width:300px">
-            <label>บัญชีโฆษณา (ติ๊กเลือกที่จะแสดง — จัดกลุ่มตาม BM)</label>
-            <div id="campProfiles" style="min-height:38px"></div>
-          </div>
           <select id="campDate" style="display:none">
             <option value="today" selected>วันนี้</option>
             <option value="last_7d">7 วันล่าสุด</option>
@@ -526,6 +553,8 @@
             <tbody id="campaignRows"><tr><td colspan="12" class="tbl-msg">ยังไม่ได้โหลด — ติ๊กเลือกบัญชีแล้วกด "รีเฟรชข้อมูล"</td></tr></tbody>
           </table>
         </div>
+      </div>
+      </div>
       </div>
     </section>
 
@@ -854,23 +883,31 @@ async function buildCampFilters() {
       (byBm[bm] = byBm[bm] || []).push(a);
     }
     for (const [bm, accts] of Object.entries(byBm)) {
-      const chips = accts.map(a => {
+      const rows = accts.map(a => {
         const v = p.id + ':' + a.account_id;
         const usable = a.account_status === 1;
         const checked = hadAny ? (prev.has(v) ? 'checked' : '') : (usable ? 'checked' : '');
-        return `<label class="lp-chip ${usable ? '' : 'chip-off'}" title="${usable ? '' : 'บัญชีนี้ถูกปิด/มีปัญหา'}"><input type="checkbox" value="${v}" onchange="loadCampaigns()" ${checked}> ${esc(a.name)}${usable ? '' : ' ⛔'}</label>`;
+        return `<label class="acct-row ${usable ? '' : 'row-off'}" title="${esc(a.name)}${usable ? '' : ' — ถูกปิด/มีปัญหา'}">
+          <input type="checkbox" value="${v}" onchange="loadCampaigns()" ${checked}>
+          <span class="acct-dot ${usable ? 'ok' : 'bad'}"></span>
+          <span class="acct-name">${esc(a.name)}</span>
+        </label>`;
       }).join('');
-      groups.push({ title: `${tokenProfiles.length > 1 ? p.label + ' • ' : ''}${bm}`, chips });
+      groups.push({ title: `${tokenProfiles.length > 1 ? p.label + ' • ' : ''}${bm}`, rows, count: accts.length });
     }
   }));
 
   cp.innerHTML = groups.length
-    ? groups.map(g => `<div class="camp-group">
-        <div class="camp-group-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/></svg>${esc(g.title)}</div>
-        <div class="camp-group-chips">${g.chips}</div>
-      </div>`).join('')
+    ? groups.map(g => `<details class="camp-bm" open>
+        <summary><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/></svg><span class="bm-name" title="${esc(g.title)}">${esc(g.title)}</span><span class="bm-count">${g.count}</span></summary>
+        ${g.rows}
+      </details>`).join('')
     : '<span class="hint">ไม่พบบัญชีโฆษณา</span>';
   campFiltersBuilt = true;
+}
+function campSelectAll(on) {
+  document.querySelectorAll('#campProfiles input[type="checkbox"]').forEach(i => { i.checked = on; });
+  loadCampaigns();
 }
 function acctLabel(pid, acctId) {
   const d = accountCache[pid];
