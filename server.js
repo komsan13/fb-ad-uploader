@@ -89,7 +89,10 @@ async function fb(pathname, params, method, token, attempt = 0) {
       await new Promise((r) => setTimeout(r, (attempt + 1) * 20000));
       return fb(pathname, params, method, token, attempt + 1);
     }
-    throw new Error(e.error_user_msg || e.message || 'FB API error');
+    // error_user_msg เป็นภาษาตาม locale ของ token — เก็บ message อังกฤษดิบไว้ให้โค้ดที่ต้องจับ pattern ใช้ด้วย
+    const err = new Error(e.error_user_msg || e.message || 'FB API error');
+    err.fbMessage = e.message || '';
+    throw err;
   }
   return json;
 }
@@ -764,12 +767,14 @@ app.post('/api/launch', upload.any(), async (req, res) => {
             adset = await fb(`${acct}/adsets`, adsetParams, 'POST', token);
             break;
           } catch (e) {
-            if (tryNo < 2 && adsetParams.regional_regulation_identities && /regional_regulation|beneficiary|payer|payor/i.test(e.message)) {
+            const msg = `${e.message} ${e.fbMessage || ''}`; // ข้อความแปลไทย + อังกฤษดิบ — จับ pattern ได้ทั้งคู่
+            if (tryNo < 2 && adsetParams.regional_regulation_identities && /regional_regulation|beneficiary|payer|payor/i.test(msg)) {
               send({ type: 'warn', index: i, msg: `FB ไม่ยอมรับผู้ลงโฆษณาของบัญชีนี้ (${e.message}) — ขึ้นต่อโดยไม่ระบุ` });
               delete adsetParams.regional_regulation_identities;
               continue;
             }
-            if (tryNo < 2 && adsetParams.existing_customer_budget_percentage !== undefined && /existing_customer/i.test(e.message)) {
+            if (tryNo < 2 && adsetParams.existing_customer_budget_percentage !== undefined && /existing_customer|เพดานงบประมาณของลูกค้า/i.test(msg)) {
+              send({ type: 'warn', index: i, msg: 'FB ไม่รองรับกลยุทธ์วงจรลูกค้ากับแคมเปญแบบนี้ — ขึ้นต่อโดยไม่ตั้งค่านี้' });
               delete adsetParams.existing_customer_budget_percentage;
               continue;
             }
