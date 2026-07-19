@@ -1470,6 +1470,8 @@ const AP_PATH = path.join(path.dirname(CONFIG_PATH), 'autopilot-state.json');
 const AP_MAX_FIX_PER_DAY = 10;      // เพดานการแก้อัตโนมัติทั้งระบบต่อวัน
 const AP_FREEZE_REJECTIONS = 3;     // โดนปฏิเสธกี่ตัวใน 24 ชม. ถึงหยุดบัญชีนั้น
 const AP_MAX_DIAG_RETRY = 3;        // วินิจฉัยพลาดชั่วคราวได้กี่ครั้งก่อนเลิกลองแอดตัวนั้น
+const AP_SAME_REASON_STOP = 2;      // เหตุผลหมวดเดิมซ้ำกี่ครั้งถึงถือว่าไม่ใช่ปัญหาครีเอทีฟ
+const AP_REASON_WINDOW = 7 * 24 * 3600 * 1000;   // นับย้อนหลังกี่วัน
 
 // FB ส่งจำนวนเงินมาเป็นหน่วยย่อยของสกุลนั้น ซึ่งบางสกุลไม่มีหน่วยย่อยเลย
 // หาร 100 ดื้อๆ กับ JPY/KRW/VND = อ่านงบต่ำกว่าจริง 100 เท่า แล้วเพดานงบจะไม่มีวันทำงาน
@@ -1480,7 +1482,7 @@ const AP_LOG_MAX = 200;
 const AP_DEFAULTS = () => ({
   frozen: {}, handled: {}, retryOf: {}, rejections: {}, fixes: [], log: [],
   baselined: {}, created: {}, warned: {}, campaign: {}, scaled: {}, retries: {}, counted: {},
-  owned: [], paused: {}, pausedLog: [],
+  owned: [], paused: {}, pausedLog: [], reasons: {}, noRotate: {},
 });
 function loadAp() {
   try {
@@ -1841,6 +1843,17 @@ async function apRefill(cfg, prof, a, ads, s, alerts) {
   if (!prof.pageId) problems.push(`โปรไฟล์ "${prof.label}" ยังไม่ได้เลือกเพจ`);
   // คำเตือนแต่ละชนิดต้องมีคีย์ของตัวเอง — เดิมใช้คีย์ร่วมกันแล้วล้างทิ้งตรงนี้ทุกรอบ
   // ผลคือ cap/pixel/empty เด้งเข้า Telegram ใหม่ทุกรอบตรวจตราบใดที่เงื่อนไขยังค้าง
+  // โดนปฏิเสธด้วยเหตุผลเดิมซ้ำแม้เปลี่ยนครีเอทีฟแล้ว = เติมของใหม่เข้าไปก็โดนข้อเดิม
+  // เผาครีเอทีฟในคลังทิ้งฟรี และยิ่งรัวยิ่งเข้าข่าย ban evasion ในสายตา Meta
+  const nr = s.noRotate[acctId];
+  if (nr) {
+    if (s.warned['blocked:' + acctId] !== apToday()) {
+      const m = `🚧 ${a.name}: ไม่เติมแอดให้ — ติดเหตุผลเดิม "${nr.cat}" ซ้ำ ${nr.hits} ครั้ง ต้องแก้ต้นเหตุแล้วปลดล็อกเอง`;
+      alerts.push(m); apLog(s, 'blocked', m, acctId); s.warned['blocked:' + acctId] = apToday();
+    }
+    return;
+  }
+
   // ไม่ใช่เหตุให้หยุด แต่ต้องรู้ — แอดที่ไม่มีผู้ลงโฆษณาเสี่ยงโดนปฏิเสธหรือไม่ยิง
   if (!(cfg.beneficiaries || {})[acctId] && s.warned['dsa:' + acctId] !== apToday()) {
     const m = `⚠️ ${a.name}: ยังไม่ได้เลือก "ผู้ลงโฆษณา" ให้บัญชีนี้ — แอดที่ระบบสร้างจะไม่มีข้อมูลนี้ เสี่ยงโดนปฏิเสธ ไปตั้งที่เมนู "บัญชี FB"`;
@@ -2225,6 +2238,24 @@ async function autopilotTick(mode = 'full') {
           alerts.push(m); apLog(s, 'manual', m, acctId);
           continue;
         }
+        // ---- ตัวตัดสินว่าปัญหาอยู่ที่ครีเอทีฟ หรืออยู่ที่ตัวสินค้า ----
+        // เปลี่ยนคลิป/แคปชั่นแล้วยิงใหม่เป็นเรื่องปกติ "ถ้า" ปัญหาอยู่ที่ครีเอทีฟจริง
+        // แต่ถ้าหมวดเดิมเด้งซ้ำทั้งที่ครีเอทีฟคนละตัว = ปัญหาอยู่ที่สินค้า/ปลายทาง
+        // หมุนต่อก็แค่รอให้ตัวตรวจพลาด ไม่ได้ทำให้ถูกนโยบายขึ้น และเป็นสัญญาณที่ Meta ใช้จับ ban evasion
+        const cat = (fbkCats[0] || policy || 'ไม่ระบุ').slice(0, 80);
+        const rk = `${acctId}|${cat}`;
+        s.reasons = s.reasons || {};
+        s.reasons[rk] = apRecent(s.reasons[rk], AP_REASON_WINDOW).concat(Date.now());
+        const hits = s.reasons[rk].length;
+
+        if (hits >= AP_SAME_REASON_STOP && !s.noRotate[acctId]) {
+          s.noRotate[acctId] = { since: Date.now(), cat, hits };
+          const m = `🚧 ${a.name}: หยุดสร้างแอดใหม่ให้บัญชีนี้ — โดนปฏิเสธด้วยเหตุผลเดิม "${cat}" ${hits} ครั้งทั้งที่เปลี่ยนคลิปและแคปชั่นแล้ว\n`
+            + `   แปลว่าไม่ใช่ปัญหาที่ครีเอทีฟ แต่เป็นที่ตัวสินค้าหรือหน้าปลายทาง — เปลี่ยนครีเอทีฟต่อไปก็จะโดนข้อเดิม\n`
+            + `   แก้ต้นเหตุแล้วกดปลดล็อกในเว็บเพื่อให้ระบบทำงานต่อ`;
+          alerts.push(m); apLog(s, 'blocked', m, acctId);
+        }
+
         const spec = (ad.creative || {}).object_story_spec || {};
         const vd = spec.video_data || spec.link_data || {};
         const curMsg = vd.message || '';
@@ -2331,6 +2362,7 @@ app.get('/api/autopilot', (req, res) => {
     scaledToday: Object.values(s.scaled || {}).filter((t) => Date.now() - t < 24 * 3600 * 1000).length,
     killSwitch: !!s.killSwitch,
     frozen: s.frozen,
+    noRotate: s.noRotate || {},
     fixesToday: apRecent(s.fixes, 24 * 3600 * 1000).length,
     maxPerDay: AP_MAX_FIX_PER_DAY,
     maxNewPerAcct: AP_MAX_NEW_ADS_PER_ACCT_DAY,
@@ -2400,9 +2432,13 @@ app.get('/api/autopilot/stream', (req, res) => {
 app.post('/api/autopilot/unfreeze', (req, res) => {
   const s = loadAp();
   const id = String(req.body.acctId || '');
-  if (!s.frozen[id]) return res.status(404).json({ error: 'บัญชีนี้ไม่ได้ถูกหยุดอยู่' });
+  if (!s.frozen[id] && !s.noRotate[id]) return res.status(404).json({ error: 'บัญชีนี้ไม่ได้ถูกหยุดอยู่' });
   delete s.frozen[id];
+  delete s.noRotate[id];
   s.rejections[id] = [];
+  // ล้างตัวนับเหตุผลของบัญชีนี้ด้วย ไม่งั้นโดนอีกครั้งเดียวก็ติดล็อกซ้ำทันที
+  for (const k of Object.keys(s.reasons || {})) { if (k.startsWith(id + '|')) delete s.reasons[k]; }
+  s.warned['blocked:' + id] = '';
   apLog(s, 'info', `ปลดล็อกบัญชี ${id} ด้วยมือ`, id);
   saveAp(s);
   res.json({ ok: true });

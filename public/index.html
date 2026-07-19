@@ -2366,7 +2366,7 @@ async function loadLaunchDefaults() {
 
 // ---------- ระบบอัตโนมัติ (autopilot) ----------
 const AP_LEVEL = { fixed: '🔧', dead: '⛔', freeze: '🧊', manual: '✕', warn: '⚠️', info: 'ℹ️',
-  refill: '➕', scale: '📈', stock: '📦', sleep: '💤', empty: '📭', pause: '🛑', test: '🧪' };
+  refill: '➕', scale: '📈', stock: '📦', sleep: '💤', empty: '📭', pause: '🛑', test: '🧪', blocked: '🚧' };
 async function loadAutopilot() {
   if (!document.getElementById('apEnabled')) return;
   let d;
@@ -2391,6 +2391,11 @@ async function loadAutopilot() {
   if (frozen.length) {
     st.push('<b style="color:var(--red)">บัญชีที่ถูกหยุด:</b> ' + frozen.map(([id, f]) =>
       `${esc(id)} (${esc(f.reason)}) <button class="btn-light btn-sm" onclick="apUnfreeze(${jsStr(id)})">ปลดล็อก</button>`).join(' • '));
+  }
+  const blocked = Object.entries(d.noRotate || {});
+  if (blocked.length) {
+    st.push('<b style="color:#b8860b">บัญชีที่หยุดเติมแอด (ปัญหาไม่ได้อยู่ที่ครีเอทีฟ):</b> ' + blocked.map(([id, b]) =>
+      `${esc(id)} — โดน "${esc(b.cat)}" ซ้ำ ${b.hits} ครั้ง <button class="btn-light btn-sm" onclick="apUnfreeze(${jsStr(id)})">แก้ต้นเหตุแล้ว ปลดล็อก</button>`).join(' • '));
   }
   document.getElementById('apStatus').innerHTML = st.join(' • ');
 
