@@ -2169,7 +2169,7 @@ async function autopilotTick(mode = 'full') {
       let ads = [];
       try {
         ads = await fbAll(`${acct}/ads`, {
-          fields: 'id,name,effective_status,adset_id,issues_info,creative{id,object_story_spec}',
+          fields: 'id,name,effective_status,adset_id,issues_info,ad_review_feedback,creative{id,object_story_spec}',
           limit: 200,
         }, prof.accessToken);
       } catch { continue; }
@@ -2211,6 +2211,20 @@ async function autopilotTick(mode = 'full') {
         }
 
         const issue = (ad.issues_info || [])[0] || {};
+        // issues_info มักว่างเปล่า เหตุผลจริงอยู่ใน ad_review_feedback.global เป็น {หมวดนโยบาย: คำอธิบาย}
+        // เดิมอ่านแต่ issues_info จึงเรียก AI มาวินิจฉัยโดยไม่มีข้อมูลอะไรเลย แล้วได้ "ไม่ชัดเจน" ทุกครั้ง
+        const fbk = ((ad.ad_review_feedback || {}).global) || {};
+        const fbkCats = Object.keys(fbk);
+        const policy = issue.error_summary || fbkCats.join(', ') || '';
+        const reason = issue.error_message || fbkCats.map((k) => `${k}: ${fbk[k]}`).join('\n') || '';
+
+        // ไม่มีเหตุผลจาก FB เลย = ถามไปก็ตอบไม่ได้ ไม่ต้องเสียค่า AI
+        if (!policy && !reason) {
+          apMark(s.handled, ad.id, 'no-reason');
+          const m = `✕ ${a.name}: "${ad.name}" โดนปฏิเสธแต่ FB ไม่ให้เหตุผลมาเลย — ต้องเข้าไปดูใน Ads Manager เอง`;
+          alerts.push(m); apLog(s, 'manual', m, acctId);
+          continue;
+        }
         const spec = (ad.creative || {}).object_story_spec || {};
         const vd = spec.video_data || spec.link_data || {};
         const curMsg = vd.message || '';
@@ -2236,9 +2250,7 @@ async function autopilotTick(mode = 'full') {
 
         let dx;
         try {
-          dx = await aiDiagnoseRejection(apiKey, {
-            policy: issue.error_summary, reason: issue.error_message, message: curMsg, headline: curHead,
-          });
+          dx = await aiDiagnoseRejection(apiKey, { policy, reason, message: curMsg, headline: curHead });
         } catch (e) {
           // AI ล่มชั่วคราว (429/529/เน็ตหลุด) ไม่ใช่คำตัดสินว่าแอดนี้แก้ไม่ได้ — ให้โอกาสลองใหม่แบบมีเพดาน
           const n = ((s.retries[ad.id] || {}).v || 0) + 1;
