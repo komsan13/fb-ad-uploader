@@ -2699,9 +2699,11 @@ const AP_LEVEL = { fixed: '🔧', dead: '⛔', freeze: '🧊', manual: '✕', wa
 // เรนเดอร์ช่องเพดานจาก limitSpec ที่เซิร์ฟเวอร์ส่งมา — ป้าย/กรอบอยู่ที่เดียวใน server.js
 // ถ้าก๊อปมาเขียนซ้ำที่นี่ วันหนึ่งกรอบสองฝั่งจะไม่ตรงกันแล้วหน้าเว็บจะโกหกว่าตั้งได้ถึงเท่าไหร่
 let apLimitsBuilt = false;
+let apSpec = null, apCur = null;
 function apRenderLimits(d) {
   const spec = d.limitSpec, cur = d.limits;
   if (!spec || !cur) return;
+  apSpec = spec; apCur = cur;
 
   // ตัวเลขในย่อหน้าอธิบาย ต้องเดินตามค่าจริง ไม่ใช่ค้างที่เลขที่พิมพ์ไว้ตอนเขียนหน้า
   const put = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
@@ -2734,8 +2736,23 @@ function apRenderLimits(d) {
 }
 function apResetLimits() {
   if (!confirm('คืนค่าตั้งต้นทั้งหมด?')) return;
-  for (const el of document.querySelectorAll('[id^="apLim_"]')) el.value = '';
-  saveAutopilot();
+  // ส่ง flag ตรงๆ ไม่ใช่ส่งช่องว่างทั้งแผงให้เซิร์ฟเวอร์เดา — และเซิร์ฟเวอร์จะลบคีย์ทิ้ง
+  // ไม่ใช่เขียนตัวเลขของวันนี้ลงดิสก์ ถ้าวันหน้ารัดค่าตั้งต้นให้แน่นขึ้น เครื่องนี้จะได้รับผลด้วย
+  saveAutopilot({ resetLimits: true });
+}
+
+// หย่อนเกราะกันแบนต้องยืนยันก่อนเสมอ — CLAUDE.md ระบุว่าเกราะพวกนี้ห้ามถอด
+// ตั้งเข้มกว่าค่าตั้งต้นไม่ต้องถาม เพราะทิศทางนั้นปลอดภัยกว่าอยู่แล้ว
+function apConfirmLoosen(sending) {
+  if (!apSpec || !apCur) return true;
+  const risky = Object.keys(apSpec).filter((k) => {
+    const s = apSpec[k], v = Number(sending[k]);
+    return s.rail && Number.isFinite(v) && v > s.def && v > apCur[k];
+  });
+  if (!risky.length) return true;
+  const lines = risky.map((k) => `  • ${apSpec[k].label}: ${apCur[k]} → ${sending[k]}`);
+  return confirm('กำลังหย่อนเกราะกันบัญชีโดนแบน\n\n' + lines.join('\n')
+    + '\n\nบัญชีจะสะสมประวัติเสียได้มากขึ้นก่อนระบบหยุดตัวเอง\nบัญชีที่โดนแบนแล้วเอาคืนไม่ได้ — แน่ใจไหม?');
 }
 async function loadAutopilot() {
   if (!document.getElementById('apEnabled')) return;
@@ -2812,9 +2829,18 @@ function apPushLog(l) {
   while (box.children.length > 60) box.lastChild.remove();
 }
 
-async function saveAutopilot() {
+async function saveAutopilot(extra) {
+  // ช่องที่ว่างหรืออ่านไม่ออก = ไม่ส่งไป เพื่อไม่ให้เซิร์ฟเวอร์เขียนค่าตั้งต้นทับค่าที่เข้มกว่า
+  const limits = {};
+  for (const el of document.querySelectorAll('[id^="apLim_"]')) {
+    if (el.value.trim() !== '') limits[el.id.slice(6)] = el.value.trim();
+  }
+  // ช่องต่างๆ เรียกผ่าน onchange="saveAutopilot()" ซึ่งไม่ส่ง arg มา แต่กันไว้ไม่ให้ Event
+  // หลุดเข้าไปกลายเป็น body ถ้าวันหน้ามีคนเผลอผูก onchange="saveAutopilot" แบบไม่มีวงเล็บ
+  const reset = !!(extra && extra.resetLimits === true);
+  if (!reset && !apConfirmLoosen(limits)) { loadAutopilot(); return; }
   try {
-    await fetch('/api/autopilot', {
+    const r = await fetch('/api/autopilot', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         enabled: document.getElementById('apEnabled').checked,
@@ -2822,12 +2848,10 @@ async function saveAutopilot() {
         testMode: document.getElementById('apTest').checked,
         minAds: Number(document.getElementById('apMinAds').value) || 0,
         scaleMaxBudget: Number(document.getElementById('apScaleMax').value) || 0,
-        // ช่องว่าง = ขอค่าตั้งต้น ส่ง '' ไปให้เซิร์ฟเวอร์ตัดสิน ไม่ใช่แปลงเป็น 0 ที่นี่
-        // (0 อยู่นอกกรอบทุกตัว เซิร์ฟเวอร์จะบีบเป็น min ซึ่งไม่ใช่สิ่งที่ผู้ใช้ขอ)
-        limits: Object.fromEntries([...document.querySelectorAll('[id^="apLim_"]')]
-          .map((el) => [el.id.slice(6), el.value])),
+        ...(reset ? { resetLimits: true } : { limits }),
       }),
     });
+    if (!r.ok) throw new Error('เซิร์ฟเวอร์ตอบ ' + r.status);
   } catch (e) { alert('บันทึกไม่สำเร็จ: ' + e.message); }
   loadAutopilot();
 }
