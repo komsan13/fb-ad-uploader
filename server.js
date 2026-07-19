@@ -90,11 +90,37 @@ function publicProfiles(cfg) {
 // error code ของ FB ที่แปลว่า "ยิงเร็วเกิน" — รอแล้วลองใหม่ได้ ไม่ใช่ความผิดของแอด
 const THROTTLE_CODES = new Set([4, 17, 32, 613, 80000, 80003, 80004, 80014]);
 
-// ---- เกราะ rate limit ----
+// ---- เกราะ rate limit + app-block ----
 // Meta แนบโควตาการใช้ API มากับทุก response — คำแนะนำทางการคือ "หยุดยิงก่อนชนลิมิต
 // เพราะยิงต่อตอนโดนกั้นมีแต่ยืดเวลาโดนแขวน" ตัวนี้คือสวิตช์พักกลาง: fb() ตั้งเมื่อเห็นสัญญาณ
 // แล้วรอบตรวจอัตโนมัติ (autopilotTick/watchTick) เช็คก่อนยิง ส่วนงานที่ผู้ใช้กดเองไม่ถูกกั้น
-let fbCoolUntil = 0;
+//
+// เซฟลงไฟล์เพราะ deploy/รีสตาร์ทบ่อย — ถ้าเก็บแค่ในหน่วยความจำ คำสั่งพักของ Meta จะหายทุกครั้งที่
+// redeploy แล้วระบบกลับมายิง API ตัวที่เพิ่งโดนกั้นทันที (เกราะรั่วพอดีตอนที่มันควรทำงาน)
+const COOLDOWN_PATH = path.join(path.dirname(CONFIG_PATH), 'fb-cooldown.json');
+// เพดานเวลาพัก 6 ชม. — กันค่า estimated_time_to_regain_access ที่ใหญ่ผิดปกติ หรือไฟล์เพี้ยน
+// ทำให้ระบบพักค้างยาวโดยไม่มีทางออก (รีเซ็ตด้วยมือ: ลบไฟล์ fb-cooldown.json บนเซิร์ฟเวอร์)
+const FB_COOL_CAP_MS = 6 * 3600 * 1000;
+let fbCoolUntil = 0;       // rate-limit: พักทั้ง autopilot + watchTick (ลิมิตกระทบทุกอย่าง)
+let fbAppBlockUntil = 0;   // app-block (error 200): พักเฉพาะ autopilot — watchTick ยังโพรบต่อเพื่อจับตอนหาย
+try {
+  const c = JSON.parse(fs.readFileSync(COOLDOWN_PATH, 'utf8'));
+  const cap = Date.now() + FB_COOL_CAP_MS;
+  fbCoolUntil = Math.min(Number(c.coolUntil) || 0, cap);
+  fbAppBlockUntil = Math.min(Number(c.appBlockUntil) || 0, cap);
+} catch { /* ยังไม่เคยพัก */ }
+function persistCooldowns() {
+  try {
+    const tmp = COOLDOWN_PATH + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify({ coolUntil: fbCoolUntil, appBlockUntil: fbAppBlockUntil }));
+    fs.renameSync(tmp, COOLDOWN_PATH);
+  } catch { /* ข้าม */ }
+}
+function fbSetCool(until) { if (until > fbCoolUntil) { fbCoolUntil = until; persistCooldowns(); } }
+function fbSetAppBlock(until) { if (until > fbAppBlockUntil) { fbAppBlockUntil = until; persistCooldowns(); } }
+function fbClearAppBlock() { if (fbAppBlockUntil) { fbAppBlockUntil = 0; persistCooldowns(); } }
+// autopilot พักเมื่อ "ลิมิต" หรือ "แอปถูกบล็อก" — watchTick พักเฉพาะลิมิต (ต้องโพรบต่อเพื่อจับตอนแอปหายบล็อก)
+const apPauseUntil = () => Math.max(fbCoolUntil, fbAppBlockUntil);
 
 // X-App-Usage: {"call_count":28,"total_time":25,"total_cputime":25} (หน่วย = % ของลิมิต)
 // X-Business-Use-Case-Usage: {"<biz-id>":[{call_count,total_time,total_cputime,estimated_time_to_regain_access(นาที)}]}
@@ -110,8 +136,9 @@ function fbNoteUsage(res) {
         regainMin = Math.max(regainMin, Number(u.estimated_time_to_regain_access) || 0);
       }
     }
-    if (regainMin > 0) fbCoolUntil = Math.max(fbCoolUntil, Date.now() + (regainMin + 1) * 60000);
-    else if (pct >= 90) fbCoolUntil = Math.max(fbCoolUntil, Date.now() + 10 * 60000);
+    // clamp เวลาที่ Meta บอกมาไม่ให้เกินเพดาน — ค่าใหญ่ผิดปกติ/เพี้ยน จะได้ไม่พักค้างยาว
+    if (regainMin > 0) fbSetCool(Date.now() + Math.min((regainMin + 1) * 60000, FB_COOL_CAP_MS));
+    else if (pct >= 90) fbSetCool(Date.now() + 10 * 60000);
   } catch { /* header เพี้ยนไม่ใช่เหตุให้ call พัง */ }
 }
 
@@ -151,13 +178,16 @@ async function fb(pathname, params, method, token, attempt = 0) {
         return fb(pathname, params, method, token, attempt + 1);
       }
       // ลองจนครบแล้วยังโดนกั้น = Meta ต้องการให้หยุดจริง — พักรอบอัตโนมัติทั้งระบบ
-      fbCoolUntil = Math.max(fbCoolUntil, Date.now() + 30 * 60000);
+      fbSetCool(Date.now() + 30 * 60000);
     }
     // error_user_msg เป็นภาษาตาม locale ของ token — เก็บ message อังกฤษดิบไว้ให้โค้ดที่ต้องจับ pattern ใช้ด้วย
     let msg = e.error_user_msg || e.message || 'FB API error';
     // แปล error ระดับระบบให้เป็นคำแนะนำที่ทำตามได้จริง
     if (e.code === 200 && /API access blocked/i.test(e.message || '')) {
       msg = 'Meta บล็อกการเข้า API ของ "แอป" ที่ใช้เชื่อม (ไม่ใช่ตัวบัญชี FB) — เปิด developers.facebook.com/apps เพื่อดูประกาศ/กดอุทธรณ์ หรือสร้างแอปใหม่แล้วใส่ App ID/Secret ในหน้า "บัญชี FB" แล้วล็อกอินใหม่';
+      // แอปโดนบล็อกทั้งตัว = ทุก call จะโยน 200 เหมือนกันหมด พัก autopilot ไม่ให้ยิงรัวเปล่าๆ ทุกรอบ
+      // watchTick ยังโพรบต่อ (ไม่ถูกกั้นด้วย appBlock) เพื่อจับตอนแอปกลับมา + เตือนผู้ใช้ทุกชั่วโมง
+      fbSetAppBlock(Date.now() + 30 * 60000);
     } else if (e.code === 190) {
       msg = 'token หมดอายุหรือถูกยกเลิก — ไปหน้า "บัญชี FB" แล้วกด "เข้าสู่ระบบด้วย Facebook" ใหม่' + (e.message ? ` (${e.message})` : '');
     }
@@ -165,6 +195,7 @@ async function fb(pathname, params, method, token, attempt = 0) {
     err.fbMessage = e.message || '';
     throw err;
   }
+  fbClearAppBlock();   // เรียก API สำเร็จ = แอปกลับมาเข้าถึงได้แล้ว ปลดพัก autopilot ทันที (ปกติ no-op)
   return json;
 }
 
@@ -207,6 +238,7 @@ async function uploadVideo(acct, file, token, attempt = 0) {
   let json;
   try {
     const res = await fetch(`${VIDEO_API}/${acct}/advideos`, { method: 'POST', body: form });
+    fbNoteUsage(res);   // อัปวิดีโอคือ call หนักสุด — อ่านโควตาจาก header ด้วย ไม่งั้นพลาดสัญญาณตัวที่เสี่ยงสุด
     const text = await res.text();
     try { json = JSON.parse(text); } catch { throw new Error(`FB ตอบกลับผิดปกติ (HTTP ${res.status})`); }
   } catch (err) {
@@ -2636,14 +2668,25 @@ async function autopilotTick(mode = 'full') {
   if (s.killSwitch) return;
   apPrune(s);
 
-  // อยู่ในช่วงพักตามสัญญาณลิมิตของ Meta (ดู fbNoteUsage) — ข้ามรอบนี้ทั้งรอบ
-  if (Date.now() < fbCoolUntil) {
-    if (s.warned.throttleUntil !== fbCoolUntil) {
-      s.warned.throttleUntil = fbCoolUntil;
-      apLog(s, 'warn', `⏳ Meta แจ้งว่าใช้โควตา API ใกล้เต็ม — พักรอบตรวจอัตโนมัติ ~${Math.ceil((fbCoolUntil - Date.now()) / 60000)} นาที แล้วไปต่อเอง`);
+  // อยู่ในช่วงพัก (ลิมิต API จาก fbNoteUsage หรือแอปโดนบล็อกจาก error 200) — ข้ามรอบนี้ทั้งรอบ
+  // เตือนด้วยธง paused (ไม่ใช่เทียบ pauseUntil) เพราะตอนบล็อกยาว ตัวจับเวลาถูกรีอาร์มทุก ~30 นาที
+  // ถ้าเทียบ timestamp จะเด้งเตือนซ้ำทั้งวัน — เอาแค่ตอนเข้าโหมดพักครั้งแรก + ตอนกลับมาทำงาน
+  if (Date.now() < apPauseUntil()) {
+    if (!s.warned.paused) {
+      s.warned.paused = true;
+      apLog(s, 'warn', '⏳ Meta จำกัดการเข้า API — พักรอบตรวจอัตโนมัติชั่วคราว แล้วไปต่อเอง');
       saveAp(s);
+      // ระบบเงินที่รันไม่มีคนเฝ้าหยุดไปเงียบๆ ผู้ใช้ต้องรู้
+      await tgSend(cfg, '⏸️ FB Ad Uploader: Meta จำกัดการเข้า API — พักรอบตรวจอัตโนมัติชั่วคราว แล้วระบบไปต่อเอง');
     }
     return;
+  }
+  // ออกจากช่วงพักแล้ว — เพิ่งกลับมาก็แจ้งครั้งเดียวแล้วเคลียร์ธง
+  if (s.warned.paused) {
+    s.warned.paused = false;
+    apLog(s, 'info', '▶️ กลับมาเข้า API ได้แล้ว — ระบบทำงานต่อตามปกติ');
+    saveAp(s);
+    await tgSend(cfg, '▶️ FB Ad Uploader: กลับมาเข้า API ได้แล้ว — ระบบทำงานต่อตามปกติ');
   }
 
   const apiKey = cfg.anthropicKey || process.env.ANTHROPIC_API_KEY;

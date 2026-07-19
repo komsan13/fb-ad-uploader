@@ -24,8 +24,9 @@ function makeFakeFb(world) {
       const fail = (message, code = 100) => send({ error: { message, code } }, 400);
 
       // ให้เทสแทรกพฤติกรรมเฉพาะเคสได้ (เช่น บังคับให้ endpoint หนึ่งพัง)
+      // hook.errorCode = ใส่ code ของ FB เองได้ (เช่น 200 = API access blocked) ไม่งั้น default 100
       const hook = world.route && world.route(req.method, path, params);
-      if (hook) return hook.error ? fail(hook.error) : send(hook);
+      if (hook) return hook.error ? fail(hook.error, hook.errorCode || 100) : send(hook);
 
       // ---- อ่าน ----
       if (req.method === 'GET') {

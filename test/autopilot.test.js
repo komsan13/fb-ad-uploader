@@ -601,3 +601,70 @@ describe('บาลานซ์เพจ + กันเพจแตก', () => {
     assert.deepStrictEqual(ids.sort(), ['PG_A', 'PG_B'], 'dropdown ต้องเห็นเฉพาะเพจที่ลงโฆษณาได้');
   });
 });
+
+// ---------- เกราะ Meta block: persist cooldown, app-block backoff, เตือน Telegram ----------
+describe('เกราะ Meta block API', () => {
+  const fs = require('node:fs'), path = require('node:path');
+  const coolFile = (dir) => {
+    try { return JSON.parse(fs.readFileSync(path.join(dir, 'fb-cooldown.json'), 'utf8')); }
+    catch { return null; }
+  };
+
+  test('fix1: โควตาแตะ 90% ต้องเซฟ cooldown ลงไฟล์ (รอด redeploy)', async (t) => {
+    const world = freshWorld();
+    world.headers = { 'x-app-usage': '{"call_count":95,"total_time":10,"total_cputime":10}' };
+    const { base, dir } = await boot(t, { world });
+    await post(base, '/api/autopilot/run');
+    const c = coolFile(dir);
+    assert.ok(c, 'ต้องมีไฟล์ fb-cooldown.json');
+    assert.ok(c.coolUntil > Date.now(), 'coolUntil ต้องเป็นเวลาในอนาคต — เก็บไว้ให้รอดรีสตาร์ท');
+  });
+
+  test('fix4: แอปโดนบล็อก (error 200) ต้องพัก autopilot รอบถัดไป + เซฟ appBlockUntil', async (t) => {
+    const world = freshWorld();
+    world.route = () => ({ error: 'API access blocked', errorCode: 200 });   // ทุก call โดนบล็อก
+    const { base, dir } = await boot(t, { world });
+    await post(base, '/api/autopilot/run');            // รอบแรก เจอ 200 → ตั้ง appBlock
+    const before = world.calls.length;
+    assert.ok(before > 0, 'รอบแรกต้องพยายามยิงก่อน');
+    const c = coolFile(dir);
+    assert.ok(c && c.appBlockUntil > Date.now(), 'ต้องเซฟ appBlockUntil ไว้');
+    await post(base, '/api/autopilot/run');            // รอบสอง ต้องพัก ไม่ยิงเลย
+    assert.strictEqual(world.calls.length, before, 'แอปโดนบล็อก = รอบถัดไปต้องพัก ไม่ยิง FB ซ้ำเปล่าๆ');
+    assert.strictEqual(readState(dir).warned.paused, true, 'ต้องตั้งธงพักไว้ (ใช้กันเตือนซ้ำ)');
+  });
+
+  test('fix1/4: recovery — หลังแอปหายบล็อก autopilot ต้องกลับมาทำงานและเคลียร์ธงพัก', async (t) => {
+    const world = freshWorld();
+    world.route = () => ({ error: 'API access blocked', errorCode: 200 });
+    const { base, dir } = await boot(t, { world });
+    await post(base, '/api/autopilot/run');            // ตั้ง appBlock
+    await post(base, '/api/autopilot/run');            // พัก → ตั้งธง paused
+    assert.strictEqual(readState(dir).warned.paused, true, 'ต้องอยู่โหมดพัก');
+    world.route = null;                                 // แอปกลับมา
+    await get(base, '/api/accounts?profile=p1');        // call สำเร็จ → ปลด appBlock
+    assert.strictEqual(coolFile(dir).appBlockUntil, 0, 'appBlock ต้องถูกปลดเป็น 0');
+    await post(base, '/api/autopilot/run');            // ไม่พักแล้ว → resume branch เคลียร์ธง
+    assert.strictEqual(readState(dir).warned.paused, false, 'กลับมาทำงานต้องเคลียร์ธงพัก (กัน spam)');
+  });
+
+  test('fix2: เพดานเวลาพัก — estimated_time ใหญ่ผิดปกติ ต้องถูก clamp ไม่พักค้างยาว', async (t) => {
+    const world = freshWorld();
+    // Meta บอกว่าให้รอ 100000 นาที (~69 วัน) — ต้องถูก clamp เหลือ ≤ 6 ชม.
+    world.headers = { 'x-business-use-case-usage': '{"9":[{"type":"ads_management","call_count":10,"estimated_time_to_regain_access":100000}]}' };
+    const { base, dir } = await boot(t, { world });
+    await post(base, '/api/autopilot/run');
+    const c = coolFile(dir);
+    assert.ok(c.coolUntil > Date.now(), 'ต้องพักจริง');
+    assert.ok(c.coolUntil <= Date.now() + 6 * 3600 * 1000 + 60000, 'ต้องไม่พักเกิน 6 ชม. แม้ Meta บอกมาเยอะ');
+  });
+
+  test('fix4: rate-limit ไม่ปลดตอนเรียกสำเร็จ (ต่างจาก app-block)', async (t) => {
+    const world = freshWorld();
+    world.headers = { 'x-app-usage': '{"call_count":95,"total_time":10,"total_cputime":10}' };
+    const { base, dir } = await boot(t, { world });
+    await get(base, '/api/accounts?profile=p1');        // สำเร็จ แต่ header บอกโควตาเกือบเต็ม
+    const c = coolFile(dir);
+    assert.ok(c.coolUntil > Date.now(), 'rate-limit cooldown ต้องยังอยู่ แม้ call จะสำเร็จ (ลิมิตเป็นแบบค่อยเป็นค่อยไป)');
+  });
+});
