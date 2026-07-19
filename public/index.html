@@ -550,7 +550,7 @@
         <div class="card-head-row">
           <div class="pc-step"><span class="pc-step-num">3</span> รายการแอด <span class="h-desc" id="adCount"></span></div>
           <button class="btn-primary btn-sm" style="margin-left:auto" onclick="autoLaunch(this)" title="หยิบวิดีโอ+แคปชั่นจากคลัง สร้างแคมเปญ แล้วขึ้นแอดทุกบัญชีที่ใช้ได้ เปิดยิงทันที">⚡ ขึ้นอัตโนมัติทั้งหมด</button>
-          <button class="btn-light btn-sm" onclick="handToAi(this)" title="บันทึกค่าที่ตั้งไว้ทั้งหมด แล้วให้ AI ขึ้นแอดต่อเองทุก 30 นาที">🤖 จำค่านี้ แล้วให้ AI ขึ้นต่อ</button>
+          <button class="btn-light btn-sm" onclick="handToAi(this)" title="บันทึกค่าที่ตั้งไว้ทั้งหมด แล้วให้ AI ขึ้นแอดต่อเองอัตโนมัติ">🤖 จำค่านี้ แล้วให้ AI ขึ้นต่อ</button>
           <button class="btn-light btn-sm" onclick="openLibPick(null)">🎬 เลือกเอง</button>
         </div>
         <div class="hint" style="margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -874,10 +874,14 @@
       </div>
 
       <div class="card">
-        <h2><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><circle cx="12" cy="12" r="4"/><path d="M4.9 19.1 7.8 16.2"/><path d="M2 12h4"/><path d="M4.9 4.9 7.8 7.8"/></svg></span>ระบบอัตโนมัติ (Autopilot) <span class="h-desc">— เฝ้าแอดทุก 30 นาที เจอแอดโดนปฏิเสธก็วินิจฉัยและแก้ให้เอง</span></h2>
+        <h2><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><circle cx="12" cy="12" r="4"/><path d="M4.9 19.1 7.8 16.2"/><path d="M2 12h4"/><path d="M4.9 4.9 7.8 7.8"/></svg></span>ระบบอัตโนมัติ (Autopilot) <span class="h-desc">— เฝ้าแอดทุก 2 นาที เจอแอดโดนปฏิเสธก็วินิจฉัยและแก้ให้เอง</span></h2>
         <label class="switch-row" style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
           <span class="switch"><input type="checkbox" id="apEnabled" onchange="saveAutopilot()"><span class="sl"></span></span>
           <span><b>เปิดระบบอัตโนมัติ</b> — ให้มันลงมือแก้เองโดยไม่ต้องถาม</span>
+        </label>
+        <label class="switch-row" style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+          <span class="switch"><input type="checkbox" id="apTest" onchange="saveAutopilot()"><span class="sl"></span></span>
+          <span>🧪 <b>โหมดทดสอบ</b> — สร้างแอดจริงบัญชีละ 1 ตัวแต่<b>ปิดไว้ ไม่ใช้เงินสักบาท</b> ให้ดูฝีมือก่อน • ไม่ปิดแอดขาดทุนและไม่ขยายงบ</span>
         </label>
         <label class="switch-row" style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
           <span class="switch"><input type="checkbox" id="apKill" onchange="saveAutopilot()"><span class="sl"></span></span>
@@ -899,7 +903,12 @@
         <div class="hint" style="margin-bottom:10px">ใส่ <b>0</b> = ไม่เติมให้ • ถ้าใส่เลข มันจะหยิบวิดีโอ+แคปชั่นจากคลังขึ้นแอดเองจนครบ <b>เปิดยิงทันที</b> โดยใช้ค่าตั้งต้นในหน้าขึ้นแอด (งบ/ลิงก์/วัตถุประสงค์/กลุ่มเป้าหมาย) — งบอยู่ระดับแคมเปญ (CBO) เพิ่มแอดกี่ตัวก็ไม่ใช้จ่ายเกินงบที่ตั้งไว้</div>
         <div class="hint" style="margin-bottom:10px">
           <b>สิ่งที่มันทำ:</b> อ่านเหตุผลที่ FB ปฏิเสธ → ถ้าปัญหาอยู่ที่ข้อความและระบุได้ชัด จะแก้แล้วขึ้นใหม่ให้ <b>ครั้งเดียวต่อครีเอทีฟ</b> • ถ้าปัญหาอยู่ที่วิดีโอ/หน้าขาย/ระดับบัญชี จะไม่แตะ แค่เตือนคุณ<br>
+          <b>ปิดตัวขาดทุนเอง:</b> แอดที่ใช้เงินเกิน 2 เท่าของเพดาน CPA แล้วยังไม่มีผลลัพธ์ หรือต้นทุนแพงกว่าเพดาน 1.5 เท่า จะถูกปิด (ไม่เกิน 10 ตัว/บัญชี/วัน) แล้วเติมครีเอทีฟใหม่เข้าไปแทน — ใช้เลขจากช่อง "หยุดเมื่อต้นทุน/ผลลัพธ์เกิน" ในหน้าขึ้นแอด ถ้าไม่ได้ตั้งไว้จะไม่ปิดอะไรเลย<br>
           <b>เพดานกันพัง:</b> แก้ได้ไม่เกิน <b id="apCap">10</b> ครั้ง/วันทั้งระบบ • บัญชีไหนโดนปฏิเสธ 3 ตัวใน 24 ชม. จะ<b>หยุดบัญชีนั้นทันที</b>เพื่อกันโดนแบน • แจ้งทุกอย่างเข้า Telegram
+        </div>
+        <div class="hint" style="margin-bottom:10px;background:#fff6e5;border:1px solid #f0d9a8;border-radius:var(--r-md);padding:10px 12px">
+          ⚠️ <b>วิธีหยุดระบบคือปุ่มในหน้านี้เท่านั้น</b> — ระบบถูกตั้งให้ดูแลตัวเองเต็มที่ ถ้าไม่มีแคมเปญที่เปิดอยู่ มันจะสร้างใหม่ให้เสมอ ดังนั้นการเข้าไป <b>pause แคมเปญใน Ads Manager จะไม่ได้ผล</b> เพราะมันจะสร้างตัวใหม่มาแทนภายในไม่กี่นาที<br>
+          จะหยุดจริงต้องปิดสวิตช์ "เปิดระบบอัตโนมัติ" หรือกด "หยุดฉุกเฉิน" ที่นี่
         </div>
         <div style="display:flex;gap:8px;margin-bottom:10px">
           <button class="btn-light btn-sm" onclick="apRunNow(this)">ตรวจเดี๋ยวนี้</button>
@@ -2343,29 +2352,42 @@ async function loadLaunchDefaults() {
     const el = document.getElementById(id);
     if (el) { el.addEventListener('change', saveLaunchDefaultsSoon); el.addEventListener('input', saveLaunchDefaultsSoon); }
   }
+  // พิมพ์ชื่อโดเมนเปล่าๆ เป็นเรื่องปกติ แต่ทุกจุดที่ตรวจลิงก์ต้องการ https:// นำหน้า
+  // เติมให้ตอนคลิกออกจากช่อง เพื่อให้เห็นค่าที่แก้แล้วกับตา ไม่ใช่เงียบๆ ตอนกดขึ้นแอด
+  const linkEl = document.getElementById('tpl-link');
+  if (linkEl) linkEl.addEventListener('blur', () => {
+    const v = linkEl.value.trim();
+    if (v && !/^https?:\/\//i.test(v) && /^[^\s/]+\.[^\s/]/.test(v)) {
+      linkEl.value = 'https://' + v;
+      saveLaunchDefaultsSoon();
+    }
+  });
 }
 
 // ---------- ระบบอัตโนมัติ (autopilot) ----------
 const AP_LEVEL = { fixed: '🔧', dead: '⛔', freeze: '🧊', manual: '✕', warn: '⚠️', info: 'ℹ️',
-  refill: '➕', scale: '📈', stock: '📦', sleep: '💤', empty: '📭' };
+  refill: '➕', scale: '📈', stock: '📦', sleep: '💤', empty: '📭', pause: '🛑', test: '🧪' };
 async function loadAutopilot() {
   if (!document.getElementById('apEnabled')) return;
   let d;
   try { d = await (await fetch('/api/autopilot')).json(); } catch { return; }
   document.getElementById('apEnabled').checked = d.enabled;
   document.getElementById('apKill').checked = d.killSwitch;
+  document.getElementById('apTest').checked = d.testMode;
   document.getElementById('apCap').textContent = d.maxPerDay;
   document.getElementById('apMinAds').value = d.minAds || 0;
   document.getElementById('apScaleMax').value = d.scaleMaxBudget || 0;
 
   const frozen = Object.entries(d.frozen || {});
   const st = [];
+  if (d.testMode && d.enabled && !d.killSwitch) st.push('<b style="color:#b8860b">🧪 โหมดทดสอบ — แอดที่สร้างจะถูกปิดไว้ ไม่ใช้เงิน</b>');
   st.push(d.killSwitch ? '<b style="color:var(--red)">🛑 หยุดฉุกเฉินอยู่ — ไม่ทำอะไรทั้งสิ้น</b>'
-    : d.enabled ? '<b style="color:var(--brand-dark)">▶️ ทำงานอยู่</b> — รอบตรวจถัดไปภายใน 30 นาที'
+    : d.enabled ? `<b style="color:var(--brand-dark)">▶️ ทำงานอยู่</b> — เช็คแอดโดนปฏิเสธทุก ${d.fastMins || 2} นาที, รอบเต็มทุก ${d.fullMins || 20} นาที <span id="apLive" class="muted"></span>`
     : '<span class="muted">⏸️ ปิดอยู่</span>');
   st.push(`แก้ข้อความไปแล้ววันนี้ ${d.fixesToday}/${d.maxPerDay} ครั้ง`);
   if (d.minAds) st.push(`เติมแอดไปแล้ววันนี้ ${d.createdToday} ตัว (เพดาน ${d.maxNewPerAcct}/บัญชี)`);
   if (d.scaleMaxBudget) st.push(`ขยายงบไปแล้ววันนี้ ${d.scaledToday} แคมเปญ`);
+  if (d.pausedToday) st.push(`ปิดแอดขาดทุนไปแล้ววันนี้ ${d.pausedToday} ตัว`);
   if (frozen.length) {
     st.push('<b style="color:var(--red)">บัญชีที่ถูกหยุด:</b> ' + frozen.map(([id, f]) =>
       `${esc(id)} (${esc(f.reason)}) <button class="btn-light btn-sm" onclick="apUnfreeze(${jsStr(id)})">ปลดล็อก</button>`).join(' • '));
@@ -2376,7 +2398,40 @@ async function loadAutopilot() {
   document.getElementById('apLog').innerHTML = log.length
     ? log.map(l => `<div style="font-size:12.5px;padding:4px 2px;border-bottom:1px solid var(--line);white-space:pre-wrap">${AP_LEVEL[l.level] || ''} <span class="muted">${new Date(l.ts).toLocaleString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>  ${esc(l.msg)}</div>`).join('')
     : '<div class="muted" style="font-size:12.5px;padding:6px">ยังไม่มีบันทึก</div>';
+
+  apConnectLive();
 }
+// ---------- ช่องรับเหตุการณ์สด ----------
+// เดิมหน้านี้อัปเดตเฉพาะตอนโหลดหรือกดปุ่ม จะรู้ว่าระบบทำอะไรก็ต่อเมื่อรีเฟรชเอง
+let apES = null;
+function apConnectLive() {
+  if (apES || !document.getElementById('apLog')) return;
+  apES = new EventSource('/api/autopilot/stream');
+  apES.onmessage = (e) => {
+    let ev;
+    try { ev = JSON.parse(e.data); } catch { return; }
+    if (ev.type === 'log') return apPushLog(ev.entry);
+    if (ev.type === 'tick') {
+      const tag = document.getElementById('apLive');
+      if (tag) tag.textContent = ev.phase === 'start' ? '• กำลังตรวจ...' : '';
+      // รอบจบแล้วค่อยดึงตัวเลขสรุป (แก้ไปกี่ครั้ง/เติมกี่ตัว/บัญชีที่ถูกหยุด) ให้ตรง
+      if (ev.phase === 'end') loadAutopilot();
+    }
+  };
+  // EventSource ต่อใหม่เองอยู่แล้ว ไม่ต้องเขียน reconnect เพิ่ม
+}
+function apPushLog(l) {
+  const box = document.getElementById('apLog');
+  if (!box) return;
+  const empty = box.querySelector('.muted');
+  if (empty) box.innerHTML = '';
+  const div = document.createElement('div');
+  div.style.cssText = 'font-size:12.5px;padding:4px 2px;border-bottom:1px solid var(--line);white-space:pre-wrap';
+  div.innerHTML = `${AP_LEVEL[l.level] || ''} <span class="muted">${new Date(l.ts).toLocaleString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>  ${esc(l.msg)}`;
+  box.prepend(div);
+  while (box.children.length > 60) box.lastChild.remove();
+}
+
 async function saveAutopilot() {
   try {
     await fetch('/api/autopilot', {
@@ -2384,6 +2439,7 @@ async function saveAutopilot() {
       body: JSON.stringify({
         enabled: document.getElementById('apEnabled').checked,
         killSwitch: document.getElementById('apKill').checked,
+        testMode: document.getElementById('apTest').checked,
         minAds: Number(document.getElementById('apMinAds').value) || 0,
         scaleMaxBudget: Number(document.getElementById('apScaleMax').value) || 0,
       }),
@@ -2460,8 +2516,14 @@ async function aiAdvise(btn) {
       ${canPause ? `<button class="btn-light btn-sm" onclick="aiPause(${jsStr(camp.pid)},${jsStr(a.campaignId)},this)">หยุดแคมเปญนี้</button>` : ''}
     </div>`;
   };
+  // AI ไม่ตอบครบทุกแคมเปญได้ — ถ้าไม่บอก ผู้ใช้จะนึกว่ารายการนี้คือทั้งหมด
+  const gaps = [];
+  if (d.truncated) gaps.push(`ส่งให้ AI ได้สูงสุด 120 แคมเปญ — อีก ${d.truncated} ตัวไม่ได้ถูกวิเคราะห์`);
+  if ((d.missing || []).length) gaps.push(`AI ไม่ได้ให้คำแนะนำ ${d.missing.length} แคมเปญ: ${d.missing.slice(0, 5).map(esc).join(', ')}${d.missing.length > 5 ? ' ...' : ''}`);
+
   body.innerHTML = `
     <div style="background:var(--brand-soft);border-radius:var(--r-md);padding:12px 14px;margin-bottom:14px;font-size:13.5px;line-height:1.6">${esc(d.summary || '')}</div>
+    ${gaps.length ? `<div style="background:#fff6e5;border:1px solid #f0d9a8;border-radius:var(--r-md);padding:10px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.6">⚠️ ${gaps.join('<br>')}</div>` : ''}
     ${actions.map(rowOf).join('')}
     <div class="hint" style="margin-top:12px">นี่เป็นแค่ข้อเสนอจากตัวเลขที่เห็น — ตัดสินใจเองอีกทีก่อนกดนะครับ${d.usage ? ` • ใช้ ${d.usage.input.toLocaleString()} + ${d.usage.output.toLocaleString()} โทเคน` : ''}</div>`;
 }
@@ -2547,7 +2609,11 @@ async function runAutoPlan(btn, opts = {}) {
 // บันทึกค่าที่ตั้งไว้ แล้วเปิดให้ autopilot ขึ้นแอดต่อเอง — เชื่อมหน้าขึ้นแอดกับระบบอัตโนมัติในปุ่มเดียว
 async function handToAi(btn) {
   const link = document.getElementById('tpl-link').value.trim();
-  if (!/^https?:\/\//.test(link)) return alert('ใส่ "ลิงก์ปลายทาง" (ขั้นตอนที่ 2) ก่อนครับ — AI ใช้ลิงก์นี้กับทุกแอดที่ขึ้นให้');
+  if (!/^https?:\/\//.test(link)) {
+    return alert(link
+      ? `ลิงก์ปลายทางต้องขึ้นต้นด้วย https:// ครับ\n\nตอนนี้ใส่ไว้ว่า "${link}"\nลองแก้เป็น "https://${link}"`
+      : 'ใส่ "ลิงก์ปลายทาง" (ขั้นตอนที่ 2) ก่อนครับ — AI ใช้ลิงก์นี้กับทุกแอดที่ขึ้นให้');
+  }
   const budget = Number(document.getElementById('campaignBudget').value) || 0;
   if (budget <= 0) return alert('ใส่ "งบแคมเปญ/วัน" (ขั้นตอนที่ 1) ก่อนครับ');
   const perAccount = Number(document.getElementById('planPerAccount').value) || 3;
@@ -2563,14 +2629,22 @@ async function handToAi(btn) {
     + `• คุมทุกบัญชีที่ใช้ได้ (ตอนนี้ ${ready.length} บัญชี) ให้มีแอดยิงอยู่บัญชีละ ${perAccount} ตัว\n`
     + `• ต่ำกว่านั้นเมื่อไหร่ หยิบวิดีโอ+แคปชั่นจากคลังขึ้นให้เอง ⚡ เปิดยิงทันที\n`
     + `• งบ ${budget.toLocaleString()} บาท/วัน/บัญชี • ลิงก์ ${link}\n`
-    + `• เช็คทุก 30 นาที • งบวันไหนเต็มแล้วหยุดเติม รอวันถัดไป\n`
+    + `• เช็คแอดโดนปฏิเสธทุก 2 นาที, เติมแอดทุก 20 นาที • งบวันไหนเต็มแล้วหยุดเติม รอวันถัดไป\n`
     + `• แอดโดนปฏิเสธ → อ่านเหตุผลแล้วแก้ข้อความให้ (ครั้งเดียวต่อตัว)\n`;
   if (!ruleOn) msg += `\n⚠️ ยังไม่ได้เปิด "กฎหยุดอัตโนมัติ" — ระบบจะยิงเงินต่อแม้แอดไม่เวิร์ก แนะนำให้เปิด\n`;
   else if (!cpa) msg += `\n⚠️ ยังไม่ได้ใส่ตัวเลข "หยุดเมื่อต้นทุน/ผลลัพธ์เกิน" — ตัวขยายงบจะไม่ทำงาน\n`;
-  if (cur.killSwitch) msg += `\n⚠️ ตอนนี้ "หยุดฉุกเฉิน" เปิดอยู่ — ต้องไปปิดที่เมนูบัญชี FB ก่อน AI ถึงจะเริ่มทำงาน\n`;
+  if (cur.killSwitch) msg += `\n⚠️ ตอนนี้ "หยุดฉุกเฉิน" เปิดอยู่ — กดยืนยันแล้วจะถามอีกครั้งว่าจะปลดให้ไหม\n`;
   if (!ready.length) msg += `\n⚠️ ตอนนี้ยังไม่มีบัญชีที่พร้อมเลย — AI จะยังไม่ขึ้นอะไรจนกว่าจะมีบัญชีพร้อม\n`;
   msg += `\nยืนยันไหม?`;
   if (!confirm(msg)) return;
+
+  // หยุดฉุกเฉินที่ค้างอยู่จะทำให้ระบบเงียบสนิททั้งที่ปุ่มบอกว่าสำเร็จ
+  // ปลดให้เองเงียบๆ ไม่ได้ เพราะเป็นคำสั่งที่เจ้าของตั้งใจกดไว้ — ต้องถามตรงๆ
+  let clearKill = false;
+  if (cur.killSwitch) {
+    clearKill = confirm('ปลด "หยุดฉุกเฉิน" ให้เลยไหม?\n\nถ้าไม่ปลด ระบบจะยังไม่ทำอะไรเลยแม้จะเปิดไว้แล้ว\nกดยกเลิกถ้าคุณตั้งใจให้มันหยุดอยู่');
+    if (!clearKill && !confirm('ยังไม่ปลดหยุดฉุกเฉิน — บันทึกค่าไว้เฉยๆ ก่อนไหม?')) return;
+  }
 
   btn.disabled = true;
   const old = btn.textContent;
@@ -2584,7 +2658,7 @@ async function handToAi(btn) {
     if (!r1.ok) throw new Error('บันทึกค่าตั้งต้นไม่สำเร็จ');
     const d = await (await fetch('/api/autopilot', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ enabled: true, minAds: perAccount }),
+      body: JSON.stringify({ enabled: true, minAds: perAccount, ...(clearKill ? { killSwitch: false } : {}) }),
     })).json();
     if (d.error) throw new Error(d.error);
   } catch (e) {
@@ -2598,7 +2672,11 @@ async function handToAi(btn) {
 // ปุ่มเดียวจบ: จัดแผน → ยืนยัน → ขึ้นจริง (เปิดยิงทันที)
 async function autoLaunch(btn) {
   const link = document.getElementById('tpl-link').value.trim();
-  if (!/^https?:\/\//.test(link)) return alert('ใส่ "ลิงก์" ในค่าเริ่มต้น (ขั้นตอนที่ 2) ก่อนครับ — ทุกแอดใช้ลิงก์นี้');
+  if (!/^https?:\/\//.test(link)) {
+    return alert(link
+      ? `ลิงก์ต้องขึ้นต้นด้วย https:// ครับ\n\nตอนนี้ใส่ไว้ว่า "${link}"\nลองแก้เป็น "https://${link}"`
+      : 'ใส่ "ลิงก์" ในค่าเริ่มต้น (ขั้นตอนที่ 2) ก่อนครับ — ทุกแอดใช้ลิงก์นี้');
+  }
   const budget = Number(document.getElementById('campaignBudget').value) || 0;
   if (budget <= 0) return alert('ใส่ "งบแคมเปญ/วัน" (ขั้นตอนที่ 1) ก่อนครับ');
 
