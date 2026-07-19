@@ -1637,11 +1637,14 @@ const WATCH_STATE_PATH = path.join(path.dirname(CONFIG_PATH), 'watch-state.json'
 function loadWatchState() { try { return JSON.parse(fs.readFileSync(WATCH_STATE_PATH, 'utf8')); } catch { return {}; } }
 function saveWatchState(s) { try { fs.writeFileSync(WATCH_STATE_PATH, JSON.stringify(s)); } catch { /* ข้าม */ } }
 
+// ชี้ไป Telegram ปลอมได้ตอนเทส แบบเดียวกับ FB_API_BASE
+const TG_API = process.env.TG_API_BASE || 'https://api.telegram.org';
+
 async function tgSend(cfg, text) {
   const t = cfg.telegram || {};
   if (!t.botToken || !t.chatId) return false;
   try {
-    const r = await fetch(`https://api.telegram.org/bot${t.botToken}/sendMessage`, {
+    const r = await fetch(`${TG_API}/bot${t.botToken}/sendMessage`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: t.chatId, text, disable_web_page_preview: true }),
     });
@@ -2943,25 +2946,136 @@ function startAutopilotTimers() {
   setInterval(() => runAutopilot('full').catch(boom), AP_FULL_MS).unref();
 }
 
-// สรุปยอดเมื่อวานทุกเช้า 08:00 เวลาไทย
-async function dailySummary() {
-  const cfg = loadConfig();
-  if (!(cfg.telegram || {}).botToken) return;
+// ดึงยอดใช้จ่ายทุกบัญชีที่ใช้งานได้ตาม date_preset ของ FB — ใช้ร่วมกันระหว่างสรุปเช้ากับตอบคำถามใน Telegram
+async function spendLines(cfg, datePreset) {
   const lines = [];
+  const totals = {};   // รวมแยกต่อสกุลเงิน — ต่างสกุลเอามาบวกกันตรงๆ ไม่ได้
   for (const prof of cfg.profiles || []) {
     if (!prof.accessToken) continue;
     try {
       const accts = await fbAll('me/adaccounts', { fields: 'name,account_id,account_status,currency', limit: 100 }, prof.accessToken);
       for (const a of accts.filter((x) => x.account_status === 1)) {
         try {
-          const ins = await fb(`act_${a.account_id}/insights`, { fields: 'spend,impressions', date_preset: 'yesterday' }, 'GET', prof.accessToken);
+          const ins = await fb(`act_${a.account_id}/insights`, { fields: 'spend,impressions', date_preset: datePreset }, 'GET', prof.accessToken);
           const row = (ins.data || [])[0];
-          if (row && Number(row.spend) > 0) lines.push(`• ${a.name}: ${Number(row.spend).toLocaleString(undefined, { minimumFractionDigits: 2 })} ${a.currency} • ${Number(row.impressions || 0).toLocaleString()} อิมเพรสชัน`);
+          if (row && Number(row.spend) > 0) {
+            lines.push(`• ${a.name}: ${Number(row.spend).toLocaleString(undefined, { minimumFractionDigits: 2 })} ${a.currency} • ${Number(row.impressions || 0).toLocaleString()} อิมเพรสชัน`);
+            totals[a.currency] = (totals[a.currency] || 0) + Number(row.spend);
+          }
         } catch { /* ข้าม */ }
       }
     } catch { /* ข้าม */ }
   }
-  await tgSend(cfg, `🌅 สรุปการใช้จ่ายเมื่อวาน\n\n${lines.length ? lines.join('\n') : 'ไม่มีการใช้จ่าย'}`);
+  const totalLine = Object.entries(totals)
+    .map(([cur, v]) => `${v.toLocaleString(undefined, { minimumFractionDigits: 2 })} ${cur}`).join(' + ');
+  return { lines, totalLine };
+}
+
+// สรุปยอดเมื่อวานทุกเช้า 08:00 เวลาไทย
+async function dailySummary() {
+  const cfg = loadConfig();
+  if (!(cfg.telegram || {}).botToken) return;
+  const { lines, totalLine } = await spendLines(cfg, 'yesterday');
+  await tgSend(cfg, `🌅 สรุปการใช้จ่ายเมื่อวาน\n\n${lines.length ? `${lines.join('\n')}\n\nรวม: ${totalLine}` : 'ไม่มีการใช้จ่าย'}`);
+}
+
+// ---------- ตอบคำถามยอดใช้จ่ายจาก Telegram ----------
+// ใช้ long polling (getUpdates) ไม่ใช่ webhook — webhook ต้องเปิด route สาธารณะเพิ่มใน traefik
+// (แตะ redeploy.sh ซึ่งเคยทำเว็บล่มมาแล้ว) polling เป็นขา outbound อย่างเดียว ไม่เพิ่มผิวสัมผัส
+let tgOffset = 0;
+let tgDrained = false;   // ข้อความที่ค้างระหว่างเซิร์ฟเวอร์ปิดอยู่ถูกทิ้งตอนบูต — กันตอบย้อนหลังเป็นชุด
+
+const TG_HELP = 'พิมพ์ได้:\n• "สรุป" หรือ "ใช้เงิน" — ยอดวันนี้\n• "เมื่อวาน" — ยอดเมื่อวาน\n• "7วัน" — ยอด 7 วันล่าสุด';
+
+// fallback เวลา AI ใช้ไม่ได้ (ไม่มี key / ล่ม) — จับ keyword ตรงๆ อย่างน้อยยอดหลักต้องตอบได้เสมอ
+async function tgAnswer(cfg, text) {
+  const q = String(text || '').trim().toLowerCase();
+  // เช็ค "เมื่อวาน" ก่อน — "สรุปเมื่อวาน" มีทั้งสองคำ ต้องได้เมื่อวาน ไม่ใช่วันนี้
+  let preset = null, label = '';
+  if (/เมื่อวาน|yesterday/.test(q)) { preset = 'yesterday'; label = 'เมื่อวาน'; }
+  else if (/7|สัปดาห์|week/.test(q)) { preset = 'last_7d'; label = '7 วันล่าสุด'; }
+  else if (/สรุป|ใช้เงิน|ใช้จ่าย|spend|วันนี้|today/.test(q)) { preset = 'today'; label = 'วันนี้'; }
+  if (!preset) return TG_HELP;
+  const { lines, totalLine } = await spendLines(cfg, preset);
+  if (!lines.length) return `💸 ${label}: ยังไม่มีการใช้จ่าย`;
+  return `💸 ใช้เงิน${label}\n\n${lines.join('\n')}\n\nรวม: ${totalLine}`;
+}
+
+// ตัวหลัก: ให้ AI อ่านคำถามอิสระแล้วตอบจากข้อมูลจริงที่ดึงสดๆ — AI ห้ามเดาตัวเลขเอง
+// ดึงครบสามช่วง (วันนี้/เมื่อวาน/7วัน) + สถานะ autopilot เพื่อให้ตอบได้เกือบทุกคำถามเรื่องเงิน
+// โดยไม่ต้องให้ AI สั่งดึงข้อมูลเอง (ง่ายกว่า เร็วกว่า และไม่มีทางยิง FB มั่ว)
+async function tgAiAnswer(cfg, apiKey, question) {
+  const [today, yest, week] = await Promise.all([
+    spendLines(cfg, 'today'), spendLines(cfg, 'yesterday'), spendLines(cfg, 'last_7d'),
+  ]);
+  const st = loadAp();
+  const day = 24 * 3600 * 1000;
+  const block = (label, d) => `${label}:\n${d.lines.length ? `${d.lines.join('\n')}\nรวม: ${d.totalLine}` : 'ไม่มีการใช้จ่าย'}`;
+  const data = [
+    block('ยอดใช้จ่ายวันนี้', today), block('ยอดใช้จ่ายเมื่อวาน', yest), block('ยอดใช้จ่าย 7 วันล่าสุด', week),
+    `สถานะระบบอัตโนมัติ: ${(cfg.autopilot || {}).enabled ? 'เปิด' : 'ปิด'}${(cfg.autopilot || {}).testMode ? ' (โหมดทดสอบ)' : ''}`
+    + ` • แก้ข้อความวันนี้ ${apRecent(st.fixes, day).length} ครั้ง`
+    + ` • เติมแอดวันนี้ ${Object.values(st.created || {}).reduce((n, arr) => n + apRecent(arr, day).length, 0)} ตัว`
+    + ` • ปิดแอดขาดทุนวันนี้ ${apRecent((st.pausedLog || []).map((x) => x.ts), day).length} ตัว`
+    + ` • บัญชีที่ถูกหยุด: ${Object.entries(st.frozen || {}).map(([id, f]) => `${id} (${f.reason})`).join(', ') || 'ไม่มี'}`,
+  ].join('\n\n');
+
+  const msg = await aiClient(apiKey).messages.create({
+    model: 'claude-opus-4-8',
+    max_tokens: 800,
+    system: 'คุณคือผู้ช่วยรายงานยอดโฆษณา Facebook ทางแชท Telegram ตอบเป็นภาษาไทย สั้นตรงคำถาม '
+      + 'ใช้เฉพาะตัวเลขจากข้อมูลที่แนบมาเท่านั้น ห้ามเดาหรือประมาณตัวเลขที่ไม่มี '
+      + 'ถ้าคำถามตอบไม่ได้จากข้อมูลที่มี ให้บอกตรงๆ ว่าข้อมูลชุดนี้ตอบไม่ได้ และบอกว่ามีข้อมูลอะไรบ้าง '
+      + 'ตอบเป็นข้อความธรรมดา ไม่ใช้ markdown',
+    messages: [{
+      role: 'user',
+      content: `ข้อมูลจริง ณ ตอนนี้:\n\n${data}\n\nคำถามจากเจ้าของระบบ: """${apFence(question)}"""`,
+    }],
+  });
+  const out = (msg.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+  if (!out) throw new Error('AI ตอบว่าง');
+  return out;
+}
+
+// คืนจำนวน ms ที่ควรรอก่อน poll รอบถัดไป — พังบ่อยต้องถอยห่าง ไม่ใช่ยิงรัวใส่ Telegram
+async function tgPollOnce() {
+  const cfg = loadConfig();
+  const t = cfg.telegram || {};
+  if (!t.botToken || !t.chatId) return 60 * 1000;    // ยังไม่ตั้งค่า — เช็คใหม่ทุกนาที
+  let j;
+  try {
+    const r = await fetch(`${TG_API}/bot${t.botToken}/getUpdates?offset=${tgOffset}&timeout=25`);
+    j = await r.json();
+  } catch { return 30 * 1000; }                      // เน็ต/Telegram สะดุด
+  if (!j.ok || !Array.isArray(j.result)) return 60 * 1000;  // token ผิด หรือมี webhook ค้าง (409)
+  for (const up of j.result) {
+    tgOffset = up.update_id + 1;
+    if (!tgDrained) continue;                        // รอบแรกหลังบูต: เลื่อน offset ทิ้งอย่างเดียว
+    const msg = up.message;
+    // ตอบเฉพาะแชทที่ตั้งไว้ — บอทถูกค้นเจอได้ ใครทักมาก็ได้ แต่ข้อมูลเงินให้เฉพาะเจ้าของ
+    if (!msg || !msg.text || String((msg.chat || {}).id) !== String(t.chatId)) continue;
+    // AI เป็นตัวหลัก — ล่ม/ไม่มี key ค่อยตกไป keyword fallback อย่างน้อยยอดหลักต้องตอบได้เสมอ
+    const apiKey = cfg.anthropicKey || process.env.ANTHROPIC_API_KEY;
+    let answer;
+    if (apiKey) {
+      try { answer = await tgAiAnswer(cfg, apiKey, msg.text); } catch { /* ตกไป fallback */ }
+    }
+    if (!answer) {
+      try { answer = await tgAnswer(cfg, msg.text); } catch { /* รอบหน้า */ }
+    }
+    if (answer) { try { await tgSend(cfg, answer); } catch { /* รอบหน้า */ } }
+  }
+  tgDrained = true;
+  return 1000;
+}
+
+function startTgPolling() {
+  const loop = async () => {
+    let d = 30 * 1000;
+    try { d = await tgPollOnce(); } catch { /* ใช้ค่าถอยห่าง */ }
+    setTimeout(loop, d).unref();
+  };
+  loop();
 }
 
 // งานเบื้องหลังทั้งหมดรวมไว้ที่เดียว สตาร์ทเฉพาะตอนรันเป็นเซิร์ฟเวอร์จริง
@@ -2969,6 +3083,7 @@ async function dailySummary() {
 // ทำให้ process ไม่ยอมจบเอง (เห็นชัดตอนเทส require ไฟล์นี้เข้ามา)
 function startBackgroundJobs() {
   startAutopilotTimers();
+  startTgPolling();
   setTimeout(() => watchTick().catch(() => {}), 30 * 1000).unref();      // รอบแรกหลังบูต 30 วิ
   setInterval(() => watchTick().catch(() => {}), 60 * 60 * 1000).unref(); // แล้วทุก 1 ชม.
   setInterval(() => {
@@ -2999,7 +3114,7 @@ app.post('/api/telegram', (req, res) => {
   res.json({ ok: true });
 });
 app.post('/api/telegram-test', async (req, res) => {
-  const ok = await tgSend(loadConfig(), '✅ ทดสอบแจ้งเตือนจาก FB Ad Uploader สำเร็จ! ระบบจะเตือนเมื่อ: แอดโดนปฏิเสธ • บัญชีถูกปิด/ค้างชำระ • token มีปัญหา และสรุปยอดทุกเช้า 8 โมง');
+  const ok = await tgSend(loadConfig(), '✅ ทดสอบแจ้งเตือนจาก FB Ad Uploader สำเร็จ! ระบบจะเตือนเมื่อ: แอดโดนปฏิเสธ • บัญชีถูกปิด/ค้างชำระ • token มีปัญหา และสรุปยอดทุกเช้า 8 โมง\n\n💬 พิมพ์ถามในแชทนี้ได้เลย เช่น "วันนี้ใช้เงินไปเท่าไหร่" — AI ตอบจากข้อมูลจริง');
   res.json(ok ? { ok: true } : { error: 'ส่งไม่สำเร็จ — เช็ค Bot Token / Chat ID และต้องกด Start ในแชทบอทของคุณก่อน' });
 });
 
