@@ -400,7 +400,8 @@
       <a data-page="campaigns" onclick="showPage('campaigns')"><span class="num">2</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg><span class="lbl">แคมเปญของฉัน</span></a>
       <a data-page="health" onclick="showPage('health')"><span class="num">3</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/><path d="M3.22 12H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27"/></svg><span class="lbl">สุขภาพบัญชี</span></a>
       <a data-page="library" onclick="showPage('library')"><span class="num">4</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m10 8 6 4-6 4Z"/><rect width="20" height="14" x="2" y="5" rx="2"/></svg><span class="lbl">คลังสื่อ</span></a>
-      <a data-page="settings" onclick="showPage('settings')"><span class="num">5</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span class="lbl">บัญชี FB</span></a>
+      <a data-page="landing" onclick="showPage('landing')"><span class="num">5</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 8h10"/><path d="M7 12h10"/><path d="M7 16h6"/></svg><span class="lbl">หน้า Landing</span></a>
+      <a data-page="settings" onclick="showPage('settings')"><span class="num">6</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span class="lbl">บัญชี FB</span></a>
     </nav>
     <div class="side-foot" id="sideConn"><span class="dot"></span>ยังไม่มีบัญชี</div>
   </aside>
@@ -841,6 +842,44 @@
       </div>
     </section>
 
+    <!-- ========== PAGE: หน้า Landing ========== -->
+    <section class="page" id="page-landing">
+      <div class="card">
+        <h2>ส่วนหัวของหน้า <span class="h-desc">— หน้าจริงอยู่ที่ <a href="/lp" target="_blank" style="color:var(--brand-dark)">/lp</a> เปิดดูได้ตลอด</span></h2>
+        <div class="fgrid">
+          <div class="field"><label>ชื่อร้าน/แบรนด์</label><input id="lpTitle"></div>
+          <div class="field"><label>รูปโปรไฟล์ (ลิงก์รูป)</label><input id="lpAvatar" placeholder="https://..."></div>
+          <div class="field" style="max-width:200px"><label>ธีม</label>
+            <select id="lpTheme"><option value="light">สว่าง</option><option value="dark">มืด</option></select>
+          </div>
+        </div>
+        <div class="field" style="margin-top:12px"><label>คำอธิบายสั้นๆ</label><textarea id="lpBio" rows="2"></textarea></div>
+      </div>
+
+      <div class="card">
+        <h2>ปุ่มลิงก์ <span class="h-desc">— ลากพิมพ์ได้เลย ระบบเติม https:// / tel: / mailto: ให้เอง</span></h2>
+        <div id="lpLinks"></div>
+        <button class="btn-light btn-sm" onclick="lpAddLink()">+ เพิ่มปุ่ม</button>
+        <div class="hint" style="margin-top:10px">
+          <b>Event ที่ยิงตอนกด</b> ควรตรงกับ "เหตุการณ์คอนเวอร์ชั่น" ที่แคมเปญใช้วัดผล
+          ไม่งั้นพิกเซลจะเก็บคนละอย่างกับที่แอด optimize แล้วระบบเรียนรู้ไม่ได้
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>พิกเซล <span class="h-desc">— ใส่ได้หลายตัว ยิงพร้อมกันทั้งหมด</span></h2>
+        <div id="lpPixels"></div>
+        <button class="btn-light btn-sm" onclick="lpAddPixel()">+ เพิ่มพิกเซล</button>
+        <div class="hint" style="margin-top:10px">Meta Pixel ใส่ Pixel ID • Google Analytics ใส่ Measurement ID (G-XXXX)</div>
+      </div>
+
+      <div class="card" style="display:flex;gap:12px;align-items:center;position:sticky;bottom:12px">
+        <button class="btn-primary" onclick="lpSave(this)">บันทึก</button>
+        <a class="btn-light btn-sm" href="/lp" target="_blank" style="text-decoration:none">ดูหน้าจริง ↗</a>
+        <span id="lpMsg" style="font-size:13.5px;font-weight:600"></span>
+      </div>
+    </section>
+
     <!-- ========== PAGE: บัญชี FB ========== -->
     <section class="page" id="page-settings">
       <div class="card">
@@ -1023,6 +1062,7 @@ const PAGE_META = {
   campaigns: ['แคมเปญของฉัน', 'ดูสถานะและเปิด/ปิดแคมเปญ แยกตามบัญชี'],
   health: ['สุขภาพบัญชี & เพจ', 'เพจไหนใช้ได้/บิน • บัญชีไหนยังไม่มี Pixel หรือยังไม่เชื่อมบัตร'],
   library: ['คลังสื่อ', 'วิดีโอ + แคปชั่นที่เตรียมไว้ล่วงหน้า — ตัวจัดแผนขึ้นแอดหยิบจากที่นี่'],
+  landing: ['หน้า Landing', 'หน้าที่ลูกค้าเห็นเมื่อกดจากโฆษณา — แก้ปุ่ม ลิงก์ และพิกเซล'],
   settings: ['บัญชี FB', 'เพิ่ม/จัดการบัญชี FB, บัญชีโฆษณา และเพจ'],
 };
 function showPage(name, fromRoute) {
@@ -1039,6 +1079,7 @@ function showPage(name, fromRoute) {
   if (name === 'dashboard') loadDashboard();
   if (name === 'health') loadHealthPage();
   if (name === 'library') { loadLibrary(); loadCaptions(); }
+  if (name === 'landing') loadLanding();
 }
 window.addEventListener('hashchange', () => {
   const h = location.hash.replace(/^#/, '');
@@ -2372,6 +2413,124 @@ function normalizeLinkInput(el) {
 // การ์ดแอดถูกสร้างทีหลังเรื่อยๆ จึงดักที่ document (blur ไม่ bubble ใช้ focusout แทน)
 document.addEventListener('focusout', (e) => {
   if (e.target && e.target.classList && e.target.classList.contains('f-link')) normalizeLinkInput(e.target);
+});
+
+// ---------- หน้า Landing ----------
+// ค่าที่ส่งต้องเป็นชื่อ event มาตรฐานของ Meta (ห้ามแปล) — แปลเฉพาะข้อความที่คนอ่าน
+// คงชื่ออังกฤษในวงเล็บไว้ เพราะต้องเอาไปเทียบกับที่เห็นใน Ads Manager
+const LP_EVENTS = [
+  ['', '— ไม่ยิง —'],
+  ['Lead', 'ลูกค้าเป้าหมาย (Lead)'],
+  ['Contact', 'ติดต่อ (Contact)'],
+  ['Subscribe', 'สมัครรับข้อมูล (Subscribe)'],
+  ['CompleteRegistration', 'ลงทะเบียนเสร็จ (CompleteRegistration)'],
+  ['Purchase', 'การซื้อ (Purchase)'],
+  ['AddToCart', 'หยิบใส่ตะกร้า (AddToCart)'],
+  ['InitiateCheckout', 'เริ่มชำระเงิน (InitiateCheckout)'],
+];
+
+// คนพิมพ์ชื่อเว็บเปล่าๆ เป็นเรื่องปกติ แต่เซิร์ฟเวอร์รับเฉพาะที่มี scheme
+// ไม่เติมให้ = กดบันทึกแล้วปุ่มหายเงียบๆ โดยไม่รู้ว่าทำอะไรผิด
+function lpFixUrl(v) {
+  const t = String(v || '').trim();
+  if (!t) return t;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(t)) return t;                            // มี scheme อยู่แล้ว
+  if (/^0\d[\d\s-]{7,}$/.test(t)) return 'tel:' + t.replace(/[\s-]/g, ''); // เบอร์โทรไทย
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t)) return 'mailto:' + t;          // อีเมล
+  if (/^[^\s/]+\.[^\s/]/.test(t)) return 'https://' + t;                   // ชื่อโดเมน
+  return t;
+}
+
+function lpLinkRow(l) {
+  l = l || {};
+  return `<div class="cap-row lp-row" style="align-items:flex-end;gap:8px;flex-wrap:wrap">
+    <div class="field" style="max-width:74px"><label>ไอคอน</label><input class="lp-icon" maxlength="4" value="${esc(l.icon || '')}" placeholder="💬"></div>
+    <div class="field" style="min-width:150px;flex:1"><label>ข้อความบนปุ่ม</label><input class="lp-label" value="${esc(l.label || '')}" placeholder="แอดไลน์"></div>
+    <div class="field" style="min-width:200px;flex:1.4"><label>ลิงก์</label><input class="lp-url" value="${esc(l.url || '')}" placeholder="line.me/ti/p/... หรือ 021234567"></div>
+    <div class="field" style="min-width:190px"><label>Event ที่ยิงตอนกด</label><select class="lp-event">${
+      LP_EVENTS.map(([v, th]) => `<option value="${v}"${v === (l.event || '') ? ' selected' : ''}>${esc(th)}</option>`).join('')
+    }</select></div>
+    <button class="btn-light btn-sm" onclick="this.closest('.lp-row').remove()">ลบ</button>
+  </div>`;
+}
+function lpPixelRow(p) {
+  p = p || {};
+  return `<div class="cap-row lp-prow" style="align-items:flex-end;gap:8px;flex-wrap:wrap">
+    <div class="field" style="min-width:170px"><label>ชนิด</label><select class="lp-ptype">
+      <option value="meta"${p.type !== 'ga' ? ' selected' : ''}>Meta Pixel</option>
+      <option value="ga"${p.type === 'ga' ? ' selected' : ''}>Google Analytics</option>
+    </select></div>
+    <div class="field" style="min-width:200px;flex:1"><label>ID</label><input class="lp-pid" value="${esc(p.id || '')}" placeholder="1234567890"></div>
+    <button class="btn-light btn-sm" onclick="this.closest('.lp-prow').remove()">ลบ</button>
+  </div>`;
+}
+const lpAddLink = () => document.getElementById('lpLinks').insertAdjacentHTML('beforeend', lpLinkRow());
+const lpAddPixel = () => document.getElementById('lpPixels').insertAdjacentHTML('beforeend', lpPixelRow());
+
+async function loadLanding() {
+  let d;
+  try { d = await (await fetch('/api/landing')).json(); } catch { return; }
+  document.getElementById('lpTitle').value = d.title || '';
+  document.getElementById('lpBio').value = d.bio || '';
+  document.getElementById('lpAvatar').value = d.avatar || '';
+  document.getElementById('lpTheme').value = d.theme || 'light';
+  document.getElementById('lpLinks').innerHTML = (d.links || []).map(lpLinkRow).join('');
+  document.getElementById('lpPixels').innerHTML = (d.pixels || []).map(lpPixelRow).join('');
+}
+
+function lpCollect() {
+  return {
+    title: document.getElementById('lpTitle').value,
+    bio: document.getElementById('lpBio').value,
+    avatar: lpFixUrl(document.getElementById('lpAvatar').value),
+    theme: document.getElementById('lpTheme').value,
+    links: [...document.querySelectorAll('#lpLinks .lp-row')].map((r, i) => ({
+      id: 'l' + i,
+      icon: r.querySelector('.lp-icon').value,
+      label: r.querySelector('.lp-label').value,
+      url: lpFixUrl(r.querySelector('.lp-url').value),
+      event: r.querySelector('.lp-event').value,
+    })),
+    pixels: [...document.querySelectorAll('#lpPixels .lp-prow')].map(r => ({
+      type: r.querySelector('.lp-ptype').value,
+      id: r.querySelector('.lp-pid').value.trim(),
+    })),
+  };
+}
+
+async function lpSave(btn) {
+  const body = lpCollect();
+  // บอกเป็นรายปุ่มว่าอันไหนมีปัญหาและเพราะอะไร — เดิมเซิร์ฟเวอร์ตัดทิ้งเงียบๆ
+  const bad = [];
+  body.links.forEach((l, i) => {
+    if (!l.label && !l.url) return;
+    if (!l.label) bad.push(`ปุ่มที่ ${i + 1}: ยังไม่ได้ใส่ข้อความบนปุ่ม`);
+    else if (!l.url) bad.push(`ปุ่มที่ ${i + 1} (${l.label}): ยังไม่ได้ใส่ลิงก์`);
+    else if (!/^(https?:\/\/|tel:|mailto:)/i.test(l.url)) bad.push(`ปุ่มที่ ${i + 1} (${l.label}): ลิงก์ "${l.url}" ใช้ไม่ได้ — ต้องเป็นเว็บ เบอร์โทร หรืออีเมล`);
+  });
+  if (bad.length && !confirm('ปุ่มต่อไปนี้จะไม่ถูกบันทึก:\n\n' + bad.join('\n') + '\n\nบันทึกส่วนที่เหลือต่อไหม?')) return;
+
+  btn.disabled = true;
+  const msg = document.getElementById('lpMsg');
+  try {
+    const r = await (await fetch('/api/landing', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    })).json();
+    if (r.error) throw new Error(r.error);
+    msg.style.color = 'var(--brand-dark)'; msg.textContent = '✓ บันทึกแล้ว';
+    await loadLanding();
+  } catch (e) {
+    msg.style.color = 'var(--red)'; msg.textContent = 'บันทึกไม่สำเร็จ: ' + e.message;
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => { msg.textContent = ''; }, 2500);
+  }
+}
+
+// เติม scheme ให้เห็นกับตาตอนคลิกออกจากช่อง (การ์ดถูกสร้างทีหลัง blur ไม่ bubble จึงใช้ focusout)
+document.addEventListener('focusout', (e) => {
+  const t = e.target;
+  if (t && t.classList && (t.classList.contains('lp-url') || t.id === 'lpAvatar')) t.value = lpFixUrl(t.value);
 });
 
 // ---------- ระบบอัตโนมัติ (autopilot) ----------

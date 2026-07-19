@@ -446,7 +446,7 @@ ${ga.map((p) => `<script async src="https://www.googletagmanager.com/gtag/js?id=
   </div>
   ${v.links.length ? v.links.map((l) => `<a class="btn" href="${lpEsc(l.url)}" target="_blank" rel="noopener"${l.event ? ` data-ev="${lpEsc(l.event)}"` : ''}>
     <span class="ic">${lpEsc(l.icon || '🔗')}</span><span class="lb">${lpEsc(l.label)}</span><span class="ar">→</span>
-  </a>`).join('\n  ') : '<div class="empty">ยังไม่ได้เพิ่มลิงก์ — ไปที่ /lp/admin เพื่อเพิ่ม</div>'}
+  </a>`).join('\n  ') : '<div class="empty">ยังไม่ได้เพิ่มลิงก์ — เพิ่มได้ที่เมนู "หน้า Landing" ในระบบหลัง</div>'}
 </div>
 <script>
   // ยิง event ตอนกด ให้ตรงกับ event ที่แคมเปญใช้วัดผล ไม่งั้นพิกเซลเก็บคนละอย่างกับที่แอด optimize
@@ -461,7 +461,8 @@ ${ga.map((p) => `<script async src="https://www.googletagmanager.com/gtag/js?id=
 </body></html>`;
 }
 
-app.get(['/lp/admin', '/lp/admin/'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'lp-admin.html')));
+// หลังบ้านย้ายไปรวมกับแอดมินหลักแล้ว — คงลิงก์เดิมไว้ให้คนที่บุ๊กมาร์กไว้ ไม่ให้เจอ 404
+app.get(['/lp/admin', '/lp/admin/'], (req, res) => res.redirect('/#landing'));
 
 app.get(['/lp', '/lp/'], (req, res) => {
   res.set('Cache-Control', 'no-store');   // แก้ลิงก์แล้วต้องเห็นผลทันที

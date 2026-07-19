@@ -88,6 +88,13 @@ describe('หน้า Landing', () => {
       'ไม่มี scheme = ปฏิเสธ เพราะเบราว์เซอร์จะตีความเป็น path ของเว็บเรา ไม่ใช่ลิงก์ออกไปข้างนอก');
   });
 
+  test('ลิงก์หลังบ้านเดิม /lp/admin ต้องพาไปหน้าหลัก ไม่ใช่ 404', async (t) => {
+    const { base } = await boot(t);
+    const r = await fetch(base + '/lp/admin', { redirect: 'manual' });
+    assert.strictEqual(r.status, 302);
+    assert.match(r.headers.get('location'), /#landing$/);
+  });
+
   test('ค่าที่บันทึกต้องอยู่รอดข้ามการอ่านใหม่', async (t) => {
     const { base } = await boot(t);
     await post(base, '/api/landing', { title: 'ก่อนแก้', links: [{ label: 'ก', url: 'https://ok.test/a' }] });
