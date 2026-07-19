@@ -17,7 +17,8 @@ function makeFakeFb(world) {
       world.calls.push({ method: req.method, path, params });
 
       const send = (obj, code = 200) => {
-        res.writeHead(code, { 'content-type': 'application/json' });
+        // world.headers = header ที่แนบทุก response (เช่น x-app-usage จำลองโควตาของ Meta)
+        res.writeHead(code, { 'content-type': 'application/json', ...(world.headers || {}) });
         res.end(JSON.stringify(obj));
       };
       const fail = (message, code = 100) => send({ error: { message, code } }, 400);
