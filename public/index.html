@@ -729,10 +729,13 @@
       </div>
 
       <div class="card">
-        <h2 style="margin-bottom:12px"><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-5v12L3 13v-2z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg></span>แคมเปญในบัญชี <span class="h-desc" id="campSummary"></span></h2>
+        <h2 style="margin-bottom:12px"><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-5v12L3 13v-2z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg></span>แคมเปญในบัญชี <span class="h-desc" id="campSummary"></span>
+          <button id="campBulkDel" class="btn-danger-light btn-sm" style="display:none;margin-left:auto;white-space:nowrap" onclick="bulkDeleteCampaigns()">ลบที่เลือก (0)</button>
+        </h2>
         <div class="tbl-wrap">
           <table>
             <thead><tr>
+              <th style="width:34px"><input type="checkbox" id="campSelAll" title="เลือกทั้งหมด" onchange="campSelAllToggle(this.checked)"></th>
               <th>เปิด/ปิด</th>
               <th>บัญชี</th>
               <th>แคมเปญ</th>
@@ -746,7 +749,7 @@
               <th>สิ้นสุด</th>
               <th></th>
             </tr></thead>
-            <tbody id="campaignRows"><tr><td colspan="12" class="tbl-msg">ยังไม่ได้โหลด — ติ๊กเลือกบัญชีแล้วกด "รีเฟรชข้อมูล"</td></tr></tbody>
+            <tbody id="campaignRows"><tr><td colspan="13" class="tbl-msg">ยังไม่ได้โหลด — ติ๊กเลือกบัญชีแล้วกด "รีเฟรชข้อมูล"</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -1984,7 +1987,7 @@ async function loadCampaigns(force) {
   const date = document.getElementById('campDate').value;
   const tbody = document.getElementById('campaignRows');
   document.getElementById('campSummary').textContent = '';
-  if (!sels.length) { tbody.innerHTML = '<tr><td colspan="12" class="tbl-msg">ติ๊กเลือกอย่างน้อย 1 บัญชีโฆษณาด้านบน</td></tr>'; setCampKpis('—', '—', '—', '—', '—'); return; }
+  if (!sels.length) { tbody.innerHTML = '<tr><td colspan="13" class="tbl-msg">ติ๊กเลือกอย่างน้อย 1 บัญชีโฆษณาด้านบน</td></tr>'; setCampKpis('—', '—', '—', '—', '—'); campSelChanged(); return; }
   const key = sels.join(',') + '|' + date;
   const hit = campCache[key];
   if (!force && hit) {
@@ -1992,7 +1995,7 @@ async function loadCampaigns(force) {
     if (Date.now() - hit.ts < CAMP_CACHE_MS) return; // ยังสด
     // เก่าแล้ว → ดึงใหม่เงียบๆ เบื้องหลัง
   } else {
-    tbody.innerHTML = `<tr><td colspan="12" class="tbl-msg"><span class="spin"></span>กำลังโหลดข้อมูลจาก ${sels.length} บัญชีโฆษณา...</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="13" class="tbl-msg"><span class="spin"></span>กำลังโหลดข้อมูลจาก ${sels.length} บัญชีโฆษณา...</td></tr>`;
   }
 
   // โหลดทุกบัญชีโฆษณาที่ติ๊กพร้อมกัน (v = "profileId:adAccountId")
@@ -2045,11 +2048,12 @@ function renderCampaignRows(results, sels) {
     `— ${sels.length - errs.length}/${sels.length} บัญชีโฆษณา • ตัวเลขจาก FB API อาจช้ากว่าหน้า Ads Manager ~15-60 นาที`;
 
   const errRows = errs.map(r => {
-    return `<tr><td colspan="12" class="tbl-msg err" style="padding:14px 20px">⚠ ${esc(acctLabel(r.pid, r.acct))}: ${esc(r.error)}</td></tr>`;
+    return `<tr><td colspan="13" class="tbl-msg err" style="padding:14px 20px">⚠ ${esc(acctLabel(r.pid, r.acct))}: ${esc(r.error)}</td></tr>`;
   }).join('');
 
   if (!rows.length) {
-    tbody.innerHTML = errRows + '<tr><td colspan="12" class="tbl-msg">ยังไม่มีแคมเปญในบัญชีที่เลือก</td></tr>';
+    tbody.innerHTML = errRows + '<tr><td colspan="13" class="tbl-msg">ยังไม่มีแคมเปญในบัญชีที่เลือก</td></tr>';
+    campSelChanged();
     return;
   }
 
@@ -2070,6 +2074,7 @@ function renderCampaignRows(results, sels) {
       : '<span style="color:var(--muted)">ทำงานต่อเนื่อง</span>';
     const link = `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${c.account}&selected_campaign_ids=${c.id}`;
     return `<tr>
+      <td><input type="checkbox" class="camp-sel" data-id="${esc(c.id)}" data-name="${esc(c.name)}" data-pid="${esc(c.pid)}" onchange="campSelChanged()"></td>
       <td>${toggle}</td>
       <td><span class="chip" style="white-space:nowrap;max-width:170px;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:middle" title="${esc(label)}">${esc(label)}</span></td>
       <td style="font-weight:600;min-width:150px"><span class="camp-link" title="ดูชุดโฆษณา/โฆษณาข้างใน" onclick="openCampaignDetail(${jsStr(c.pid)},${jsStr(c.id)},${jsStr(c.account)},${jsStr(c.currency)},${jsStr(c.name)})">${esc(c.name)}</span><div class="res-label">${OBJ_TH[c.objective] || c.objective}</div></td>
@@ -2087,6 +2092,7 @@ function renderCampaignRows(results, sels) {
       </td>
     </tr>`;
   }).join('');
+  campSelChanged();   // วาดใหม่ = การเลือกเดิมหาย ต้องรีเซ็ตปุ่มลบกับช่องเลือกทั้งหมดให้ตรงกัน
 }
 // ---------- modal รายละเอียดแคมเปญ (ชุดโฆษณา + โฆษณา) ----------
 let detailCtx = null;
@@ -2186,6 +2192,45 @@ async function deleteCampaign(id, name, pid) {
   const data = await res.json();
   if (data.error) return alert('ลบไม่สำเร็จ: ' + data.error);
   bustCaches({ dash: 1, camp: 1 }); // ทุกช่วงเวลา/ทุกชุดบัญชีต้องโหลดใหม่ ไม่ให้แคมเปญที่ลบแล้วหลอนกลับมา
+  loadCampaigns(true);
+}
+
+// ---------- เลือกหลายแคมเปญแล้วลบทีเดียว ----------
+function campSelBoxes() { return [...document.querySelectorAll('#campaignRows .camp-sel')]; }
+function campSelChanged() {
+  const all = campSelBoxes();
+  const n = all.filter((b) => b.checked).length;
+  const btn = document.getElementById('campBulkDel');
+  btn.style.display = n ? '' : 'none';
+  btn.textContent = `ลบที่เลือก (${n})`;
+  document.getElementById('campSelAll').checked = n > 0 && n === all.length;
+}
+function campSelAllToggle(on) { campSelBoxes().forEach((b) => { b.checked = on; }); campSelChanged(); }
+async function bulkDeleteCampaigns() {
+  const sel = campSelBoxes().filter((b) => b.checked)
+    .map((b) => ({ id: b.dataset.id, name: b.dataset.name, pid: b.dataset.pid }));
+  if (!sel.length) return;
+  const preview = sel.slice(0, 8).map((x) => `• ${x.name}`).join('\n')
+    + (sel.length > 8 ? `\n…และอีก ${sel.length - 8} แคมเปญ` : '');
+  if (!confirm(`ลบ ${sel.length} แคมเปญที่เลือก?\n\n${preview}\n\n⚠ ลบแล้วกู้คืนไม่ได้ แอดทั้งหมดข้างในถูกลบด้วย\n(สถิติย้อนหลังยังดูได้ใน Ads Manager)`)) return;
+
+  const btn = document.getElementById('campBulkDel');
+  btn.disabled = true;
+  const fails = [];
+  // ยิงทีละตัว ไม่ยิงพร้อมกัน — เกรงใจ rate limit ของ FB และรู้ชัดว่าตัวไหนพัง
+  for (const [i, x] of sel.entries()) {
+    btn.textContent = `กำลังลบ ${i + 1}/${sel.length}...`;
+    try {
+      const r = await (await fetch('/api/campaign-delete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: x.id, profile: x.pid }),
+      })).json();
+      if (r.error) fails.push(`${x.name}: ${r.error}`);
+    } catch (e) { fails.push(`${x.name}: ${e.message}`); }
+  }
+  btn.disabled = false;
+  if (fails.length) alert(`ลบไม่สำเร็จ ${fails.length}/${sel.length} แคมเปญ:\n\n` + fails.join('\n'));
+  bustCaches({ dash: 1, camp: 1 });
   loadCampaigns(true);
 }
 async function toggleCampaign(id, cur, pid) {
