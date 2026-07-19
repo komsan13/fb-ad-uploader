@@ -2762,8 +2762,11 @@ async function loadAutopilot() {
   document.getElementById('apKill').checked = d.killSwitch;
   document.getElementById('apTest').checked = d.testMode;
   document.getElementById('apCap').textContent = d.maxPerDay;
-  document.getElementById('apMinAds').value = d.minAds || 0;
-  document.getElementById('apScaleMax').value = d.scaleMaxBudget || 0;
+  // หน้านี้รีเฟรชเองทุกจบรอบ (SSE) — เขียนทับช่องที่กำลังพิมพ์คือดีดตัวเลขคามือแล้วที่พิมพ์หายเงียบ
+  for (const [id, v] of [['apMinAds', d.minAds || 0], ['apScaleMax', d.scaleMaxBudget || 0]]) {
+    const el = document.getElementById(id);
+    if (document.activeElement !== el) el.value = v;
+  }
   apRenderLimits(d);
 
   const frozen = Object.entries(d.frozen || {});

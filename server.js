@@ -452,6 +452,7 @@ app.post('/api/landing/upload', uploadLpImg.single('file'), (req, res) => {
 app.get('/lp-asset/:name', (req, res) => {
   // ยัน format ก่อนต่อ path กัน ../ หลุดออกนอกโฟลเดอร์
   if (!/^[0-9a-f-]{36}\.(jpg|png|webp|gif)$/i.test(req.params.name)) return res.status(400).end();
+  res.setHeader('X-Content-Type-Options', 'nosniff');   // path สาธารณะ — ห้ามเบราว์เซอร์เดา type เอง
   res.sendFile(path.join(LP_ASSET_DIR, req.params.name), (err) => {
     if (err && !res.headersSent) res.status(404).end();
   });
@@ -917,7 +918,8 @@ app.get('/auth/callback', async (req, res) => {
   const prof = cfg.profiles.find((p) => p.id === req.query.state);
   const done = (ok, msg) => res.send(`<!doctype html><meta charset="utf8">`
     + `<body style="font-family:'Segoe UI',sans-serif;padding:48px;text-align:center;color:#1c1e21">`
-    + `<h2>${ok ? '✅ เชื่อมต่อสำเร็จ' : '❌ ไม่สำเร็จ'}</h2><p style="color:#65676b">${msg}</p>`
+    // msg มาจาก query string ได้ (error_description ของ FB) — ไม่ escape คือ reflected XSS
+    + `<h2>${ok ? '✅ เชื่อมต่อสำเร็จ' : '❌ ไม่สำเร็จ'}</h2><p style="color:#65676b">${lpEsc(msg)}</p>`
     + `<p style="color:#aaa;font-size:13px">หน้านี้จะปิดเอง…</p>`
     + `<script>if(window.opener){window.opener.postMessage('fb-auth-done','*');setTimeout(function(){window.close()},1400)}else{setTimeout(function(){location.href='/'},1400)}</script>`
     + `</body>`);
@@ -1842,20 +1844,63 @@ function saveAp(s) {
 
 // tick ถือ state ในมือเป็นนาทีๆ ระหว่างนั้นผู้ใช้กดหยุดฉุกเฉิน/ปลดล็อกได้
 // เขียนทับดื้อๆ ตอนจบ = ย้อนคำสั่งผู้ใช้เงียบๆ จึงต้องดึงค่าล่าสุดจากดิสก์มาก่อน
-// ฟิลด์กู้คืน (frozen/noRotate/rejections/reasons) ผู้ใช้กดปลดล็อกได้ระหว่าง tick วิ่งอยู่
 // จะ spread merge ไม่ได้ เพราะ merge เพิ่มคีย์ได้อย่างเดียว ลบไม่ได้ → คีย์ที่ผู้ใช้เพิ่งลบจะถูกใส่กลับ
-// = กดปลดล็อกแล้วขึ้นว่าสำเร็จ แต่ tick เขียนทับให้กลับไปล็อกเหมือนเดิม
-// วิธีที่ถูกคือให้ค่าบนดิสก์ชนะทั้งก้อน แล้วค่อยเติมเฉพาะรายการที่ tick นี้เพิ่งล็อกเองกลับเข้าไป
-// mine = สิ่งที่ tick นี้เพิ่งล็อกเอง ต้องเอากลับเข้าไปหลังให้ดิสก์ชนะ
-function saveApMerged(s, mine = { frozen: {}, noRotate: {} }) {
+//
+// บทเรียนราคาแพง (รีวิว 19 ก.ค. 2026): เวอร์ชันก่อนให้ "ดิสก์ชนะทั้งก้อน" กับ rejections/reasons
+// แต่เก็บ counted/reasonCounted จากหน่วยความจำ — คู่ counter/dedupe เลยขัดกันเอง:
+// ค่าที่นับรอบนี้หายตอน save แต่ mark "นับแล้ว" อยู่ → แอดเดิมไม่ถูกนับซ้ำอีกเลย
+// ผลคือเกราะ freeze สะสมข้าม tick ไม่ได้ (ใช้งานจริง FB รีวิวแอดกระจายเป็นชั่วโมง = เกราะไม่ทำงาน)
+// และซ้ำร้าย s.rejections[acct] เป็น undefined ใน tick ถัดไป → TypeError ฆ่าทั้ง tick เงียบๆ
+//
+// วิธีที่ถูก: จับ snapshot ตอน tick เริ่ม แล้วตอน save แยกให้ออกว่าอะไรคือ "ของที่ tick นี้เพิ่งเขียน"
+// (ต้องรอด) กับอะไรคือของเก่า (ดิสก์ชนะ — เคารพการลบของผู้ใช้) การเทียบใช้ ref/ค่าได้แม่น
+// เพราะโค้ดเขียน state ด้วยการแทนที่ object ใหม่เสมอ (apMark) ไม่ mutate ของเดิม
+function apSnapshot(s) {
+  const objCopy = (o) => ({ ...(o || {}) });
+  const arrCopy = (o) => Object.fromEntries(Object.entries(o || {}).map(([k, v]) => [k, [...(v || [])]]));
+  return {
+    frozen: objCopy(s.frozen), noRotate: objCopy(s.noRotate),
+    counted: objCopy(s.counted), reasonCounted: objCopy(s.reasonCounted),
+    warned: objCopy(s.warned),
+    rejections: arrCopy(s.rejections), reasons: arrCopy(s.reasons),
+    logSeen: new Set(s.log || []),
+  };
+}
+function saveApMerged(s, base) {
   const cur = loadAp();
   s.killSwitch = cur.killSwitch;                 // ปุ่มหยุดฉุกเฉินเป็นของผู้ใช้เสมอ
-  s.frozen = { ...cur.frozen, ...mine.frozen };
-  s.noRotate = { ...cur.noRotate, ...mine.noRotate };
-  // ตัวนับปล่อยให้ดิสก์ชนะ — ผู้ใช้กดปลดล็อกแล้วต้องเริ่มนับใหม่จริงๆ
-  // ถ้า tick นี้เพิ่งนับเพิ่มแล้วหายไป ก็แค่เริ่มนับใหม่รอบหน้า ซึ่งพลาดไปทางปลอดภัย
-  s.rejections = { ...cur.rejections };
-  s.reasons = { ...cur.reasons };
+
+  // ฟิลด์ object: ดิสก์เป็นฐาน (การลบ/ล้างของผู้ใช้ชนะ) ทับด้วยคีย์ที่ tick นี้เพิ่งเขียนเท่านั้น
+  // counter กับ dedupe (rejections↔counted, reasons↔reasonCounted) ต้องใช้กติกาเดียวกันเสมอ
+  for (const f of ['frozen', 'noRotate', 'counted', 'reasonCounted', 'warned']) {
+    const mine = {};
+    for (const [k, v] of Object.entries(s[f] || {})) {
+      if (base[f][k] !== v) mine[k] = v;         // ref/ค่าต่างจากตอนเริ่ม = tick นี้เขียนเอง
+    }
+    s[f] = { ...(cur[f] || {}), ...mine };
+  }
+
+  // ฟิลด์ array ของ timestamp: ดิสก์เป็นฐาน + ต่อท้ายเฉพาะ timestamp ที่ tick นี้เพิ่งนับ
+  // (ถ้าผู้ใช้กด unfreeze ล้าง [] ระหว่าง tick ของเก่าในมือ tick ต้องไม่ฟื้นคืน — เฉพาะของใหม่เท่านั้น)
+  const windows = { rejections: 24 * 3600 * 1000, reasons: AP_REASON_WINDOW };
+  for (const f of ['rejections', 'reasons']) {
+    const out = {};
+    for (const [k, v] of Object.entries(cur[f] || {})) out[k] = [...(v || [])];
+    for (const [k, v] of Object.entries(s[f] || {})) {
+      const seen = new Set(base[f][k] || []);
+      const added = (v || []).filter((t) => !seen.has(t));
+      if (added.length) out[k] = (out[k] || []).concat(added);
+    }
+    for (const k of Object.keys(out)) out[k] = apRecent(out[k], windows[f]);
+    s[f] = out;
+  }
+
+  // log: บรรทัดใหม่จาก tick + ของบนดิสก์ — บรรทัดที่ผู้ใช้เขียนระหว่าง tick วิ่ง
+  // ("ปลดล็อกด้วยมือ", "แก้เพดาน") คือร่องรอย audit ห้ามหายเงียบ
+  const fresh = (s.log || []).filter((e) => !base.logSeen.has(e));
+  s.log = fresh.concat(cur.log || []).sort((a, b) => b.ts - a.ts).slice(0, AP_LOG_MAX);
+
+  apPrune(s);   // ฐานมาจากดิสก์ (ยังไม่ prune) ต้อง prune ซ้ำ ไม่ให้ของหมดอายุฟื้นคืนทุกรอบ
   saveAp(s);
 }
 // ---------- ช่องส่งสดไปหน้าเว็บ (SSE) ----------
@@ -2355,8 +2400,10 @@ async function apPauseLosers(cfg, prof, a, ads, s, alerts) {
   const room = lim.maxPausePerDay - s.pausedLog.filter((x) => x.acct === acctId).length;
   if (room <= 0) return;
 
-  // ดูเฉพาะแอดที่ยิงอยู่จริงและอยู่ในแคมเปญที่ระบบเป็นเจ้าของ
-  const owned = new Set([...(s.owned || []), ...Object.values(s.campaign || {})]);
+  // ดูเฉพาะแอดที่ยิงอยู่จริงและอยู่ในแคมเปญที่ระบบ "สร้างเอง" (s.owned) เท่านั้น
+  // ห้ามรวม s.campaign — ตัวนั้นมีแคมเปญที่ "รับมาใช้" จากชื่อขึ้นต้น Autopilot ปนอยู่
+  // ซึ่ง apGetCampaign จงใจไม่ใส่ owned เพื่อไม่แตะของที่เจ้าของตั้งไว้เอง (ดูคอมเมนต์ที่นั่น)
+  const owned = new Set(s.owned || []);
   const live = ads.filter((x) => x.effective_status === 'ACTIVE' && !s.paused[x.id]);
   if (!live.length) return;
 
@@ -2439,9 +2486,11 @@ async function apScale(cfg, prof, a, s, alerts) {
   const insMap = Object.fromEntries(ins.map((r) => [r.campaign_id, r]));
 
   s.scaled = s.scaled || {};
-  // ขึ้นงบได้เฉพาะแคมเปญที่ระบบสร้างเอง — เดิมไล่ทุกแคมเปญในบัญชี
+  // ขึ้นงบได้เฉพาะแคมเปญที่ระบบสร้างเอง (s.owned) — เดิมไล่ทุกแคมเปญในบัญชี
   // แปลว่าแคมเปญที่เจ้าของทำเองและตั้งงบไว้ตั้งใจแล้ว โดนระบบขยับงบให้วันละ 20% โดยไม่ได้ขอ
-  const owned = new Set([...(s.owned || []), ...Object.values(s.campaign || {})]);
+  // และห้ามรวม s.campaign ด้วย — แคมเปญ "รับมาใช้" (ชื่อขึ้นต้น Autopilot แต่ไม่ได้สร้างเอง)
+  // อยู่ในนั้น ซึ่งสัญญาไว้ที่ apGetCampaign ว่าจะไม่ขยับงบ/ไม่ปิดแอดข้างใน
+  const owned = new Set(s.owned || []);
   for (const c of camps) {
     if (!owned.has(c.id)) continue;
     if (c.status !== 'ACTIVE' || !c.daily_budget) continue;
@@ -2525,8 +2574,8 @@ async function autopilotTick(mode = 'full') {
   s.fixes = apRecent(s.fixes, 24 * 3600 * 1000);
   apBroadcast({ type: 'tick', phase: 'start', mode });
 
-  // จดว่ารอบนี้เราล็อกอะไรไปเอง เพื่อเอากลับเข้าไปตอนบันทึก หลังให้ค่าบนดิสก์ (ที่ผู้ใช้อาจเพิ่งปลดล็อก) ชนะ
-  const mine = { frozen: {}, noRotate: {} };
+  // จับภาพ state ตอนเริ่ม — ตอนบันทึก saveApMerged ใช้เทียบว่าอะไรคือของที่ tick นี้เพิ่งเขียน
+  const base = apSnapshot(s);
   let stopped = false;
   for (const prof of cfg.profiles || []) {
     if (stopped) break;
@@ -2556,6 +2605,10 @@ async function autopilotTick(mode = 'full') {
 
       const rejected = ads.filter((x) => x.effective_status === 'DISAPPROVED');
 
+      // ห่อทั้งช่วงจัดการแอดโดนปฏิเสธ — error ในบัญชีเดียวห้ามฆ่าทั้ง tick
+      // เคยเกิดจริง: TypeError ตรงนี้ทำให้ทุกบัญชีที่เหลือไม่ถูกตรวจ ไม่ save ไม่แจ้งเตือน
+      // และวนพังซ้ำทุกรอบเงียบๆ ขณะที่ตัวขยายงบของบัญชีก่อนหน้ายิงจริงแต่ cooldown ไม่ถูกจำ
+      try {
       // รอบแรกของบัญชีนี้ = จดไว้เฉยๆ ไม่ลงมือ กันไปไล่แก้ของเก่าที่ค้างมานานรวดเดียว
       if (!s.baselined[acctId]) {
         rejected.forEach((x) => apMark(s.handled, x.id, 'baseline'));
@@ -2574,10 +2627,13 @@ async function autopilotTick(mode = 'full') {
           apMark(s.counted, ad.id, 1);
           s.rejections[acctId] = apRecent(s.rejections[acctId], 24 * 3600 * 1000).concat(Date.now());
         }
-        if (s.rejections[acctId].length >= apLim.freezeRejections) {
-          s.frozen[acctId] = mine.frozen[acctId] = { since: Date.now(), reason: `โดนปฏิเสธ ${s.rejections[acctId].length} ตัวใน 24 ชม.` };
+        // guard || [] จำเป็น — state บนดิสก์อาจไม่มีคีย์นี้ (เช่นไฟล์เคยพัง/ถูกล้าง) ขณะที่ mark
+        // counted ยังอยู่ เลยข้ามการนับด้านบน ถ้าอ่าน .length ตรงๆ ได้ undefined = ฆ่าทั้ง tick
+        const rejCount = (s.rejections[acctId] || []).length;
+        if (rejCount >= apLim.freezeRejections) {
+          s.frozen[acctId] = { since: Date.now(), reason: `โดนปฏิเสธ ${rejCount} ตัวใน 24 ชม.` };
           apMark(s.handled, ad.id, 'frozen');
-          const m = `🧊 หยุดระบบอัตโนมัติของบัญชี ${a.name} — โดนปฏิเสธ ${s.rejections[acctId].length} ตัวใน 24 ชม. เสี่ยงโดนแบน เข้าไปดูเองก่อนแล้วค่อยปลดล็อกในเว็บ`;
+          const m = `🧊 หยุดระบบอัตโนมัติของบัญชี ${a.name} — โดนปฏิเสธ ${rejCount} ตัวใน 24 ชม. เสี่ยงโดนแบน เข้าไปดูเองก่อนแล้วค่อยปลดล็อกในเว็บ`;
           alerts.push(m); apLog(s, 'freeze', m, acctId);
           break;
         }
@@ -2623,7 +2679,7 @@ async function autopilotTick(mode = 'full') {
         const hits = (s.reasons[rk] || []).length;
 
         if (hits >= apLim.sameReasonStop && !s.noRotate[acctId]) {
-          s.noRotate[acctId] = mine.noRotate[acctId] = { since: Date.now(), cat, hits };
+          s.noRotate[acctId] = { since: Date.now(), cat, hits };
           const m = `🚧 ${a.name}: หยุดสร้างแอดใหม่ให้บัญชีนี้ — โดนปฏิเสธด้วยเหตุผลเดิม "${cat}" ${hits} ครั้งทั้งที่เปลี่ยนคลิปและแคปชั่นแล้ว\n`
             + `   แปลว่าไม่ใช่ปัญหาที่ครีเอทีฟ แต่เป็นที่ตัวสินค้าหรือหน้าปลายทาง — เปลี่ยนครีเอทีฟต่อไปก็จะโดนข้อเดิม\n`
             + `   แก้ต้นเหตุแล้วกดปลดล็อกในเว็บเพื่อให้ระบบทำงานต่อ`;
@@ -2706,6 +2762,10 @@ async function autopilotTick(mode = 'full') {
           alerts.push(m); apLog(s, 'warn', m, acctId);
         }
       }
+      } catch (e) {
+        const m = `⚠️ ${a.name}: ตรวจแอดโดนปฏิเสธล้มเหลวกลางคัน (${e.message}) — ข้ามบัญชีนี้รอบนี้ บัญชีอื่นทำงานต่อ`;
+        alerts.push(m); apLog(s, 'warn', m, acctId);
+      }
 
       // เติมแอดให้ครบเป้า — ทำหลังจัดการของที่โดนปฏิเสธเสร็จ และเฉพาะบัญชีที่ยังไม่ถูกหยุด
       if (mode === 'full' && !s.frozen[acctId]) {
@@ -2722,7 +2782,7 @@ async function autopilotTick(mode = 'full') {
   }
   if (mode === 'full') apStockCheck(cfg, s, alerts, liveAccounts);
 
-  saveApMerged(s, mine);
+  saveApMerged(s, base);
   apBroadcast({ type: 'tick', phase: 'end', mode });
   if (alerts.length) await tgSend(cfg, '🤖 ระบบอัตโนมัติ\n\n' + alerts.join('\n\n'));
 }
@@ -2871,8 +2931,11 @@ app.post('/api/autopilot/unfreeze', (req, res) => {
 const AP_FAST_MS = 2 * 60 * 1000;
 const AP_FULL_MS = 20 * 60 * 1000;
 function startAutopilotTimers() {
-  setInterval(() => runAutopilot('fast').catch(() => {}), AP_FAST_MS).unref();
-  setInterval(() => runAutopilot('full').catch(() => {}), AP_FULL_MS).unref();
+  // ห้ามกลืน error เงียบ — เคยทำให้ tick ที่พังวนซ้ำอยู่เป็นชั่วโมงโดยไม่มีร่องรอยที่ไหนเลย
+  // อย่างน้อยต้องเห็นใน docker logs (ภายใน tick มี try/catch ต่อบัญชีอยู่แล้ว มาถึงนี่คือพังระดับรอบ)
+  const boom = (e) => console.error('[autopilot] รอบตรวจล้มเหลวทั้งรอบ:', e);
+  setInterval(() => runAutopilot('fast').catch(boom), AP_FAST_MS).unref();
+  setInterval(() => runAutopilot('full').catch(boom), AP_FULL_MS).unref();
 }
 
 // สรุปยอดเมื่อวานทุกเช้า 08:00 เวลาไทย
@@ -2946,5 +3009,5 @@ if (require.main === module) {
     console.log('');
   });
 } else {
-  module.exports = { app, curFactor, apPrune, apMark, apRecent, apFence, resultSpec, pickResult, loadAp, saveAp, apLimits, apParseLimit, AP_LIMIT_SPEC };
+  module.exports = { app, curFactor, apPrune, apMark, apRecent, apFence, resultSpec, pickResult, loadAp, saveAp, apLimits, apParseLimit, AP_LIMIT_SPEC, apSnapshot, saveApMerged };
 }
