@@ -25,8 +25,9 @@ describe('หน้า Landing', () => {
     const page = await html(base);
     assert.ok(page.includes('ร้านทดสอบ'), 'ต้องมีชื่อร้าน');
     assert.ok(page.includes('https://line.me/ti/p/~x'), 'ต้องมีลิงก์');
-    assert.ok(page.includes('"123456789"'), 'Meta Pixel ต้องถูกฝัง');
-    assert.ok(page.includes("fbq('trackSingle', id, 'PageView')"),
+    // ต้องเป็นแพตเทิร์นมาตรฐานแบบเขียน id ตรงๆ เพราะเครื่องมือตรวจของ Meta สแกนหาในซอร์ส
+    assert.ok(page.includes("fbq('init','123456789')"), 'ต้องมี init แบบเขียน id ตรงตัว ไม่ใช่ประกอบด้วย JS');
+    assert.ok(page.includes("fbq('trackSingle','123456789','PageView')"),
       'ต้องยิง PageView ทีละพิกเซล ไม่ใช่ fbq(track) แบบไม่ระบุตัวซึ่งยิงเข้าทุกพิกเซลพร้อมกัน');
     assert.ok(!page.includes("fbq('track','PageView')"), 'ต้องไม่เหลือรูปแบบเดิมที่ทำให้นับซ้ำ');
     assert.ok(page.includes('G-ABC123'), 'GA ต้องถูกฝัง');

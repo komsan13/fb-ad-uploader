@@ -519,10 +519,12 @@ ${meta.length ? `<script>
 !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
 // โหลดตัว fbevents ครั้งเดียว แล้ว init ทุกพิกเซล จากนั้นยิง PageView ทีละตัวด้วย trackSingle
 // ห้ามใช้ fbq('track',...) แบบไม่ระบุพิกเซล เพราะมันยิงเข้าทุกพิกเซลที่ init ไว้พร้อมกัน
-// มี 10 พิกเซลแล้วเรียกซ้ำ 10 บล็อกแบบเดิม = PageView ถูกนับเกินจริงหลายเท่า
+// (10 พิกเซล x เรียกซ้ำ 10 บล็อกแบบเดิม = PageView ถูกนับเกินจริงหลายเท่า)
+// เขียน id ตรงๆ ทีละบรรทัด ไม่วนลูปจาก array เพราะเครื่องมือตรวจของ Meta
+// สแกนหาแพตเทิร์น fbq('init','<id>') ในซอร์ส ถ้าประกอบด้วย JS มันจะหาไม่เจอ
+${meta.map((p) => `fbq('init','${lpEsc(p.id)}');`).join('\n')}
+${meta.map((p) => `fbq('trackSingle','${lpEsc(p.id)}','PageView');`).join('\n')}
 window.__lpPixels = ${JSON.stringify(meta.map((p) => p.id))};
-window.__lpPixels.forEach(function (id) { fbq('init', id); });
-window.__lpPixels.forEach(function (id) { fbq('trackSingle', id, 'PageView'); });
 </script>` : ''}
 ${ga.map((p) => `<script async src="https://www.googletagmanager.com/gtag/js?id=${lpEsc(p.id)}"></script>
 <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','${lpEsc(p.id)}');</script>`).join('')}
