@@ -24,7 +24,10 @@ docker run -d --name fbad --restart unless-stopped \
   --label traefik.http.routers.fbad.tls.certresolver=le \
   --label traefik.http.routers.fbad.middlewares=fbad-auth \
   --label "traefik.http.middlewares.fbad-auth.basicauth.users=$HASH" \
-  --label 'traefik.http.routers.fbadpub.rule=Host(`ad.senball.com`) && Path(`/privacy.html`)' \
+  # หน้า Landing กับรูปของมันต้องเปิดสาธารณะ — คนที่กดโฆษณาไม่มีรหัสผ่าน
+  # และ Meta ต้องเข้ามาอ่านพิกเซล/รีวิวโฆษณาได้ด้วย
+  # ใช้ Path() แบบตรงตัวไม่ใช่ PathPrefix เพื่อให้ /lp/admin ยังอยู่หลังรหัสผ่านเหมือนเดิม
+  --label 'traefik.http.routers.fbadpub.rule=Host(`ad.senball.com`) && (Path(`/privacy.html`) || Path(`/lp`) || Path(`/lp/`) || PathPrefix(`/lp-asset/`))' \
   --label traefik.http.routers.fbadpub.entrypoints=websecure \
   --label traefik.http.routers.fbadpub.service=fbad \
   --label traefik.http.routers.fbadpub.tls.certresolver=le \
