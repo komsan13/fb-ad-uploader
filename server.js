@@ -515,7 +515,15 @@ ${v.avatar ? `<meta property="og:image" content="${lpEsc(v.avatar)}">` : ''}
   .empty{text-align:center;color:var(--mut);font-size:14px;padding:28px;border:1px dashed var(--line);border-radius:14px}
   @media (prefers-reduced-motion:reduce){a.btn{transition:none}a.btn:hover{transform:none}}
 </style>
-${meta.map((p) => `<script>!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');fbq('init','${lpEsc(p.id)}');fbq('track','PageView');</script>`).join('')}
+${meta.length ? `<script>
+!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+// โหลดตัว fbevents ครั้งเดียว แล้ว init ทุกพิกเซล จากนั้นยิง PageView ทีละตัวด้วย trackSingle
+// ห้ามใช้ fbq('track',...) แบบไม่ระบุพิกเซล เพราะมันยิงเข้าทุกพิกเซลที่ init ไว้พร้อมกัน
+// มี 10 พิกเซลแล้วเรียกซ้ำ 10 บล็อกแบบเดิม = PageView ถูกนับเกินจริงหลายเท่า
+window.__lpPixels = ${JSON.stringify(meta.map((p) => p.id))};
+window.__lpPixels.forEach(function (id) { fbq('init', id); });
+window.__lpPixels.forEach(function (id) { fbq('trackSingle', id, 'PageView'); });
+</script>` : ''}
 ${ga.map((p) => `<script async src="https://www.googletagmanager.com/gtag/js?id=${lpEsc(p.id)}"></script>
 <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','${lpEsc(p.id)}');</script>`).join('')}
 </head><body>
@@ -534,7 +542,10 @@ ${ga.map((p) => `<script async src="https://www.googletagmanager.com/gtag/js?id=
   document.querySelectorAll('a.btn[data-ev]').forEach(function (a) {
     a.addEventListener('click', function () {
       var ev = a.dataset.ev;
-      if (window.fbq) fbq('track', ev);
+      // ยิงทีละพิกเซลด้วย trackSingle ด้วยเหตุผลเดียวกับ PageView — กันนับซ้ำ
+      if (window.fbq && window.__lpPixels) {
+        window.__lpPixels.forEach(function (id) { fbq('trackSingle', id, ev); });
+      }
       if (window.gtag) gtag('event', ev);
     });
   });
