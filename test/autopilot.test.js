@@ -604,11 +604,14 @@ describe('บาลานซ์เพจ + กันเพจแตก', () => {
 
 // ---------- เกราะ Meta block: persist cooldown, app-block backoff, เตือน Telegram ----------
 describe('เกราะ Meta block API', () => {
-  const fs = require('node:fs'), path = require('node:path');
+  const fs = require('node:fs'), path = require('node:path'), http = require('node:http');
   const coolFile = (dir) => {
     try { return JSON.parse(fs.readFileSync(path.join(dir, 'fb-cooldown.json'), 'utf8')); }
     catch { return null; }
   };
+  // appBlocks ในไฟล์ key ด้วย hash ของ token (กันเก็บ token ดิบ) — เทสคำนวณแบบเดียวกับ server.js
+  const sha16 = (tok) => require('node:crypto').createHash('sha256').update(tok).digest('hex').slice(0, 16);
+  const blockOf = (dir, tok) => ((coolFile(dir) || {}).appBlocks || {})[sha16(tok)] || 0;
 
   test('fix1: โควตาแตะ 90% ต้องเซฟ cooldown ลงไฟล์ (รอด redeploy)', async (t) => {
     const world = freshWorld();
@@ -627,8 +630,7 @@ describe('เกราะ Meta block API', () => {
     await post(base, '/api/autopilot/run');            // รอบแรก เจอ 200 → ตั้ง appBlock
     const before = world.calls.length;
     assert.ok(before > 0, 'รอบแรกต้องพยายามยิงก่อน');
-    const c = coolFile(dir);
-    assert.ok(c && c.appBlockUntil > Date.now(), 'ต้องเซฟ appBlockUntil ไว้');
+    assert.ok(blockOf(dir, 'tok') > Date.now(), 'ต้องเซฟ appBlock ของ token นี้ไว้');
     await post(base, '/api/autopilot/run');            // รอบสอง ต้องพัก ไม่ยิงเลย
     assert.strictEqual(world.calls.length, before, 'แอปโดนบล็อก = รอบถัดไปต้องพัก ไม่ยิง FB ซ้ำเปล่าๆ');
     assert.strictEqual(readState(dir).warned.paused, true, 'ต้องตั้งธงพักไว้ (ใช้กันเตือนซ้ำ)');
@@ -643,20 +645,30 @@ describe('เกราะ Meta block API', () => {
     assert.strictEqual(readState(dir).warned.paused, true, 'ต้องอยู่โหมดพัก');
     world.route = null;                                 // แอปกลับมา
     await get(base, '/api/accounts?profile=p1');        // call สำเร็จ → ปลด appBlock
-    assert.strictEqual(coolFile(dir).appBlockUntil, 0, 'appBlock ต้องถูกปลดเป็น 0');
+    assert.strictEqual(blockOf(dir, 'tok'), 0, 'appBlock ของ token นี้ต้องถูกปลด');
     await post(base, '/api/autopilot/run');            // ไม่พักแล้ว → resume branch เคลียร์ธง
     assert.strictEqual(readState(dir).warned.paused, false, 'กลับมาทำงานต้องเคลียร์ธงพัก (กัน spam)');
   });
 
   test('fix2: เพดานเวลาพัก — estimated_time ใหญ่ผิดปกติ ต้องถูก clamp ไม่พักค้างยาว', async (t) => {
     const world = freshWorld();
-    // Meta บอกว่าให้รอ 100000 นาที (~69 วัน) — ต้องถูก clamp เหลือ ≤ 6 ชม.
+    // Meta บอกว่าให้รอ 100000 นาที (~69 วัน) — ต้องถูก clamp เหลือ ≤ 24 ชม.
     world.headers = { 'x-business-use-case-usage': '{"9":[{"type":"ads_management","call_count":10,"estimated_time_to_regain_access":100000}]}' };
     const { base, dir } = await boot(t, { world });
     await post(base, '/api/autopilot/run');
     const c = coolFile(dir);
     assert.ok(c.coolUntil > Date.now(), 'ต้องพักจริง');
-    assert.ok(c.coolUntil <= Date.now() + 6 * 3600 * 1000 + 60000, 'ต้องไม่พักเกิน 6 ชม. แม้ Meta บอกมาเยอะ');
+    assert.ok(c.coolUntil <= Date.now() + 24 * 3600 * 1000 + 60000, 'ต้องไม่พักเกิน 24 ชม. แม้ Meta บอกมาเยอะ');
+  });
+
+  test('fix2: เวลาที่ Meta บอกจริง (8 ชม.) ต้องเคารพเต็มๆ ไม่ตัดให้สั้นลง', async (t) => {
+    const world = freshWorld();
+    // Meta สั่งรอ 480 นาที — กลับมายิงก่อนเวลามีแต่ยืดโทษ ต้องพักครบ ไม่ใช่โดนเพดานตัด
+    world.headers = { 'x-business-use-case-usage': '{"9":[{"type":"ads_management","call_count":10,"estimated_time_to_regain_access":480}]}' };
+    const { base, dir } = await boot(t, { world });
+    await post(base, '/api/autopilot/run');
+    const c = coolFile(dir);
+    assert.ok(c.coolUntil >= Date.now() + 7.9 * 3600 * 1000, 'ต้องพักตามที่ Meta บอก (~8 ชม.) ไม่ใช่สั้นกว่า');
   });
 
   test('fix4: rate-limit ไม่ปลดตอนเรียกสำเร็จ (ต่างจาก app-block)', async (t) => {
@@ -666,5 +678,120 @@ describe('เกราะ Meta block API', () => {
     await get(base, '/api/accounts?profile=p1');        // สำเร็จ แต่ header บอกโควตาเกือบเต็ม
     const c = coolFile(dir);
     assert.ok(c.coolUntil > Date.now(), 'rate-limit cooldown ต้องยังอยู่ แม้ call จะสำเร็จ (ลิมิตเป็นแบบค่อยเป็นค่อยไป)');
+  });
+
+  test('บล็อกเป็นรายแอป: แอปโปรไฟล์หนึ่งโดนบล็อก call สำเร็จของอีกแอปต้องไม่ปลดให้', async (t) => {
+    const world = freshWorld();
+    // จำลองสถานะจริง: แอปเก่า (tokA) โดนบล็อก แอปใหม่ (tokB) ใช้งานได้
+    world.route = (m, p, params) => (params.access_token === 'tokA' ? { error: 'API access blocked', errorCode: 200 } : null);
+    const config = baseConfig();
+    config.profiles = [
+      { id: 'pA', label: 'แอปเก่า', accessToken: 'tokA', pageId: 'page1' },
+      { id: 'pB', label: 'แอปใหม่', accessToken: 'tokB', pageId: 'page1' },
+    ];
+    const { base, dir } = await boot(t, { world, config });
+    await post(base, '/api/autopilot/run');   // pA เจอ 200 → ติดบล็อก แล้ว pB สำเร็จตามหลัง
+    assert.ok(blockOf(dir, 'tokA') > Date.now(), 'บล็อกของ tokA ต้องยังอยู่ แม้ tokB จะเรียกสำเร็จทีหลัง');
+    assert.strictEqual(blockOf(dir, 'tokB'), 0, 'tokB ปกติ ต้องไม่ติดบล็อก');
+    const callsA = world.calls.filter((c) => c.params.access_token === 'tokA').length;
+    await post(base, '/api/autopilot/run');   // รอบสอง: pA ต้องถูกข้าม (ไม่ยิงซ้ำใส่แอปที่โดนบล็อก) pB ทำงานต่อ
+    assert.strictEqual(world.calls.filter((c) => c.params.access_token === 'tokA').length, callsA,
+      'ห้ามยิงใส่แอปที่ติดบล็อก — ยิงต่อมีแต่ยืดเวลาโดนแขวน');
+    assert.ok(world.calls.filter((c) => c.params.access_token === 'tokB').length > 0, 'โปรไฟล์ที่แอปปกติต้องทำงานต่อ');
+    assert.notStrictEqual((readState(dir).warned || {}).paused, true, 'บล็อกแค่บางโปรไฟล์ ≠ พักทั้งระบบ');
+  });
+
+  test('บล็อกยาว: หมดเวลาพักแล้วยิงยังพัง ต้องไม่ประกาศ "กลับมาแล้ว" — ประกาศเมื่อสำเร็จจริงเท่านั้น', async (t) => {
+    // Telegram ปลอม — เก็บทุกข้อความที่ระบบส่ง ไว้พิสูจน์ว่าไม่มีข่าวดีปลอม
+    const tgMsgs = [];
+    const tg = http.createServer((req, res) => {
+      let b = ''; req.on('data', (c) => { b += c; });
+      req.on('end', () => {
+        if (req.url.includes('sendMessage')) { try { tgMsgs.push(JSON.parse(b).text); } catch { /* ข้าม */ } }
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, result: [] }));
+      });
+    });
+    await new Promise((r) => tg.listen(0, '127.0.0.1', r));
+    t.after(() => tg.close());
+
+    const world = freshWorld();
+    world.route = () => ({ error: 'API access blocked', errorCode: 200 });   // ยังบล็อกอยู่
+    const fb = await makeFakeFb(world);
+    const dir = tmpDir();
+    seed(dir, { config: baseConfig({ telegram: { botToken: 'bt', chatId: 'c' } }), videos: 3, captions: 3 });
+    // จำลอง "พักครบ 30 นาทีแล้ว": บล็อกหมดเวลา + ธง paused ติดอยู่จากรอบก่อน (เตือนพักไปแล้ว)
+    fs.writeFileSync(path.join(dir, 'fb-cooldown.json'),
+      JSON.stringify({ coolUntil: 0, appBlocks: { [sha16('tok')]: Date.now() - 1000 } }));
+    fs.writeFileSync(path.join(dir, 'autopilot-state.json'), JSON.stringify({ warned: { paused: true } }));
+    const srv = await startServer(dir, fb.port, { TG_API_BASE: `http://127.0.0.1:${tg.address().port}` });
+    t.after(() => { srv.stop(); fb.server.close(); });
+
+    await post(srv.base, '/api/autopilot/run');   // ลองใหม่ → ยังพัง → ต้องเงียบทั้งสองทาง
+    assert.strictEqual(tgMsgs.filter((m) => m.includes('กลับมา')).length, 0, 'ห้ามประกาศกลับมาก่อนมี call สำเร็จจริง');
+    assert.strictEqual(tgMsgs.filter((m) => m.includes('พักรอบตรวจ')).length, 0, 'เตือนพักไปแล้ว ห้ามเตือนซ้ำ');
+    assert.strictEqual(readState(dir).warned.paused, true, 'ยังไม่ฟื้น ธงพักต้องคงอยู่');
+
+    world.route = null;                            // แอปกลับมาจริง
+    await get(srv.base, '/api/accounts?profile=p1');   // call สำเร็จ → ปลดบล็อก (เหมือน watchTick โพรบเจอ)
+    await post(srv.base, '/api/autopilot/run');
+    assert.strictEqual(tgMsgs.filter((m) => m.includes('กลับมา')).length, 1, 'กลับมาจริงค่อยประกาศ ครั้งเดียว');
+    assert.strictEqual(readState(dir).warned.paused, false, 'ฟื้นแล้วต้องเคลียร์ธง');
+  });
+
+  test('โควตาแตะ 90%: พักเงียบ — ข้ามรอบแต่ไม่ตั้งธงเตือน และปุ่มตรวจต้องบอกตรงๆ ว่าพักอยู่', async (t) => {
+    const world = freshWorld();
+    world.headers = { 'x-app-usage': '{"call_count":95,"total_time":10,"total_cputime":10}' };
+    const { base, dir } = await boot(t, { world });
+    await post(base, '/api/autopilot/run');            // รอบแรกเห็น header 90% → ตั้ง soft cool
+    const before = world.calls.length;
+    const d = await post(base, '/api/autopilot/run');  // รอบสองต้องพัก
+    assert.strictEqual(world.calls.length, before, 'ช่วง soft cool ต้องไม่ยิง FB');
+    assert.strictEqual(d.paused, true, 'ปุ่มตรวจต้องได้คำตอบว่ารอบนี้ถูกพัก ไม่ใช่ ok เงียบๆ');
+    assert.notStrictEqual((readState(dir).warned || {}).paused, true,
+      'โควตาแตะ 90% เกิดได้ทั้งวันตอนยุ่ง — พักเงียบพอ ไม่ต้องปลุกคนทุกรอบ');
+  });
+
+  test('ฟื้นครึ่งๆ กลางรอบ: call สำเร็จแต่ header สั่งพักใหม่ทันที ต้องไม่ประกาศ "กลับมาแล้ว"', async (t) => {
+    const tgMsgs = [];
+    const tg = http.createServer((req, res) => {
+      let b = ''; req.on('data', (c) => { b += c; });
+      req.on('end', () => {
+        if (req.url.includes('sendMessage')) { try { tgMsgs.push(JSON.parse(b).text); } catch { /* ข้าม */ } }
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, result: [] }));
+      });
+    });
+    await new Promise((r) => tg.listen(0, '127.0.0.1', r));
+    t.after(() => tg.close());
+
+    const world = freshWorld();
+    // call "สำเร็จ" ทุกตัว แต่ header แนบคำสั่งพักจาก Meta มาด้วย — สถานการณ์ throttle ต่อเนื่องของจริง
+    world.headers = { 'x-business-use-case-usage': '{"9":[{"type":"ads_management","call_count":10,"estimated_time_to_regain_access":5}]}' };
+    const fb = await makeFakeFb(world);
+    const dir = tmpDir();
+    seed(dir, { config: baseConfig({ telegram: { botToken: 'bt', chatId: 'c' } }), videos: 3, captions: 3 });
+    fs.writeFileSync(path.join(dir, 'autopilot-state.json'), JSON.stringify({ warned: { paused: true } }));
+    const srv = await startServer(dir, fb.port, { TG_API_BASE: `http://127.0.0.1:${tg.address().port}` });
+    t.after(() => { srv.stop(); fb.server.close(); });
+
+    await post(srv.base, '/api/autopilot/run');   // call แรกสำเร็จ (fbOk) แต่โดนสั่งพักซ้ำกลางรอบ
+    assert.strictEqual(tgMsgs.filter((m) => m.includes('กลับมา')).length, 0,
+      'โดนสั่งพักใหม่ระหว่างรอบ = ยังไม่ฟื้นจริง ห้ามส่งข่าวดีปลอม');
+    assert.strictEqual(readState(dir).warned.paused, true, 'ธงพักต้องคงอยู่จนกว่าจะฟื้นจริง');
+  });
+
+  test('อัปวิดีโอ (advideos) เจอแอปโดนบล็อก ต้องติดเบรกเหมือน call อื่น', async (t) => {
+    const world = freshWorld();
+    // จำลองแอปโดนบล็อก "กลางรอบ" พอดีตอนจะอัปวิดีโอ — จากนั้นทุก call พังหมด (เหมือนบล็อกจริง)
+    let blocked = false;
+    world.route = (m, p) => {
+      if (m === 'POST' && /advideos$/.test(p)) blocked = true;
+      return blocked ? { error: 'API access blocked', errorCode: 200 } : null;
+    };
+    const { base, dir } = await boot(t, { world });
+    await runTwice(base);   // รอบสองคือรอบเติมแอด → ถึงจุดอัปวิดีโอ
+    assert.ok(blockOf(dir, 'tok') > Date.now(),
+      'advideos คือ call ที่หนักสุด — เจอ 200 ต้องตั้ง appBlock ไม่ใช่มองไม่เห็นเกราะ');
   });
 });

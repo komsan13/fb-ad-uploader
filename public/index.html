@@ -2908,6 +2908,7 @@ async function apRunNow(btn) {
   try {
     const d = await (await fetch('/api/autopilot/run', { method: 'POST' })).json();
     if (d.error) throw new Error(d.error);
+    if (d.paused) alert(d.message);   // รอบถูกพักเพราะ Meta จำกัด/บล็อก API — ต้องบอก ไม่ใช่เงียบ
   } catch (e) { alert('ตรวจไม่สำเร็จ: ' + e.message); }
   finally { btn.disabled = false; btn.textContent = 'ตรวจเดี๋ยวนี้'; loadAutopilot(); }
 }
