@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>จัดการหน้า Landing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#f6f7f9;--card:#fff;--tx:#1a1d23;--mut:#6b7280;--line:#e6e8ec;--brand:#0e9268;--red:#d93025;--r:12px}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);font-family:'Noto Sans Thai',system-ui,sans-serif;padding:28px 16px 60px}
+  .wrap{max-width:900px;margin:0 auto}
+  h1{font-size:22px;margin:0 0 4px}
+  .sub{color:var(--mut);font-size:14px;margin:0 0 22px}
+  .sub a{color:var(--brand)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px;margin-bottom:16px}
+  h2{font-size:15px;margin:0 0 14px;display:flex;align-items:center;gap:8px}
+  label{display:block;font-size:12.5px;color:var(--mut);margin-bottom:5px}
+  input,select,textarea{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;
+    font:inherit;font-size:14px;background:#fff;color:var(--tx)}
+  input:focus,select:focus,textarea:focus{outline:2px solid #cfe9df;border-color:var(--brand)}
+  textarea{resize:vertical;min-height:64px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .row{display:grid;grid-template-columns:52px 1fr 1.6fr 150px auto;gap:8px;align-items:end;
+    padding:12px;border:1px solid var(--line);border-radius:10px;margin-bottom:10px;background:#fafbfc}
+  .prow{display:grid;grid-template-columns:130px 1fr auto;gap:8px;align-items:end;
+    padding:12px;border:1px solid var(--line);border-radius:10px;margin-bottom:10px;background:#fafbfc}
+  button{font:inherit;font-size:14px;border-radius:9px;padding:9px 15px;cursor:pointer;border:1px solid var(--line);background:#fff}
+  button:hover{background:#f2f4f6}
+  .primary{background:var(--brand);color:#fff;border-color:var(--brand);font-weight:600}
+  .primary:hover{background:#0b7d59}
+  .danger{color:var(--red);border-color:#f3c9c5}
+  .danger:hover{background:#fdf1f0}
+  .bar{position:sticky;bottom:0;background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+    padding:13px 16px;display:flex;gap:12px;align-items:center;box-shadow:0 -3px 14px rgba(0,0,0,.05)}
+  .hint{font-size:12.5px;color:var(--mut);line-height:1.6;margin-top:8px}
+  .ok{color:var(--brand);font-size:13.5px;font-weight:600}
+  .err{color:var(--red);font-size:13.5px;font-weight:600}
+  @media(max-width:760px){.grid,.row,.prow{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>จัดการหน้า Landing</h1>
+  <p class="sub">หน้าจริงอยู่ที่ <a href="/lp" target="_blank">/lp</a> — แก้แล้วกดบันทึก เห็นผลทันที</p>
+
+  <div class="card">
+    <h2>ส่วนหัว</h2>
+    <div class="grid">
+      <div><label>ชื่อร้าน/แบรนด์</label><input id="title"></div>
+      <div><label>รูปโปรไฟล์ (ลิงก์รูป)</label><input id="avatar" placeholder="https://..."></div>
+    </div>
+    <div style="margin-top:12px"><label>คำอธิบายสั้นๆ</label><textarea id="bio"></textarea></div>
+    <div style="margin-top:12px;max-width:220px"><label>ธีม</label>
+      <select id="theme"><option value="light">สว่าง</option><option value="dark">มืด</option></select>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>ปุ่มลิงก์</h2>
+    <div id="links"></div>
+    <button onclick="addLink()">+ เพิ่มปุ่ม</button>
+    <div class="hint">
+      ช่อง <b>Event</b> คือเหตุการณ์ที่จะยิงเข้าพิกเซลตอนมีคนกดปุ่มนั้น —
+      ตั้งให้ตรงกับที่แคมเปญใช้วัดผล ไม่งั้นพิกเซลจะเก็บคนละอย่างกับที่แอด optimize แล้วระบบเรียนรู้ไม่ได้<br>
+      รองรับลิงก์ <code>https://</code>, <code>tel:</code>, <code>mailto:</code> เท่านั้น
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>พิกเซล</h2>
+    <div id="pixels"></div>
+    <button onclick="addPixel()">+ เพิ่มพิกเซล</button>
+    <div class="hint">ใส่ได้หลายตัว — Meta Pixel ใส่ Pixel ID, Google ใส่ Measurement ID (G-XXXX)</div>
+  </div>
+
+  <div class="bar">
+    <button class="primary" onclick="save(this)">บันทึก</button>
+    <a href="/lp" target="_blank"><button>ดูหน้าจริง ↗</button></a>
+    <span id="msg"></span>
+  </div>
+</div>
+
+<script>
+const EVENTS = ['', 'Lead', 'Contact', 'Subscribe', 'CompleteRegistration', 'Purchase', 'AddToCart', 'InitiateCheckout'];
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let data = { links: [], pixels: [] };
+
+function linkRow(l, i) {
+  return `<div class="row" data-i="${i}">
+    <div><label>ไอคอน</label><input class="f-icon" maxlength="4" value="${esc(l.icon || '')}" placeholder="💬"></div>
+    <div><label>ข้อความบนปุ่ม</label><input class="f-label" value="${esc(l.label || '')}" placeholder="แอดไลน์"></div>
+    <div><label>ลิงก์</label><input class="f-url" value="${esc(l.url || '')}" placeholder="https://line.me/..."></div>
+    <div><label>Event</label><select class="f-event">${EVENTS.map(e =>
+      `<option value="${e}"${e === (l.event || '') ? ' selected' : ''}>${e || '— ไม่ยิง —'}</option>`).join('')}</select></div>
+    <div><button class="danger" onclick="this.closest('.row').remove()">ลบ</button></div>
+  </div>`;
+}
+function pixelRow(p, i) {
+  return `<div class="prow" data-i="${i}">
+    <div><label>ชนิด</label><select class="p-type">
+      <option value="meta"${p.type !== 'ga' ? ' selected' : ''}>Meta Pixel</option>
+      <option value="ga"${p.type === 'ga' ? ' selected' : ''}>Google Analytics</option>
+    </select></div>
+    <div><label>ID</label><input class="p-id" value="${esc(p.id || '')}" placeholder="1234567890"></div>
+    <div><button class="danger" onclick="this.closest('.prow').remove()">ลบ</button></div>
+  </div>`;
+}
+const addLink = () => document.getElementById('links').insertAdjacentHTML('beforeend', linkRow({}, Date.now()));
+const addPixel = () => document.getElementById('pixels').insertAdjacentHTML('beforeend', pixelRow({}, Date.now()));
+
+async function load() {
+  const d = await (await fetch('/api/landing')).json();
+  data = d;
+  title.value = d.title || ''; bio.value = d.bio || '';
+  avatar.value = d.avatar || ''; theme.value = d.theme || 'light';
+  document.getElementById('links').innerHTML = (d.links || []).map(linkRow).join('');
+  document.getElementById('pixels').innerHTML = (d.pixels || []).map(pixelRow).join('');
+}
+
+function collect() {
+  return {
+    title: title.value, bio: bio.value, avatar: avatar.value, theme: theme.value,
+    links: [...document.querySelectorAll('#links .row')].map((r, i) => ({
+      id: 'l' + i,
+      icon: r.querySelector('.f-icon').value,
+      label: r.querySelector('.f-label').value,
+      url: r.querySelector('.f-url').value.trim(),
+      event: r.querySelector('.f-event').value,
+    })),
+    pixels: [...document.querySelectorAll('#pixels .prow')].map(r => ({
+      type: r.querySelector('.p-type').value,
+      id: r.querySelector('.p-id').value.trim(),
+    })),
+  };
+}
+
+async function save(btn) {
+  const body = collect();
+  // เตือนก่อนบันทึก ถ้ามีแถวที่กรอกไม่ครบ เพราะเซิร์ฟเวอร์จะตัดทิ้งเงียบๆ
+  const dropped = body.links.filter(l => !l.label || !/^(https?:\/\/|tel:|mailto:)/i.test(l.url));
+  if (dropped.length && !confirm(`มี ${dropped.length} ปุ่มที่ยังไม่มีข้อความหรือลิงก์ไม่ถูกต้อง — ปุ่มพวกนี้จะไม่ถูกบันทึก\n\nบันทึกต่อไหม?`)) return;
+
+  btn.disabled = true;
+  const msg = document.getElementById('msg');
+  try {
+    const r = await (await fetch('/api/landing', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    })).json();
+    if (r.error) throw new Error(r.error);
+    msg.className = 'ok'; msg.textContent = '✓ บันทึกแล้ว';
+    await load();
+  } catch (e) {
+    msg.className = 'err'; msg.textContent = 'บันทึกไม่สำเร็จ: ' + e.message;
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => { msg.textContent = ''; }, 2500);
+  }
+}
+load();
+</script>
+</body>
+</html>

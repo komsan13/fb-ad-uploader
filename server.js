@@ -367,6 +367,132 @@ app.post('/api/captions/delete', (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- หน้า Landing (link-in-bio) + หลังบ้านแก้ลิงก์/พิกเซล ----------
+const LP_PATH = path.join(path.dirname(CONFIG_PATH), 'landing.json');
+const LP_DEFAULT = {
+  title: 'ร้านของเรา',
+  bio: 'ทักไลน์เพื่อสอบถามและสั่งซื้อได้เลย',
+  avatar: '',
+  theme: 'light',
+  pixels: [],          // [{ id, type: 'meta'|'ga' }]
+  links: [],           // [{ id, label, url, icon, event }]
+};
+function loadLp() {
+  try { return { ...LP_DEFAULT, ...JSON.parse(fs.readFileSync(LP_PATH, 'utf8')) }; }
+  catch { return { ...LP_DEFAULT }; }
+}
+// เขียนแบบ tmp+rename เหมือน config — ไฟล์นี้คือหน้าที่ลูกค้าเห็น เขียนค้างครึ่งทางแล้วหน้าพัง
+function saveLp(v) {
+  const tmp = LP_PATH + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(v, null, 2));
+  fs.renameSync(tmp, LP_PATH);
+}
+
+const LP_EVENTS = ['', 'Lead', 'Contact', 'Subscribe', 'CompleteRegistration', 'Purchase', 'AddToCart', 'InitiateCheckout'];
+// รับเฉพาะลิงก์ที่เปิดได้จริงจากเบราว์เซอร์ — กัน javascript: ที่กลายเป็น XSS ตอนคลิก
+const lpSafeUrl = (u) => (/^(https?:\/\/|tel:|mailto:)/i.test(String(u || '').trim()) ? String(u).trim() : '');
+
+const lpEsc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function lpRender(v) {
+  const dark = v.theme === 'dark';
+  const meta = v.pixels.filter((p) => p.type === 'meta');
+  const ga = v.pixels.filter((p) => p.type === 'ga');
+  return `<!doctype html>
+<html lang="th"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${lpEsc(v.title)}</title>
+<meta name="description" content="${lpEsc(v.bio)}">
+<meta property="og:title" content="${lpEsc(v.title)}">
+<meta property="og:description" content="${lpEsc(v.bio)}">
+${v.avatar ? `<meta property="og:image" content="${lpEsc(v.avatar)}">` : ''}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:${dark ? '#12141a' : '#f6f7f9'};--card:${dark ? '#1b1e26' : '#fff'};--tx:${dark ? '#eef1f6' : '#1a1d23'};
+    --mut:${dark ? '#98a1b3' : '#6b7280'};--line:${dark ? '#2a2f3a' : '#e6e8ec'};--ring:${dark ? '#3a4152' : '#d6dae1'}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);font-family:'Noto Sans Thai',system-ui,sans-serif;
+    display:flex;justify-content:center;padding:32px 16px 56px;min-height:100vh}
+  .wrap{width:100%;max-width:520px}
+  .top{text-align:center;margin-bottom:26px}
+  .av{width:96px;height:96px;border-radius:50%;object-fit:cover;border:3px solid var(--card);
+    box-shadow:0 4px 16px rgba(0,0,0,.12);margin-bottom:14px}
+  h1{font-size:21px;margin:0 0 6px;font-weight:700}
+  .bio{color:var(--mut);font-size:14.5px;line-height:1.65;margin:0;white-space:pre-wrap}
+  a.btn{display:flex;align-items:center;gap:12px;background:var(--card);color:var(--tx);text-decoration:none;
+    border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:12px;font-size:15.5px;
+    font-weight:500;transition:transform .12s ease,box-shadow .12s ease,border-color .12s ease}
+  a.btn:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,.10);border-color:var(--ring)}
+  a.btn:active{transform:translateY(0)}
+  .ic{font-size:20px;line-height:1;width:24px;text-align:center;flex-shrink:0}
+  .lb{flex:1}
+  .ar{color:var(--mut);font-size:16px}
+  .empty{text-align:center;color:var(--mut);font-size:14px;padding:28px;border:1px dashed var(--line);border-radius:14px}
+  @media (prefers-reduced-motion:reduce){a.btn{transition:none}a.btn:hover{transform:none}}
+</style>
+${meta.map((p) => `<script>!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');fbq('init','${lpEsc(p.id)}');fbq('track','PageView');</script>`).join('')}
+${ga.map((p) => `<script async src="https://www.googletagmanager.com/gtag/js?id=${lpEsc(p.id)}"></script>
+<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','${lpEsc(p.id)}');</script>`).join('')}
+</head><body>
+<div class="wrap">
+  <div class="top">
+    ${v.avatar ? `<img class="av" src="${lpEsc(v.avatar)}" alt="${lpEsc(v.title)}">` : ''}
+    <h1>${lpEsc(v.title)}</h1>
+    ${v.bio ? `<p class="bio">${lpEsc(v.bio)}</p>` : ''}
+  </div>
+  ${v.links.length ? v.links.map((l) => `<a class="btn" href="${lpEsc(l.url)}" target="_blank" rel="noopener"${l.event ? ` data-ev="${lpEsc(l.event)}"` : ''}>
+    <span class="ic">${lpEsc(l.icon || '🔗')}</span><span class="lb">${lpEsc(l.label)}</span><span class="ar">→</span>
+  </a>`).join('\n  ') : '<div class="empty">ยังไม่ได้เพิ่มลิงก์ — ไปที่ /lp/admin เพื่อเพิ่ม</div>'}
+</div>
+<script>
+  // ยิง event ตอนกด ให้ตรงกับ event ที่แคมเปญใช้วัดผล ไม่งั้นพิกเซลเก็บคนละอย่างกับที่แอด optimize
+  document.querySelectorAll('a.btn[data-ev]').forEach(function (a) {
+    a.addEventListener('click', function () {
+      var ev = a.dataset.ev;
+      if (window.fbq) fbq('track', ev);
+      if (window.gtag) gtag('event', ev);
+    });
+  });
+</script>
+</body></html>`;
+}
+
+app.get(['/lp/admin', '/lp/admin/'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'lp-admin.html')));
+
+app.get(['/lp', '/lp/'], (req, res) => {
+  res.set('Cache-Control', 'no-store');   // แก้ลิงก์แล้วต้องเห็นผลทันที
+  res.type('html').send(lpRender(loadLp()));
+});
+
+app.get('/api/landing', (req, res) => res.json(loadLp()));
+app.post('/api/landing', (req, res) => {
+  const b = req.body || {};
+  const cur = loadLp();
+  const next = {
+    title: String(b.title ?? cur.title).slice(0, 100),
+    bio: String(b.bio ?? cur.bio).slice(0, 300),
+    avatar: lpSafeUrl(b.avatar ?? cur.avatar),
+    theme: b.theme === 'dark' ? 'dark' : 'light',
+    pixels: (Array.isArray(b.pixels) ? b.pixels : cur.pixels).slice(0, 10).map((p) => ({
+      type: p.type === 'ga' ? 'ga' : 'meta',
+      id: String(p.id || '').replace(/[^A-Za-z0-9-]/g, '').slice(0, 40),
+    })).filter((p) => p.id),
+    links: (Array.isArray(b.links) ? b.links : cur.links).slice(0, 30).map((l, i) => ({
+      id: String(l.id || `l${i}`).slice(0, 20),
+      label: String(l.label || '').slice(0, 60),
+      url: lpSafeUrl(l.url),
+      icon: String(l.icon || '').slice(0, 4),
+      event: LP_EVENTS.includes(l.event) ? l.event : '',
+    })).filter((l) => l.label && l.url),
+  };
+  saveLp(next);
+  res.json({ ok: true, landing: next });
+});
+
 // ---------- ตัวจัดแผนขึ้นแอด: จับคู่วิดีโอ+แคปชั่นให้แต่ละบัญชี ----------
 // ตรรกะธรรมดา ไม่ใช้ AI — ผลลัพธ์คาดเดาได้ ทำงานทันที ไม่มีค่า token
 // กติกา: (1) เลี่ยงวิดีโอที่บัญชีนั้นเคยขึ้นไปแล้ว (2) ในรอบเดียวกันห้ามบัญชีอื่นได้ตัวซ้ำ
