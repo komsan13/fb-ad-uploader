@@ -95,6 +95,47 @@ describe('หน้า Landing', () => {
     assert.match(r.headers.get('location'), /#landing$/);
   });
 
+  test('อัปรูปได้ และเสิร์ฟกลับได้', async (t) => {
+    const { base } = await boot(t);
+    const fd = new FormData();
+    // เนื้อไฟล์ไม่สำคัญ ระบบตัดสินจาก mimetype — ขอแค่มีข้อมูลจริงส่งไป
+    fd.append('file', new Blob([Buffer.alloc(256, 7)], { type: 'image/png' }), 'a.png');
+    const up = await (await fetch(base + '/api/landing/upload', { method: 'POST', body: fd })).json();
+    assert.match(up.url, /^\/lp-asset\/[0-9a-f-]{36}\.png$/, 'ต้องได้ path ของรูปที่อัป');
+    assert.strictEqual((await fetch(base + up.url)).status, 200, 'ต้องเสิร์ฟรูปกลับได้');
+  });
+
+  test('ไฟล์ที่ไม่ใช่รูปต้องอัปไม่ได้', async (t) => {
+    const { base } = await boot(t);
+    const fd = new FormData();
+    fd.append('file', new Blob(['<script>alert(1)</script>'], { type: 'text/html' }), 'x.html');
+    const r = await fetch(base + '/api/landing/upload', { method: 'POST', body: fd });
+    assert.strictEqual(r.status, 400, 'HTML ที่เสิร์ฟกลับออกไปอาจถูกเบราว์เซอร์รันเป็นสคริปต์');
+  });
+
+  test('ชื่อไฟล์แปลกปลอมต้องเข้าถึงไฟล์นอกโฟลเดอร์ไม่ได้', async (t) => {
+    const { base } = await boot(t);
+    for (const bad of ['../config.json', '..%2fconfig.json', 'x.png', 'a'.repeat(36) + '.png']) {
+      const r = await fetch(base + '/lp-asset/' + bad);
+      assert.ok(r.status === 400 || r.status === 404, `${bad} ต้องไม่ได้ไฟล์ (ได้ ${r.status})`);
+    }
+  });
+
+  test('พื้นหลัง: รับเฉพาะชื่อที่มีจริง และรูปที่อัปผ่านระบบเราเท่านั้น', async (t) => {
+    const { base } = await boot(t);
+    const ok = await post(base, '/api/landing', { bg: 'mint' });
+    assert.strictEqual(ok.landing.bg, 'mint');
+    const bad = await post(base, '/api/landing', { bg: 'ไม่มีจริง', bgImage: 'https://evil.test/x.jpg' });
+    assert.strictEqual(bad.landing.bg, '', 'ชื่อพื้นหลังที่ไม่มีในระบบต้องถูกปัดทิ้ง');
+    assert.strictEqual(bad.landing.bgImage, '', 'รูปจากเว็บนอกต้องไม่ถูกรับ');
+  });
+
+  test('เลือกพื้นหลังแล้วต้องมีผลกับหน้าจริง', async (t) => {
+    const { base } = await boot(t);
+    await post(base, '/api/landing', { bg: 'night' });
+    assert.ok((await html(base)).includes('#232838'), 'CSS ของพื้นหลังที่เลือกต้องอยู่ในหน้า');
+  });
+
   test('ค่าที่บันทึกต้องอยู่รอดข้ามการอ่านใหม่', async (t) => {
     const { base } = await boot(t);
     await post(base, '/api/landing', { title: 'ก่อนแก้', links: [{ label: 'ก', url: 'https://ok.test/a' }] });

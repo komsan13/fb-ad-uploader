@@ -7,3 +7,5 @@ autopilot-state.json
 watch-state.json
 *.log
 .gstack/
+landing-assets/
+landing.json

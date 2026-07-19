@@ -374,6 +374,8 @@ const LP_DEFAULT = {
   bio: 'ทักไลน์เพื่อสอบถามและสั่งซื้อได้เลย',
   avatar: '',
   theme: 'light',
+  bg: '',              // ชื่อพื้นหลังสำเร็จรูป (ดู LP_BGS)
+  bgImage: '',         // หรือรูปที่อัปเอง — ถ้ามี จะทับพื้นหลังสำเร็จรูป
   pixels: [],          // [{ id, type: 'meta'|'ga' }]
   links: [],           // [{ id, label, url, icon, event }]
 };
@@ -389,6 +391,47 @@ function saveLp(v) {
 }
 
 const LP_EVENTS = ['', 'Lead', 'Contact', 'Subscribe', 'CompleteRegistration', 'Purchase', 'AddToCart', 'InitiateCheckout'];
+
+// พื้นหลังสำเร็จรูป — ไล่สีล้วนๆ ไม่ดึงรูปจากที่อื่น จะได้ไม่พึ่งเว็บนอกที่วันหนึ่งอาจล่มหรือถูกบล็อก
+const LP_BGS = {
+  '': null,
+  mint: 'linear-gradient(160deg,#e8f7f0,#cfeee0)',
+  sky: 'linear-gradient(160deg,#e8f1fb,#d3e4f7)',
+  peach: 'linear-gradient(160deg,#fdeee6,#fbd9c8)',
+  lilac: 'linear-gradient(160deg,#f0ebfa,#ddd2f3)',
+  sand: 'linear-gradient(160deg,#f7f2e8,#ece0c8)',
+  night: 'linear-gradient(160deg,#232838,#141824)',
+  forest: 'linear-gradient(160deg,#1d3128,#0f1c17)',
+  plum: 'linear-gradient(160deg,#2c2033,#171020)',
+};
+
+// รูปที่ผู้ใช้อัปเอง เก็บแยกโฟลเดอร์ ไม่ปนกับคลังวิดีโอ
+const LP_ASSET_DIR = path.join(path.dirname(CONFIG_PATH), 'landing-assets');
+fs.mkdirSync(LP_ASSET_DIR, { recursive: true });
+const LP_IMG_EXT = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif' };
+
+const uploadLpImg = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, LP_ASSET_DIR),
+    filename: (req, file, cb) => cb(null, crypto.randomUUID() + (LP_IMG_EXT[file.mimetype] || '.jpg')),
+  }),
+  limits: { fileSize: 8 * 1024 * 1024 },
+  // รับเฉพาะรูป — ไฟล์ชนิดอื่นที่เสิร์ฟกลับออกไปอาจถูกเบราว์เซอร์ตีความเป็น HTML แล้วรันสคริปต์
+  fileFilter: (req, file, cb) => cb(null, !!LP_IMG_EXT[file.mimetype]),
+});
+
+app.post('/api/landing/upload', uploadLpImg.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'ต้องเป็นไฟล์รูป (JPG / PNG / WebP / GIF) ขนาดไม่เกิน 8MB' });
+  res.json({ url: `/lp-asset/${req.file.filename}` });
+});
+
+app.get('/lp-asset/:name', (req, res) => {
+  // ยัน format ก่อนต่อ path กัน ../ หลุดออกนอกโฟลเดอร์
+  if (!/^[0-9a-f-]{36}\.(jpg|png|webp|gif)$/i.test(req.params.name)) return res.status(400).end();
+  res.sendFile(path.join(LP_ASSET_DIR, req.params.name), (err) => {
+    if (err && !res.headersSent) res.status(404).end();
+  });
+});
 // รับเฉพาะลิงก์ที่เปิดได้จริงจากเบราว์เซอร์ — กัน javascript: ที่กลายเป็น XSS ตอนคลิก
 const lpSafeUrl = (u) => (/^(https?:\/\/|tel:|mailto:)/i.test(String(u || '').trim()) ? String(u).trim() : '');
 
@@ -417,6 +460,12 @@ ${v.avatar ? `<meta property="og:image" content="${lpEsc(v.avatar)}">` : ''}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--tx);font-family:'Noto Sans Thai',system-ui,sans-serif;
     display:flex;justify-content:center;padding:32px 16px 56px;min-height:100vh}
+  ${v.bgImage
+    ? `body{background:url('${lpEsc(v.bgImage)}') center/cover no-repeat fixed,var(--bg)}
+       /* ม่านบางๆ ทับรูป ให้ตัวหนังสืออ่านออกไม่ว่ารูปจะสว่างหรือมืด */
+       body::before{content:'';position:fixed;inset:0;background:${dark ? 'rgba(10,12,18,.55)' : 'rgba(255,255,255,.45)'};pointer-events:none}
+       .wrap{position:relative;z-index:1}`
+    : (LP_BGS[v.bg] ? `body{background:${LP_BGS[v.bg]};background-attachment:fixed}` : '')}
   .wrap{width:100%;max-width:520px}
   .top{text-align:center;margin-bottom:26px}
   .av{width:96px;height:96px;border-radius:50%;object-fit:cover;border:3px solid var(--card);
@@ -476,8 +525,14 @@ app.post('/api/landing', (req, res) => {
   const next = {
     title: String(b.title ?? cur.title).slice(0, 100),
     bio: String(b.bio ?? cur.bio).slice(0, 300),
-    avatar: lpSafeUrl(b.avatar ?? cur.avatar),
+    avatar: (() => {
+      const a = String(b.avatar ?? cur.avatar ?? '');
+      return /^\/lp-asset\/[0-9a-f-]{36}\.(jpg|png|webp|gif)$/i.test(a) ? a : lpSafeUrl(a);
+    })(),
     theme: b.theme === 'dark' ? 'dark' : 'light',
+    bg: Object.prototype.hasOwnProperty.call(LP_BGS, b.bg ?? cur.bg) ? (b.bg ?? cur.bg) : '',
+    // รับเฉพาะรูปที่อัปผ่านระบบเรา — ลิงก์รูปจากเว็บนอกทำให้หน้าพังเมื่อเว็บนั้นล่ม
+    bgImage: /^\/lp-asset\/[0-9a-f-]{36}\.(jpg|png|webp|gif)$/i.test(String(b.bgImage ?? cur.bgImage ?? '')) ? String(b.bgImage ?? cur.bgImage) : '',
     pixels: (Array.isArray(b.pixels) ? b.pixels : cur.pixels).slice(0, 10).map((p) => ({
       type: p.type === 'ga' ? 'ga' : 'meta',
       id: String(p.id || '').replace(/[^A-Za-z0-9-]/g, '').slice(0, 40),

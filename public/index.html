@@ -848,12 +848,28 @@
         <h2>ส่วนหัวของหน้า <span class="h-desc">— หน้าจริงอยู่ที่ <a href="/lp" target="_blank" style="color:var(--brand-dark)">/lp</a> เปิดดูได้ตลอด</span></h2>
         <div class="fgrid">
           <div class="field"><label>ชื่อร้าน/แบรนด์</label><input id="lpTitle"></div>
-          <div class="field"><label>รูปโปรไฟล์ (ลิงก์รูป)</label><input id="lpAvatar" placeholder="https://..."></div>
+          <div class="field"><label>รูปโปรไฟล์</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <img id="lpAvatarPrev" alt="" style="width:38px;height:38px;border-radius:50%;object-fit:cover;border:1px solid var(--line);display:none">
+              <input id="lpAvatar" placeholder="วางลิงก์รูป หรือกดอัปโหลด" style="flex:1">
+              <button class="btn-light btn-sm" type="button" onclick="lpUpload('lpAvatar')">อัปโหลด</button>
+            </div>
+          </div>
           <div class="field" style="max-width:200px"><label>ธีม</label>
             <select id="lpTheme"><option value="light">สว่าง</option><option value="dark">มืด</option></select>
           </div>
         </div>
         <div class="field" style="margin-top:12px"><label>คำอธิบายสั้นๆ</label><textarea id="lpBio" rows="2"></textarea></div>
+        <div class="field" style="margin-top:14px">
+          <label>พื้นหลัง</label>
+          <div id="lpBgList" style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:10px"></div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="lpBgImage" placeholder="ยังไม่ได้ใช้รูปพื้นหลัง" readonly style="flex:1;background:#f7f8fa">
+            <button class="btn-light btn-sm" type="button" onclick="lpUpload('lpBgImage')">อัปโหลดรูปพื้นหลัง</button>
+            <button class="btn-light btn-sm" type="button" onclick="lpClearBgImage()">เอาออก</button>
+          </div>
+          <div class="hint" style="margin-top:8px">ใช้รูปพื้นหลังแล้วจะทับสีที่เลือกไว้ • ระบบใส่ม่านบางๆ ทับให้อัตโนมัติ ตัวหนังสือจะได้อ่านออก</div>
+        </div>
       </div>
 
       <div class="card">
@@ -2416,6 +2432,105 @@ document.addEventListener('focusout', (e) => {
 });
 
 // ---------- หน้า Landing ----------
+// ไอคอนที่ธุรกิจไทยใช้จริงบนหน้าแบบนี้ — เลือกจากชุดดีกว่าให้พิมพ์อีโมจิเอง
+// เพราะคนส่วนใหญ่ไม่รู้วิธีเรียกแป้นอีโมจิ และพิมพ์ผิดแล้วปุ่มจะโล่ง
+const LP_ICONS = [
+  ['ติดต่อ', ['💬', '📞', '📱', '✉️', '📩', '💌', '🗨️', '📲']],
+  ['ขายของ', ['🛒', '🛍️', '💰', '💵', '🏷️', '🎁', '📦', '🚚']],
+  ['ร้าน/ที่ตั้ง', ['📍', '🏠', '🏪', '🗺️', '🕒', '🚩', '🅿️', '🏢']],
+  ['โซเชียล', ['📘', '📸', '🎵', '▶️', '🐦', '💚', '🔗', '🌐']],
+  ['อื่นๆ', ['⭐', '🔥', '✅', '❤️', '🎯', '📝', '❓', '🎉']],
+];
+
+function lpPickIcon(btn) {
+  document.querySelectorAll('.lp-icon-pop').forEach(x => x.remove());
+  const pop = document.createElement('div');
+  pop.className = 'lp-icon-pop';
+  pop.style.cssText = 'position:absolute;z-index:60;background:#fff;border:1px solid var(--line);border-radius:10px;'
+    + 'box-shadow:0 8px 26px rgba(0,0,0,.14);padding:10px;width:250px;max-height:280px;overflow:auto';
+  pop.innerHTML = LP_ICONS.map(([group, icons]) =>
+    `<div style="font-size:11.5px;color:var(--muted);margin:4px 2px 5px">${esc(group)}</div>
+     <div style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:6px">${icons.map(ic =>
+       `<button type="button" data-ic="${ic}" style="width:31px;height:31px;font-size:17px;line-height:1;border:1px solid transparent;background:none;border-radius:7px;cursor:pointer">${ic}</button>`
+     ).join('')}</div>`).join('');
+
+  const wrap = btn.closest('.field');
+  wrap.style.position = 'relative';
+  wrap.appendChild(pop);
+
+  pop.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-ic]');
+    if (!b) return;
+    btn.textContent = b.dataset.ic;
+    btn.closest('.field').querySelector('.lp-icon').value = b.dataset.ic;
+    pop.remove();
+  });
+  // ปิดเมื่อคลิกที่อื่น — ผูกทีหลังหนึ่ง tick ไม่งั้นคลิกที่เปิดมันเองจะปิดทันที
+  setTimeout(() => document.addEventListener('click', function off(ev) {
+    if (!pop.contains(ev.target) && ev.target !== btn) { pop.remove(); document.removeEventListener('click', off); }
+  }), 0);
+}
+
+// พื้นหลังสำเร็จรูป — ต้องตรงกับ LP_BGS ฝั่งเซิร์ฟเวอร์ ไม่งั้นเลือกได้แต่ไม่มีผล
+const LP_BGS = {
+  '': { label: 'ไม่มี', css: '#f6f7f9' },
+  mint: { label: 'มินต์', css: 'linear-gradient(160deg,#e8f7f0,#cfeee0)' },
+  sky: { label: 'ฟ้า', css: 'linear-gradient(160deg,#e8f1fb,#d3e4f7)' },
+  peach: { label: 'พีช', css: 'linear-gradient(160deg,#fdeee6,#fbd9c8)' },
+  lilac: { label: 'ม่วงอ่อน', css: 'linear-gradient(160deg,#f0ebfa,#ddd2f3)' },
+  sand: { label: 'ทราย', css: 'linear-gradient(160deg,#f7f2e8,#ece0c8)' },
+  night: { label: 'กลางคืน', css: 'linear-gradient(160deg,#232838,#141824)' },
+  forest: { label: 'ป่า', css: 'linear-gradient(160deg,#1d3128,#0f1c17)' },
+  plum: { label: 'พลัม', css: 'linear-gradient(160deg,#2c2033,#171020)' },
+};
+let lpBg = '';
+
+function lpRenderBgs() {
+  document.getElementById('lpBgList').innerHTML = Object.entries(LP_BGS).map(([k, v]) =>
+    `<button type="button" onclick="lpSetBg(${jsStr(k)})" title="${esc(v.label)}"
+      style="width:56px;height:44px;border-radius:9px;cursor:pointer;background:${v.css};
+      border:2px solid ${k === lpBg ? 'var(--brand-dark)' : 'var(--line)'}"></button>`).join('');
+}
+function lpSetBg(k) { lpBg = k; lpRenderBgs(); }
+function lpClearBgImage() {
+  document.getElementById('lpBgImage').value = '';
+  document.getElementById('lpBgImage').placeholder = 'ยังไม่ได้ใช้รูปพื้นหลัง';
+}
+
+// อัปรูปเข้าเซิร์ฟเวอร์เราเอง แทนที่จะให้วางลิงก์จากเว็บนอกซึ่งวันหนึ่งอาจล่มแล้วหน้าพัง
+function lpUpload(targetId) {
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = 'image/jpeg,image/png,image/webp,image/gif';
+  inp.onchange = async () => {
+    const f = inp.files[0];
+    if (!f) return;
+    if (f.size > 8 * 1024 * 1024) return alert('ไฟล์ใหญ่เกิน 8MB — ย่อรูปก่อนแล้วลองใหม่');
+    const fd = new FormData();
+    fd.append('file', f);
+    const el = document.getElementById(targetId);
+    const old = el.value;
+    el.value = 'กำลังอัปโหลด...';
+    try {
+      const r = await (await fetch('/api/landing/upload', { method: 'POST', body: fd })).json();
+      if (r.error) throw new Error(r.error);
+      el.value = r.url;
+      if (targetId === 'lpAvatar') lpAvatarPreview();
+    } catch (e) {
+      el.value = old;
+      alert('อัปโหลดไม่สำเร็จ: ' + e.message);
+    }
+  };
+  inp.click();
+}
+
+function lpAvatarPreview() {
+  const v = document.getElementById('lpAvatar').value.trim();
+  const img = document.getElementById('lpAvatarPrev');
+  if (v) { img.src = v; img.style.display = ''; } else { img.style.display = 'none'; }
+}
+
+
 // ค่าที่ส่งต้องเป็นชื่อ event มาตรฐานของ Meta (ห้ามแปล) — แปลเฉพาะข้อความที่คนอ่าน
 // คงชื่ออังกฤษในวงเล็บไว้ เพราะต้องเอาไปเทียบกับที่เห็นใน Ads Manager
 const LP_EVENTS = [
@@ -2444,7 +2559,11 @@ function lpFixUrl(v) {
 function lpLinkRow(l) {
   l = l || {};
   return `<div class="cap-row lp-row" style="align-items:flex-end;gap:8px;flex-wrap:wrap">
-    <div class="field" style="max-width:74px"><label>ไอคอน</label><input class="lp-icon" maxlength="4" value="${esc(l.icon || '')}" placeholder="💬"></div>
+    <div class="field" style="max-width:74px"><label>ไอคอน</label>
+      <button type="button" class="lp-icon-btn" onclick="lpPickIcon(this)" title="เลือกไอคอน"
+        style="width:100%;height:38px;font-size:20px;line-height:1;background:#fff;border:1px solid var(--line);border-radius:8px;cursor:pointer">${esc(l.icon || '🔗')}</button>
+      <input type="hidden" class="lp-icon" value="${esc(l.icon || '')}">
+    </div>
     <div class="field" style="min-width:150px;flex:1"><label>ข้อความบนปุ่ม</label><input class="lp-label" value="${esc(l.label || '')}" placeholder="แอดไลน์"></div>
     <div class="field" style="min-width:200px;flex:1.4"><label>ลิงก์</label><input class="lp-url" value="${esc(l.url || '')}" placeholder="line.me/ti/p/... หรือ 021234567"></div>
     <div class="field" style="min-width:190px"><label>Event ที่ยิงตอนกด</label><select class="lp-event">${
@@ -2474,6 +2593,8 @@ async function loadLanding() {
   document.getElementById('lpBio').value = d.bio || '';
   document.getElementById('lpAvatar').value = d.avatar || '';
   document.getElementById('lpTheme').value = d.theme || 'light';
+  document.getElementById('lpBgImage').value = d.bgImage || '';
+  lpBg = d.bg || ''; lpRenderBgs(); lpAvatarPreview();
   document.getElementById('lpLinks').innerHTML = (d.links || []).map(lpLinkRow).join('');
   document.getElementById('lpPixels').innerHTML = (d.pixels || []).map(lpPixelRow).join('');
 }
@@ -2484,6 +2605,8 @@ function lpCollect() {
     bio: document.getElementById('lpBio').value,
     avatar: lpFixUrl(document.getElementById('lpAvatar').value),
     theme: document.getElementById('lpTheme').value,
+    bg: lpBg,
+    bgImage: document.getElementById('lpBgImage').value.trim(),
     links: [...document.querySelectorAll('#lpLinks .lp-row')].map((r, i) => ({
       id: 'l' + i,
       icon: r.querySelector('.lp-icon').value,
@@ -2530,7 +2653,12 @@ async function lpSave(btn) {
 // เติม scheme ให้เห็นกับตาตอนคลิกออกจากช่อง (การ์ดถูกสร้างทีหลัง blur ไม่ bubble จึงใช้ focusout)
 document.addEventListener('focusout', (e) => {
   const t = e.target;
-  if (t && t.classList && (t.classList.contains('lp-url') || t.id === 'lpAvatar')) t.value = lpFixUrl(t.value);
+  if (t && t.classList && t.classList.contains('lp-url')) t.value = lpFixUrl(t.value);
+  // รูปที่อัปเองขึ้นต้นด้วย /lp-asset/ ห้ามเติม https:// ทับ
+  if (t && t.id === 'lpAvatar') {
+    if (!t.value.trim().startsWith('/lp-asset/')) t.value = lpFixUrl(t.value);
+    lpAvatarPreview();
+  }
 });
 
 // ---------- ระบบอัตโนมัติ (autopilot) ----------
