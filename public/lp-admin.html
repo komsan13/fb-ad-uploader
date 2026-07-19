@@ -65,7 +65,8 @@
     <div class="hint">
       ช่อง <b>Event</b> คือเหตุการณ์ที่จะยิงเข้าพิกเซลตอนมีคนกดปุ่มนั้น —
       ตั้งให้ตรงกับที่แคมเปญใช้วัดผล ไม่งั้นพิกเซลจะเก็บคนละอย่างกับที่แอด optimize แล้วระบบเรียนรู้ไม่ได้<br>
-      รองรับลิงก์ <code>https://</code>, <code>tel:</code>, <code>mailto:</code> เท่านั้น
+      พิมพ์ <code>line.me/ti/p/xxx</code> หรือ <code>021234567</code> หรือ <code>shop@mail.com</code> ได้เลย —
+      ระบบเติม <code>https://</code> / <code>tel:</code> / <code>mailto:</code> ให้เองตอนคลิกออกจากช่อง
     </div>
   </div>
 
@@ -84,7 +85,32 @@
 </div>
 
 <script>
-const EVENTS = ['', 'Lead', 'Contact', 'Subscribe', 'CompleteRegistration', 'Purchase', 'AddToCart', 'InitiateCheckout'];
+const $ = (id) => document.getElementById(id);
+
+// ค่าที่ส่งต้องเป็นชื่อ event มาตรฐานของ Meta (ห้ามแปล) — แปลเฉพาะข้อความที่คนอ่าน
+// วงเล็บชื่ออังกฤษไว้ด้วย เพราะต้องเอาไปเทียบกับที่เห็นใน Ads Manager
+const EVENTS = [
+  ['', '— ไม่ยิง —'],
+  ['Lead', 'ลูกค้าเป้าหมาย (Lead)'],
+  ['Contact', 'ติดต่อ (Contact)'],
+  ['Subscribe', 'สมัครรับข้อมูล (Subscribe)'],
+  ['CompleteRegistration', 'ลงทะเบียนเสร็จ (CompleteRegistration)'],
+  ['Purchase', 'การซื้อ (Purchase)'],
+  ['AddToCart', 'หยิบใส่ตะกร้า (AddToCart)'],
+  ['InitiateCheckout', 'เริ่มชำระเงิน (InitiateCheckout)'],
+];
+
+// คนพิมพ์ชื่อเว็บเปล่าๆ เป็นเรื่องปกติ แต่เซิร์ฟเวอร์รับเฉพาะที่มี scheme
+// ไม่เติมให้ = กดบันทึกแล้วปุ่มหายเงียบๆ โดยไม่รู้ว่าทำอะไรผิด
+function fixUrl(v) {
+  const s = String(v || '').trim();
+  if (!s) return s;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(s)) return s;      // มี scheme อยู่แล้ว (https:, tel:, mailto:)
+  if (/^0\d[\d\s-]{7,}$/.test(s)) return 'tel:' + s.replace(/[\s-]/g, '');   // เบอร์โทรไทย
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) return 'mailto:' + s;            // อีเมล
+  if (/^[^\s/]+\.[^\s/]/.test(s)) return 'https://' + s;                     // ชื่อโดเมน
+  return s;
+}
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let data = { links: [], pixels: [] };
 
@@ -92,9 +118,9 @@ function linkRow(l, i) {
   return `<div class="row" data-i="${i}">
     <div><label>ไอคอน</label><input class="f-icon" maxlength="4" value="${esc(l.icon || '')}" placeholder="💬"></div>
     <div><label>ข้อความบนปุ่ม</label><input class="f-label" value="${esc(l.label || '')}" placeholder="แอดไลน์"></div>
-    <div><label>ลิงก์</label><input class="f-url" value="${esc(l.url || '')}" placeholder="https://line.me/..."></div>
-    <div><label>Event</label><select class="f-event">${EVENTS.map(e =>
-      `<option value="${e}"${e === (l.event || '') ? ' selected' : ''}>${e || '— ไม่ยิง —'}</option>`).join('')}</select></div>
+    <div><label>ลิงก์</label><input class="f-url" value="${esc(l.url || '')}" placeholder="line.me/ti/p/... หรือ 021234567"></div>
+    <div><label>Event ที่ยิงตอนกด</label><select class="f-event">${EVENTS.map(([v, th]) =>
+      `<option value="${v}"${v === (l.event || '') ? ' selected' : ''}>${esc(th)}</option>`).join('')}</select></div>
     <div><button class="danger" onclick="this.closest('.row').remove()">ลบ</button></div>
   </div>`;
 }
@@ -108,26 +134,33 @@ function pixelRow(p, i) {
     <div><button class="danger" onclick="this.closest('.prow').remove()">ลบ</button></div>
   </div>`;
 }
-const addLink = () => document.getElementById('links').insertAdjacentHTML('beforeend', linkRow({}, Date.now()));
-const addPixel = () => document.getElementById('pixels').insertAdjacentHTML('beforeend', pixelRow({}, Date.now()));
+const addLink = () => $('links').insertAdjacentHTML('beforeend', linkRow({}, Date.now()));
+const addPixel = () => $('pixels').insertAdjacentHTML('beforeend', pixelRow({}, Date.now()));
 
 async function load() {
   const d = await (await fetch('/api/landing')).json();
   data = d;
-  title.value = d.title || ''; bio.value = d.bio || '';
-  avatar.value = d.avatar || ''; theme.value = d.theme || 'light';
-  document.getElementById('links').innerHTML = (d.links || []).map(linkRow).join('');
-  document.getElementById('pixels').innerHTML = (d.pixels || []).map(pixelRow).join('');
+  $('title').value = d.title || ''; $('bio').value = d.bio || '';
+  $('avatar').value = d.avatar || ''; $('theme').value = d.theme || 'light';
+  $('links').innerHTML = (d.links || []).map(linkRow).join('');
+  $('pixels').innerHTML = (d.pixels || []).map(pixelRow).join('');
 }
+
+// เติม scheme ให้ตอนคลิกออกจากช่อง เพื่อให้เห็นค่าที่ระบบจะใช้จริงก่อนกดบันทึก
+document.addEventListener('focusout', (e) => {
+  if (e.target && e.target.classList && e.target.classList.contains('f-url')) {
+    e.target.value = fixUrl(e.target.value);
+  }
+});
 
 function collect() {
   return {
-    title: title.value, bio: bio.value, avatar: avatar.value, theme: theme.value,
+    title: $('title').value, bio: $('bio').value, avatar: fixUrl($('avatar').value), theme: $('theme').value,
     links: [...document.querySelectorAll('#links .row')].map((r, i) => ({
       id: 'l' + i,
       icon: r.querySelector('.f-icon').value,
       label: r.querySelector('.f-label').value,
-      url: r.querySelector('.f-url').value.trim(),
+      url: fixUrl(r.querySelector('.f-url').value),
       event: r.querySelector('.f-event').value,
     })),
     pixels: [...document.querySelectorAll('#pixels .prow')].map(r => ({
@@ -139,12 +172,18 @@ function collect() {
 
 async function save(btn) {
   const body = collect();
-  // เตือนก่อนบันทึก ถ้ามีแถวที่กรอกไม่ครบ เพราะเซิร์ฟเวอร์จะตัดทิ้งเงียบๆ
-  const dropped = body.links.filter(l => !l.label || !/^(https?:\/\/|tel:|mailto:)/i.test(l.url));
-  if (dropped.length && !confirm(`มี ${dropped.length} ปุ่มที่ยังไม่มีข้อความหรือลิงก์ไม่ถูกต้อง — ปุ่มพวกนี้จะไม่ถูกบันทึก\n\nบันทึกต่อไหม?`)) return;
+  // บอกให้ชัดว่าแถวไหนมีปัญหาและเพราะอะไร — เดิมบอกแค่จำนวน ผู้ใช้ไม่รู้ว่าต้องแก้ตรงไหน
+  const bad = [];
+  body.links.forEach((l, i) => {
+    if (!l.label && !l.url) return;                       // แถวว่างเปล่า ข้ามไปเงียบๆ ได้
+    if (!l.label) bad.push(`ปุ่มที่ ${i + 1}: ยังไม่ได้ใส่ข้อความบนปุ่ม`);
+    else if (!l.url) bad.push(`ปุ่มที่ ${i + 1} (${l.label}): ยังไม่ได้ใส่ลิงก์`);
+    else if (!/^(https?:\/\/|tel:|mailto:)/i.test(l.url)) bad.push(`ปุ่มที่ ${i + 1} (${l.label}): ลิงก์ "${l.url}" ใช้ไม่ได้ — ต้องเป็นเว็บ เบอร์โทร หรืออีเมล`);
+  });
+  if (bad.length && !confirm('ปุ่มต่อไปนี้จะไม่ถูกบันทึก:\n\n' + bad.join('\n') + '\n\nบันทึกส่วนที่เหลือต่อไหม?')) return;
 
   btn.disabled = true;
-  const msg = document.getElementById('msg');
+  const msg = $('msg');
   try {
     const r = await (await fetch('/api/landing', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),

@@ -77,6 +77,17 @@ describe('หน้า Landing', () => {
     assert.strictEqual(r.landing.links.length, 2);
   });
 
+  // บั๊กที่ผู้ใช้เจอ: พิมพ์ line.me/... เฉยๆ แล้วกดบันทึก ปุ่มหายเงียบๆ
+  // หลังบ้านเติม scheme ให้ก่อนส่ง แต่เซิร์ฟเวอร์ต้องยังปฏิเสธของที่ไม่มี scheme จริงๆ อยู่
+  test('เซิร์ฟเวอร์ยังต้องปฏิเสธลิงก์ที่ไม่มี scheme (หน้าเว็บเป็นคนเติมให้)', async (t) => {
+    const { base } = await boot(t);
+    const r = await post(base, '/api/landing', {
+      links: [{ label: 'ไลน์', url: 'line.me/ti/p/~x' }],
+    });
+    assert.strictEqual(r.landing.links.length, 0,
+      'ไม่มี scheme = ปฏิเสธ เพราะเบราว์เซอร์จะตีความเป็น path ของเว็บเรา ไม่ใช่ลิงก์ออกไปข้างนอก');
+  });
+
   test('ค่าที่บันทึกต้องอยู่รอดข้ามการอ่านใหม่', async (t) => {
     const { base } = await boot(t);
     await post(base, '/api/landing', { title: 'ก่อนแก้', links: [{ label: 'ก', url: 'https://ok.test/a' }] });
