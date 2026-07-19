@@ -2363,7 +2363,9 @@ async function loadLaunchDefaults() {
 // เติม https:// ให้ค่าที่ดูเป็นโดเมน คืน true ถ้าแก้จริง
 function normalizeLinkInput(el) {
   const v = el.value.trim();
-  if (!v || /^https?:\/\//i.test(v) || !/^[^\s/]+\.[^\s/]/.test(v)) return false;
+  // มี scheme อยู่แล้ว (https:, mailto:, tel:, ftp:) ห้ามแตะ — เดิม mailto:a@b.com กลายเป็น https://mailto:a@b.com
+  if (!v || /^[a-z][a-z0-9+.-]*:/i.test(v) || v.startsWith('//')) return false;
+  if (!/^[^\s/]+\.[^\s/]/.test(v)) return false;
   el.value = 'https://' + v;
   return true;
 }
@@ -2431,7 +2433,11 @@ function apConnectLive() {
       if (ev.phase === 'end') loadAutopilot();
     }
   };
-  // EventSource ต่อใหม่เองอยู่แล้ว ไม่ต้องเขียน reconnect เพิ่ม
+  // network สะดุด EventSource ต่อใหม่เอง (retry: 3000) แต่ถ้าเจอ error ถาวรมันจะ CLOSED แล้วเงียบไปเลย
+  // ต้องเคลียร์ apES ไม่งั้นตัวกัน `if (apES) return` จะบล็อกการต่อใหม่ตลอดกาล และ log จะหยุดสดโดยไม่บอกใคร
+  apES.onerror = () => {
+    if (apES && apES.readyState === EventSource.CLOSED) { apES = null; }
+  };
 }
 function apPushLog(l) {
   const box = document.getElementById('apLog');
@@ -2636,7 +2642,10 @@ async function handToAi(btn) {
   const ruleOn = document.getElementById('ruleOn').checked;
 
   let cur = {};
-  try { cur = await (await fetch('/api/autopilot')).json(); } catch { /* อ่านสถานะเดิมไม่ได้ */ }
+  let curOk = true;
+  try { cur = await (await fetch('/api/autopilot')).json(); } catch { curOk = false; }
+  // อ่านสถานะเดิมไม่ได้ = ไม่รู้ว่าหยุดฉุกเฉินค้างอยู่ไหม ถ้าค้างอยู่จริงจะบอกผู้ใช้ว่าสำเร็จทั้งที่ระบบเงียบสนิท
+  if (!curOk && !confirm('อ่านสถานะระบบอัตโนมัติไม่ได้ตอนนี้\n\nถ้ามี "หยุดฉุกเฉิน" ค้างอยู่ ระบบจะยังไม่ทำอะไรแม้บันทึกสำเร็จ\nจะบันทึกค่าต่อไหม?')) return;
 
   let msg = `จะจำค่าพวกนี้ไว้ แล้วให้ AI ขึ้นแอดต่อเอง:\n\n`
     + `• คุมทุกบัญชีที่ใช้ได้ (ตอนนี้ ${ready.length} บัญชี) ให้มีแอดยิงอยู่บัญชีละ ${perAccount} ตัว\n`

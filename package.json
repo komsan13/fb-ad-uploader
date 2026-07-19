@@ -4,7 +4,8 @@
   "description": "Bulk Facebook ad uploader via Marketing API",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test \"test/*.test.js\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.112.3",
