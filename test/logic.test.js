@@ -1,7 +1,7 @@
 // เทสตรรกะล้วนที่ไม่ต้องแตะเครือข่าย — เรียกฟังก์ชันจริงจาก server.js ตรงๆ
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { curFactor, apPrune, apMark, apRecent, apFence, resultSpec, pickResult } = require('../server.js');
+const { curFactor, apPrune, apMark, apRecent, apFence, resultSpec, pickResult, apLimits, AP_LIMIT_SPEC } = require('../server.js');
 
 test('curFactor: สกุลที่ไม่มีหน่วยย่อยต้องได้ 1 ไม่ใช่ 100', () => {
   for (const c of ['THB', 'USD', 'EUR', 'thb']) assert.strictEqual(curFactor(c), 100, `${c} ควรเป็น 100`);
@@ -83,4 +83,70 @@ test('resultSpec/pickResult: นับผลลัพธ์ตาม conversion 
 test('pickResult: ไม่มี action ที่ตรงต้องไม่คืน 0 มั่วๆ', () => {
   const spec = resultSpec('OUTCOME_SALES', 'PURCHASE');
   assert.ok(!pickResult(spec, [{ action_type: 'link_click', value: '99' }]), 'คลิกลิงก์ไม่ใช่การซื้อ');
+});
+
+// ---------- เพดานที่ตั้งได้จากหน้าเว็บ ----------
+// ค่าพวกนี้คือเกราะกันบัญชีโดนแบนกับกันเงินไหล เทสตรงนี้กันสองเรื่อง:
+// (1) ของเดิมต้องไม่เปลี่ยนพฤติกรรมเมื่อไม่ได้ตั้งอะไร (2) ตั้งนอกกรอบต้องถูกบีบกลับเสมอ
+test('apLimits: ไม่ได้ตั้งอะไร ต้องได้ค่าเดิมก่อนทำให้ตั้งได้ทุกตัว', () => {
+  const expected = {
+    maxFixPerDay: 10, freezeRejections: 3, maxDiagRetry: 3, sameReasonStop: 2,
+    maxNewAdsPerDay: 6, maxPausePerDay: 10, loserMinSpend: 2, loserCpaMult: 1.5, scaleStep: 1.2,
+  };
+  assert.deepStrictEqual(apLimits({}), expected);
+  assert.deepStrictEqual(apLimits({ autopilot: {} }), expected);
+  assert.deepStrictEqual(apLimits({ autopilot: { limits: {} } }), expected);
+  assert.deepStrictEqual(apLimits(undefined), expected);
+});
+
+test('apLimits: ตั้งเกินกรอบต้องถูกบีบกลับ ไม่ใช่ยอมตาม', () => {
+  // เคสอันตรายจริง: ปลดเกราะกันแบนด้วยการตั้งเลขมหาศาล
+  const wild = apLimits({ autopilot: { limits: {
+    freezeRejections: 999, maxFixPerDay: 1000, maxNewAdsPerDay: 500,
+    maxPausePerDay: 9999, scaleStep: 10, loserCpaMult: 100, sameReasonStop: 99,
+  } } });
+  assert.strictEqual(wild.freezeRejections, 10, 'หยุดบัญชีต้องไม่เกิน 10 ตัว');
+  assert.strictEqual(wild.maxFixPerDay, 50);
+  assert.strictEqual(wild.maxNewAdsPerDay, 20);
+  assert.strictEqual(wild.maxPausePerDay, 50);
+  assert.strictEqual(wild.scaleStep, 2, 'ขยายงบต้องไม่เกิน 2 เท่าต่อครั้ง');
+  assert.strictEqual(wild.loserCpaMult, 5);
+  assert.strictEqual(wild.sameReasonStop, 5);
+
+  // ต่ำกว่ากรอบก็ต้องถูกดันขึ้น — 0 หรือติดลบแปลว่าเพดานทำงานผิดทั้งระบบ
+  const low = apLimits({ autopilot: { limits: {
+    freezeRejections: 0, maxFixPerDay: -5, scaleStep: 1, loserCpaMult: 0.1, maxNewAdsPerDay: 0,
+  } } });
+  assert.strictEqual(low.freezeRejections, 1);
+  assert.strictEqual(low.maxFixPerDay, 1);
+  assert.strictEqual(low.maxNewAdsPerDay, 1);
+  assert.strictEqual(low.scaleStep, 1.05, 'scaleStep 1.0 = ขยายงบไม่ขยับ วนลูปเปล่า');
+  assert.strictEqual(low.loserCpaMult, 1.1);
+});
+
+test('apLimits: ค่าเสียต้องตกกลับไปที่ค่าตั้งต้น ไม่ใช่ปัดเป็น min', () => {
+  // ปัดเป็น min จะได้ freezeRejections=1 คือหยุดบัญชีทันทีที่โดนปฏิเสธตัวเดียว
+  // ระบบหยุดทำงานทั้งระบบเพราะ config พิมพ์ผิด — ต้องกลับไปค่าตั้งต้นแทน
+  for (const bad of [undefined, null, '', 'abc', NaN, {}, []]) {
+    const l = apLimits({ autopilot: { limits: { freezeRejections: bad, scaleStep: bad } } });
+    assert.strictEqual(l.freezeRejections, 3, `ค่า ${JSON.stringify(bad)} ต้องได้ค่าตั้งต้น 3`);
+    assert.strictEqual(l.scaleStep, 1.2, `ค่า ${JSON.stringify(bad)} ต้องได้ค่าตั้งต้น 1.2`);
+  }
+});
+
+test('apLimits: ตัวที่เป็นจำนวนเต็มต้องปัด ตัวที่เป็นทศนิยมต้องไม่ปัด', () => {
+  const l = apLimits({ autopilot: { limits: { freezeRejections: 4.7, maxFixPerDay: 12.2, scaleStep: 1.35, loserCpaMult: 2.25 } } });
+  assert.strictEqual(l.freezeRejections, 5, 'จำนวนแอดต้องเป็นจำนวนเต็ม');
+  assert.strictEqual(l.maxFixPerDay, 12);
+  assert.strictEqual(l.scaleStep, 1.35, 'ตัวคูณงบต้องเก็บทศนิยมไว้');
+  assert.strictEqual(l.loserCpaMult, 2.25);
+});
+
+test('AP_LIMIT_SPEC: ทุกตัวต้องมีป้ายไทยและกรอบที่ครอบค่าตั้งต้นจริง', () => {
+  for (const [k, spec] of Object.entries(AP_LIMIT_SPEC)) {
+    assert.ok(spec.label, `${k} ต้องมี label ไม่งั้นหน้าเว็บกับ log จะโชว์ undefined`);
+    assert.ok(spec.hint, `${k} ต้องมี hint บอกผลของการขยับ`);
+    assert.ok(['safety', 'money'].includes(spec.group), `${k} ต้องระบุกลุ่ม`);
+    assert.ok(spec.min <= spec.def && spec.def <= spec.max, `${k}: ค่าตั้งต้น ${spec.def} ต้องอยู่ในกรอบ ${spec.min}-${spec.max}`);
+  }
 });

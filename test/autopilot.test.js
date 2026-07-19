@@ -296,3 +296,49 @@ describe('การอ่านเหตุผลปฏิเสธ', () => {
     assert.match(st.noRotate[ACCT].cat, /พนัน/, 'ต้องจับหมวดจาก ad_review_feedback ได้');
   });
 });
+
+describe('เพดานที่ตั้งได้จากหน้าเว็บ', () => {
+  test('เพดานเติมแอดที่ตั้งไว้ต้องมีผลจริง ไม่ใช่แค่เก็บลง config', async (t) => {
+    // minAds=5 แต่เพดานเติม 2 ตัว/วัน → ต้องได้ 2 ไม่ใช่ 5
+    const config = baseConfig({
+      autopilot: { enabled: true, minAds: 5, limits: { maxNewAdsPerDay: 2 } },
+    });
+    const { base, world } = await boot(t, { config, videos: 9, captions: 9 });
+    await runTwice(base);
+    await post(base, '/api/autopilot/run');
+
+    const made = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/ads`);
+    assert.strictEqual(made.length, 2, `เพดาน 2 ตัว/วัน แต่สร้างไป ${made.length} ตัว`);
+  });
+
+  test('ตั้งเพดานนอกกรอบผ่าน API ต้องถูกบีบกลับ และอ่านค่าที่ถูกบีบแล้วออกมา', async (t) => {
+    const { base } = await boot(t);
+    // ปลดเกราะกันแบน = สิ่งที่ต้องกันให้ได้ที่ทางเข้า
+    const r = await post(base, '/api/autopilot', {
+      enabled: true, limits: { freezeRejections: 999, scaleStep: 50, maxNewAdsPerDay: 0 },
+    });
+    assert.strictEqual(r.limits.freezeRejections, 10);
+    assert.strictEqual(r.limits.scaleStep, 2);
+    assert.strictEqual(r.limits.maxNewAdsPerDay, 1);
+
+    const st = await get(base, '/api/autopilot');
+    assert.strictEqual(st.limits.freezeRejections, 10, 'อ่านกลับต้องได้ค่าที่บีบแล้ว');
+    assert.strictEqual(st.maxNewPerAcct, 1, 'ตัวเลขที่หน้าเว็บโชว์ต้องตรงกับเพดานจริง');
+  });
+
+  test('แก้เพดานต้องถูกจดไว้ใน log — เกราะกันแบนขยับเงียบๆ ไม่ได้', async (t) => {
+    const { base, dir } = await boot(t);
+    await post(base, '/api/autopilot', { enabled: true, limits: { freezeRejections: 7 } });
+    const entry = readState(dir).log.find((l) => /แก้เพดาน/.test(l.msg));
+    assert.ok(entry, 'ต้องมีบรรทัด log ตอนเพดานเปลี่ยน');
+    assert.match(entry.msg, /3 → 7/, 'ต้องบอกว่าเปลี่ยนจากอะไรเป็นอะไร');
+  });
+
+  test('บันทึกค่าอื่นโดยไม่ส่ง limits มา ต้องไม่ล้างเพดานที่ตั้งไว้', async (t) => {
+    const { base } = await boot(t);
+    await post(base, '/api/autopilot', { enabled: true, limits: { freezeRejections: 7 } });
+    await post(base, '/api/autopilot', { enabled: true, minAds: 3 });   // ไม่ส่ง limits
+    const st = await get(base, '/api/autopilot');
+    assert.strictEqual(st.limits.freezeRejections, 7, 'เพดานที่ตั้งไว้ต้องอยู่');
+  });
+});

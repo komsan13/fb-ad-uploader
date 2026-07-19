@@ -958,9 +958,20 @@
         <div class="hint" style="margin-bottom:10px">ใส่ <b>0</b> = ไม่เติมให้ • ถ้าใส่เลข มันจะหยิบวิดีโอ+แคปชั่นจากคลังขึ้นแอดเองจนครบ <b>เปิดยิงทันที</b> โดยใช้ค่าตั้งต้นในหน้าขึ้นแอด (งบ/ลิงก์/วัตถุประสงค์/กลุ่มเป้าหมาย) — งบอยู่ระดับแคมเปญ (CBO) เพิ่มแอดกี่ตัวก็ไม่ใช้จ่ายเกินงบที่ตั้งไว้</div>
         <div class="hint" style="margin-bottom:10px">
           <b>สิ่งที่มันทำ:</b> อ่านเหตุผลที่ FB ปฏิเสธ → ถ้าปัญหาอยู่ที่ข้อความและระบุได้ชัด จะแก้แล้วขึ้นใหม่ให้ <b>ครั้งเดียวต่อครีเอทีฟ</b> • ถ้าปัญหาอยู่ที่วิดีโอ/หน้าขาย/ระดับบัญชี จะไม่แตะ แค่เตือนคุณ<br>
-          <b>ปิดตัวขาดทุนเอง:</b> แอดที่ใช้เงินเกิน 2 เท่าของเพดาน CPA แล้วยังไม่มีผลลัพธ์ หรือต้นทุนแพงกว่าเพดาน 1.5 เท่า จะถูกปิด (ไม่เกิน 10 ตัว/บัญชี/วัน) แล้วเติมครีเอทีฟใหม่เข้าไปแทน — ใช้เลขจากช่อง "หยุดเมื่อต้นทุน/ผลลัพธ์เกิน" ในหน้าขึ้นแอด ถ้าไม่ได้ตั้งไว้จะไม่ปิดอะไรเลย<br>
-          <b>เพดานกันพัง:</b> แก้ได้ไม่เกิน <b id="apCap">10</b> ครั้ง/วันทั้งระบบ • บัญชีไหนโดนปฏิเสธ 3 ตัวใน 24 ชม. จะ<b>หยุดบัญชีนั้นทันที</b>เพื่อกันโดนแบน • แจ้งทุกอย่างเข้า Telegram
+          <b>ปิดตัวขาดทุนเอง:</b> แอดที่ใช้เงินเกิน <b id="apLoserSpend">2</b> เท่าของเพดาน CPA แล้วยังไม่มีผลลัพธ์ หรือต้นทุนแพงกว่าเพดาน <b id="apLoserMult">1.5</b> เท่า จะถูกปิด (ไม่เกิน <b id="apPauseCap">10</b> ตัว/บัญชี/วัน) แล้วเติมครีเอทีฟใหม่เข้าไปแทน — ใช้เลขจากช่อง "หยุดเมื่อต้นทุน/ผลลัพธ์เกิน" ในหน้าขึ้นแอด ถ้าไม่ได้ตั้งไว้จะไม่ปิดอะไรเลย<br>
+          <b>เพดานกันพัง:</b> แก้ได้ไม่เกิน <b id="apCap">10</b> ครั้ง/วันทั้งระบบ • บัญชีไหนโดนปฏิเสธ <b id="apFreezeCap">3</b> ตัวใน 24 ชม. จะ<b>หยุดบัญชีนั้นทันที</b>เพื่อกันโดนแบน • แจ้งทุกอย่างเข้า Telegram
         </div>
+
+        <details id="apLimitsBox" style="margin-bottom:10px;border:1px solid var(--line);border-radius:var(--r-md);padding:8px 12px">
+          <summary style="cursor:pointer;font-weight:600">⚙️ ปรับเพดานเอง</summary>
+          <div class="hint" style="margin:10px 0">
+            ทุกช่องมีกรอบต่ำสุด–สูงสุดบังคับไว้ ใส่นอกกรอบระบบจะบีบกลับให้เอง เพราะค่าพวกนี้คือเกราะกันบัญชีโดนแบนและกันเงินไหล<br>
+            เว้นว่างหรือกดปุ่มคืนค่าตั้งต้น = กลับไปใช้ค่าเดิมของระบบ • ทุกการแก้ถูกจดไว้ในบันทึกด้านล่าง
+          </div>
+          <div id="apLimitsSafety"></div>
+          <div id="apLimitsMoney"></div>
+          <button class="btn-light btn-sm" onclick="apResetLimits()" style="margin-top:8px">คืนค่าตั้งต้นทั้งหมด</button>
+        </details>
         <div class="hint" style="margin-bottom:10px;background:#fff6e5;border:1px solid #f0d9a8;border-radius:var(--r-md);padding:10px 12px">
           ⚠️ <b>วิธีหยุดระบบคือปุ่มในหน้านี้เท่านั้น</b> — ระบบถูกตั้งให้ดูแลตัวเองเต็มที่ ถ้าไม่มีแคมเปญที่เปิดอยู่ มันจะสร้างใหม่ให้เสมอ ดังนั้นการเข้าไป <b>pause แคมเปญใน Ads Manager จะไม่ได้ผล</b> เพราะมันจะสร้างตัวใหม่มาแทนภายในไม่กี่นาที<br>
           จะหยุดจริงต้องปิดสวิตช์ "เปิดระบบอัตโนมัติ" หรือกด "หยุดฉุกเฉิน" ที่นี่
@@ -2685,6 +2696,47 @@ document.addEventListener('focusout', (e) => {
 // ---------- ระบบอัตโนมัติ (autopilot) ----------
 const AP_LEVEL = { fixed: '🔧', dead: '⛔', freeze: '🧊', manual: '✕', warn: '⚠️', info: 'ℹ️',
   refill: '➕', scale: '📈', stock: '📦', sleep: '💤', empty: '📭', pause: '🛑', test: '🧪', blocked: '🚧' };
+// เรนเดอร์ช่องเพดานจาก limitSpec ที่เซิร์ฟเวอร์ส่งมา — ป้าย/กรอบอยู่ที่เดียวใน server.js
+// ถ้าก๊อปมาเขียนซ้ำที่นี่ วันหนึ่งกรอบสองฝั่งจะไม่ตรงกันแล้วหน้าเว็บจะโกหกว่าตั้งได้ถึงเท่าไหร่
+let apLimitsBuilt = false;
+function apRenderLimits(d) {
+  const spec = d.limitSpec, cur = d.limits;
+  if (!spec || !cur) return;
+
+  // ตัวเลขในย่อหน้าอธิบาย ต้องเดินตามค่าจริง ไม่ใช่ค้างที่เลขที่พิมพ์ไว้ตอนเขียนหน้า
+  const put = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  put('apLoserSpend', cur.loserMinSpend);
+  put('apLoserMult', cur.loserCpaMult);
+  put('apPauseCap', cur.maxPausePerDay);
+  put('apFreezeCap', cur.freezeRejections);
+
+  if (!apLimitsBuilt) {
+    const head = { safety: '🛡️ เกราะกันบัญชีโดนแบน', money: '💰 เพดานฝั่งเงิน' };
+    for (const g of ['safety', 'money']) {
+      const rows = Object.entries(spec).filter(([, s]) => s.group === g).map(([k, s]) => `
+        <div class="field" style="max-width:none;margin-bottom:10px">
+          <label>${esc(s.label)} <span class="muted">(${s.min}–${s.max}, ตั้งต้น ${s.def})</span></label>
+          <input id="apLim_${esc(k)}" type="number" min="${s.min}" max="${s.max}"
+                 step="${s.int ? 1 : 0.05}" onchange="saveAutopilot()">
+          <div class="hint" style="margin-top:4px">${esc(s.hint)}</div>
+        </div>`).join('');
+      document.getElementById(g === 'safety' ? 'apLimitsSafety' : 'apLimitsMoney').innerHTML =
+        `<div style="font-weight:600;margin:12px 0 8px">${head[g]}</div>${rows}`;
+    }
+    apLimitsBuilt = true;
+  }
+
+  // หน้านี้ถูกรีเฟรชเป็นระยะ — เขียนทับช่องที่ผู้ใช้กำลังพิมพ์อยู่คือทำให้ตัวเลขกระโดดคามือ
+  for (const k of Object.keys(spec)) {
+    const el = document.getElementById('apLim_' + k);
+    if (el && document.activeElement !== el) el.value = cur[k];
+  }
+}
+function apResetLimits() {
+  if (!confirm('คืนค่าตั้งต้นทั้งหมด?')) return;
+  for (const el of document.querySelectorAll('[id^="apLim_"]')) el.value = '';
+  saveAutopilot();
+}
 async function loadAutopilot() {
   if (!document.getElementById('apEnabled')) return;
   let d;
@@ -2695,6 +2747,7 @@ async function loadAutopilot() {
   document.getElementById('apCap').textContent = d.maxPerDay;
   document.getElementById('apMinAds').value = d.minAds || 0;
   document.getElementById('apScaleMax').value = d.scaleMaxBudget || 0;
+  apRenderLimits(d);
 
   const frozen = Object.entries(d.frozen || {});
   const st = [];
@@ -2769,6 +2822,10 @@ async function saveAutopilot() {
         testMode: document.getElementById('apTest').checked,
         minAds: Number(document.getElementById('apMinAds').value) || 0,
         scaleMaxBudget: Number(document.getElementById('apScaleMax').value) || 0,
+        // ช่องว่าง = ขอค่าตั้งต้น ส่ง '' ไปให้เซิร์ฟเวอร์ตัดสิน ไม่ใช่แปลงเป็น 0 ที่นี่
+        // (0 อยู่นอกกรอบทุกตัว เซิร์ฟเวอร์จะบีบเป็น min ซึ่งไม่ใช่สิ่งที่ผู้ใช้ขอ)
+        limits: Object.fromEntries([...document.querySelectorAll('[id^="apLim_"]')]
+          .map((el) => [el.id.slice(6), el.value])),
       }),
     });
   } catch (e) { alert('บันทึกไม่สำเร็จ: ' + e.message); }

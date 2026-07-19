@@ -1712,11 +1712,74 @@ async function watchTick() {
 // แก้ได้เฉพาะที่ข้อความเท่านั้น และแก้ได้ครั้งเดียวต่อครีเอทีฟตลอดชีพ
 // ยิงซ้ำจนหลุดคือทางที่ทำให้บัญชีโดนแบน ระบบนี้จงใจไม่รองรับ
 const AP_PATH = path.join(path.dirname(CONFIG_PATH), 'autopilot-state.json');
-const AP_MAX_FIX_PER_DAY = 10;      // เพดานการแก้อัตโนมัติทั้งระบบต่อวัน
-const AP_FREEZE_REJECTIONS = 3;     // โดนปฏิเสธกี่ตัวใน 24 ชม. ถึงหยุดบัญชีนั้น
-const AP_MAX_DIAG_RETRY = 3;        // วินิจฉัยพลาดชั่วคราวได้กี่ครั้งก่อนเลิกลองแอดตัวนั้น
-const AP_SAME_REASON_STOP = 2;      // เหตุผลหมวดเดิมซ้ำกี่ครั้งถึงถือว่าไม่ใช่ปัญหาครีเอทีฟ
 const AP_REASON_WINDOW = 7 * 24 * 3600 * 1000;   // นับย้อนหลังกี่วัน
+
+// เพดานทุกตัวตั้งได้จากหน้าเว็บ (เก็บใน cfg.autopilot.limits) แต่ยังมีกรอบ min/max บังคับที่นี่
+// เพราะค่าพวกนี้คือเกราะกันบัญชีโดนแบนกับกันเงินไหล ปล่อยให้ตั้งเป็นอะไรก็ได้เท่ากับถอดเกราะ
+// def = ค่าเดิมก่อนทำให้ตั้งได้ ต้องไม่เปลี่ยน ไม่งั้นระบบที่รันอยู่พฤติกรรมเปลี่ยนเงียบๆ
+const AP_LIMIT_SPEC = {
+  maxFixPerDay: {
+    def: 10, min: 1, max: 50, int: true, group: 'safety',
+    label: 'แก้ข้อความอัตโนมัติได้วันละ (ครั้ง ทั้งระบบ)',
+    hint: 'ยิ่งสูงยิ่งเสี่ยง — แก้แล้วส่งรีวิวใหม่ถี่ๆ คือสัญญาณที่ FB จับ',
+  },
+  freezeRejections: {
+    def: 3, min: 1, max: 10, int: true, group: 'safety',
+    label: 'โดนปฏิเสธกี่ตัวใน 24 ชม. ถึงหยุดทั้งบัญชี',
+    hint: 'เกราะกันแบนตัวหลัก ตั้งสูง = ปล่อยให้บัญชีสะสมประวัติเสียนานขึ้นก่อนหยุด',
+  },
+  sameReasonStop: {
+    def: 2, min: 1, max: 5, int: true, group: 'safety',
+    label: 'เหตุผลหมวดเดิมซ้ำกี่ครั้งถึงหยุดเติมแอด',
+    hint: 'ซ้ำหมวดเดิม = ปัญหาไม่ได้อยู่ที่ครีเอทีฟ เติมต่อไปก็โดนปฏิเสธเหมือนเดิม',
+  },
+  maxDiagRetry: {
+    def: 3, min: 1, max: 10, int: true, group: 'safety',
+    label: 'วินิจฉัยพลาดกี่ครั้งถึงเลิกลองแอดตัวนั้น',
+    hint: 'นับเฉพาะตอน AI ล่มชั่วคราว (429/529/เน็ตหลุด) ไม่ใช่ตอนตัดสินว่าแก้ไม่ได้',
+  },
+  maxNewAdsPerDay: {
+    def: 6, min: 1, max: 20, int: true, group: 'money',
+    label: 'เติมแอดใหม่ได้วันละ (ตัว/บัญชี)',
+    hint: 'กันกรณีระบบไล่สร้างรัวเพราะอ่านสถานะผิด',
+  },
+  maxPausePerDay: {
+    def: 10, min: 1, max: 50, int: true, group: 'money',
+    label: 'ปิดแอดขาดทุนได้วันละ (ตัว/บัญชี)',
+    hint: 'กันปิดยกบัญชีตอน insights เพี้ยน',
+  },
+  loserMinSpend: {
+    def: 2, min: 1, max: 10, group: 'money',
+    label: 'ต้องใช้เงินกี่เท่าของ CPA เป้า ก่อนตัดสินว่าแอดแย่',
+    hint: 'ตั้งต่ำ = ฆ่าแอดดีที่ยังไม่ทันเริ่ม ตั้งสูง = ปล่อยแอดแย่เผาเงินนานขึ้น',
+  },
+  loserCpaMult: {
+    def: 1.5, min: 1.1, max: 5, group: 'money',
+    label: 'ต้นทุนแพงกว่าเป้ากี่เท่าถึงถือว่าขาดทุน',
+    hint: 'ใช้คู่กับช่อง "หยุดเมื่อต้นทุน/ผลลัพธ์เกิน" ในหน้าขึ้นแอด',
+  },
+  scaleStep: {
+    def: 1.2, min: 1.05, max: 2, group: 'money',
+    label: 'ขยายงบตัวชนะครั้งละกี่เท่า',
+    hint: '1.2 = +20% ต่อครั้ง วันละครั้ง — ขยับแรงกว่านี้ FB รีเซ็ต learning phase แล้วผลตก',
+  },
+};
+function apLimits(cfg) {
+  const saved = ((cfg || {}).autopilot || {}).limits || {};
+  const out = {};
+  for (const [k, spec] of Object.entries(AP_LIMIT_SPEC)) {
+    // ค่าเสีย = ใช้ค่าตั้งต้น ไม่ใช่ปัดเป็น min — min ของบางตัวอันตรายกว่าค่าตั้งต้น
+    // (freezeRejections=1 คือหยุดทั้งบัญชีตั้งแต่โดนปฏิเสธตัวแรก)
+    // ห้ามใช้ Number() ดื้อๆ ตรงนี้: null / '' / [] แปลงได้ 0 ซึ่ง finite เลยรอด isFinite ไปโดน clamp
+    const raw = saved[k];
+    const ok = typeof raw === 'number' ? Number.isFinite(raw)
+      : typeof raw === 'string' && raw.trim() !== '' && Number.isFinite(Number(raw));
+    if (!ok) { out[k] = spec.def; continue; }
+    const n = Number(raw);
+    out[k] = Math.max(spec.min, Math.min(spec.max, spec.int ? Math.round(n) : n));
+  }
+  return out;
+}
 
 // FB ส่งจำนวนเงินมาเป็นหน่วยย่อยของสกุลนั้น ซึ่งบางสกุลไม่มีหน่วยย่อยเลย
 // หาร 100 ดื้อๆ กับ JPY/KRW/VND = อ่านงบต่ำกว่าจริง 100 เท่า แล้วเพดานงบจะไม่มีวันทำงาน
@@ -1905,7 +1968,6 @@ async function apResubmit(acct, token, origCreative, adsetId, adName, newMessage
 }
 
 // ---------- เติมแอดให้บัญชีที่มีแอดยิงอยู่ต่ำกว่าเป้า ----------
-const AP_MAX_NEW_ADS_PER_ACCT_DAY = 6;   // เพดานแอดใหม่ต่อบัญชีต่อวัน
 // สถานะที่ถือว่า "มีอยู่แล้ว ไม่ต้องเติมเพิ่ม" — รวมตัวที่ FB ยังรีวิวไม่เสร็จด้วย
 const AP_COUNTS_AS_LIVE = new Set(['ACTIVE', 'PENDING_REVIEW', 'IN_PROCESS']);
 
@@ -2156,10 +2218,11 @@ async function apRefill(cfg, prof, a, ads, s, alerts) {
   // เก็บย้อนหลัง 7 วันเพื่อให้ apStockCheck ประเมินอัตราใช้คลังได้ แต่เพดานยังนับแค่ 24 ชม.
   s.created[acctId] = apRecent(s.created[acctId], 7 * 24 * 3600 * 1000);
   const madeToday = apRecent(s.created[acctId], 24 * 3600 * 1000).length;
-  const room = AP_MAX_NEW_ADS_PER_ACCT_DAY - madeToday;
+  const maxNew = apLimits(cfg).maxNewAdsPerDay;
+  const room = maxNew - madeToday;
   if (room <= 0) {
     if (s.warned['cap:' + acctId] !== apToday()) {
-      const m = `✋ ${a.name}: แอดเหลือ ${activeCount}/${target} แต่วันนี้เติมครบ ${AP_MAX_NEW_ADS_PER_ACCT_DAY} ตัวแล้ว`;
+      const m = `✋ ${a.name}: แอดเหลือ ${activeCount}/${target} แต่วันนี้เติมครบ ${maxNew} ตัวแล้ว`;
       alerts.push(m); apLog(s, 'warn', m, acctId); s.warned['cap:' + acctId] = apToday();
     }
     return;
@@ -2262,10 +2325,6 @@ async function apRefill(cfg, prof, a, ads, s, alerts) {
 // แคมเปญคือกล่องงบ (CBO) ที่ระบบดูแล ถ้าไปปิดแคมเปญ กฎ "ไม่มีแคมเปญ ACTIVE → สร้างใหม่"
 // จะสร้างขึ้นมาแทนในรอบถัดไปทันที กลายเป็นวนลูปปิด-สร้างที่เผาเงินไม่หยุด
 // ปิดแอดที่ไม่เวิร์กแล้วให้ apRefill เติมครีเอทีฟใหม่เข้าไปแทน คือวงจรที่ปิดได้จริง
-const AP_MAX_PAUSE_PER_ACCT_DAY = 10;   // เพดานการปิดต่อบัญชีต่อวัน กันปิดยกบัญชีเพราะ insights เพี้ยน
-const AP_LOSER_MIN_SPEND = 2;           // ต้องใช้จ่ายอย่างน้อยกี่เท่าของ CPA เป้าถึงจะตัดสินว่าแย่
-const AP_LOSER_CPA_MULT = 1.5;          // แพงกว่าเป้ากี่เท่าถึงถือว่าขาดทุน
-
 async function apPauseLosers(cfg, prof, a, ads, s, alerts) {
   if ((cfg.autopilot || {}).testMode) return;   // โหมดทดสอบห้ามแตะของจริงที่ยิงอยู่
   const d = cfg.launchDefaults || {};
@@ -2284,7 +2343,8 @@ async function apPauseLosers(cfg, prof, a, ads, s, alerts) {
   // ผลคือ room เต็ม 10 ทุกครั้งที่เรียก = เพดาน "10 ตัวต่อวัน" กลายเป็น 10 ตัวต่อรอบ (~720/วัน)
   const dayAgo = Date.now() - 24 * 3600 * 1000;
   s.pausedLog = (s.pausedLog || []).filter((x) => x && x.ts > dayAgo);
-  const room = AP_MAX_PAUSE_PER_ACCT_DAY - s.pausedLog.filter((x) => x.acct === acctId).length;
+  const lim = apLimits(cfg);
+  const room = lim.maxPausePerDay - s.pausedLog.filter((x) => x.acct === acctId).length;
   if (room <= 0) return;
 
   // ดูเฉพาะแอดที่ยิงอยู่จริงและอยู่ในแคมเปญที่ระบบเป็นเจ้าของ
@@ -2311,13 +2371,13 @@ async function apPauseLosers(cfg, prof, a, ads, s, alerts) {
     const spend = Number(r.spend) || 0;           // insights คืน spend เป็นหน่วยหลักอยู่แล้ว ไม่ต้องแปลง
     const results = pickResult(objSpec, r.actions) || 0;
     // ยังใช้จ่ายน้อยเกินจะเชื่อตัวเลข — ปล่อยไว้ก่อน กันฆ่าแอดดีที่ยังไม่ได้เริ่ม
-    if (spend < targetCpa * AP_LOSER_MIN_SPEND) continue;
+    if (spend < targetCpa * lim.loserMinSpend) continue;
 
     const cpa = results > 0 ? spend / results : Infinity;
     const why = results === 0
       ? `ใช้ไป ${Math.round(spend).toLocaleString()} บาทแล้วยังไม่มีผลลัพธ์เลย (เป้า ${targetCpa.toLocaleString()}/ผล)`
-      : cpa > targetCpa * AP_LOSER_CPA_MULT
-        ? `ต้นทุน ${Math.round(cpa).toLocaleString()} บาท/ผล แพงกว่าเป้า ${targetCpa.toLocaleString()} เกิน ${AP_LOSER_CPA_MULT} เท่า`
+      : cpa > targetCpa * lim.loserCpaMult
+        ? `ต้นทุน ${Math.round(cpa).toLocaleString()} บาท/ผล แพงกว่าเป้า ${targetCpa.toLocaleString()} เกิน ${lim.loserCpaMult} เท่า`
         : '';
     if (!why) continue;
 
@@ -2338,9 +2398,8 @@ async function apPauseLosers(cfg, prof, a, ads, s, alerts) {
 }
 
 // ---------- ขยายงบตัวชนะ ----------
-// เพิ่มทีละ 20% เท่านั้น — ขยับแรงกว่านี้ FB รีเซ็ต learning phase แล้วผลตกทันที
+// เพิ่มทีละน้อย (ตั้งต้น +20%) — ขยับแรงกว่านี้ FB รีเซ็ต learning phase แล้วผลตกทันที
 // และต้องมีเพดานเสมอ ไม่งั้น +20% ทบทุกวัน 30 วันคือ 237 เท่า
-const AP_SCALE_STEP = 1.2;
 const AP_SCALE_COOLDOWN = 20 * 3600 * 1000;   // ขยับแคมเปญเดิมได้วันละครั้ง
 
 async function apScale(cfg, prof, a, s, alerts) {
@@ -2392,7 +2451,7 @@ async function apScale(cfg, prof, a, s, alerts) {
 
     const cur = Number(c.daily_budget) / cf;
     if (cur >= ceiling) continue;
-    const next = Math.min(Math.round(cur * AP_SCALE_STEP), ceiling);
+    const next = Math.min(Math.round(cur * apLimits(cfg).scaleStep), ceiling);
     if (next <= cur) continue;
 
     try {
@@ -2446,6 +2505,7 @@ async function autopilotTick(mode = 'full') {
   const cfg = loadConfig();
   const ap = cfg.autopilot || {};
   if (!ap.enabled) return;
+  const apLim = apLimits(cfg);
 
   const s = loadAp();
   if (s.killSwitch) return;
@@ -2506,7 +2566,7 @@ async function autopilotTick(mode = 'full') {
           apMark(s.counted, ad.id, 1);
           s.rejections[acctId] = apRecent(s.rejections[acctId], 24 * 3600 * 1000).concat(Date.now());
         }
-        if (s.rejections[acctId].length >= AP_FREEZE_REJECTIONS) {
+        if (s.rejections[acctId].length >= apLim.freezeRejections) {
           s.frozen[acctId] = mine.frozen[acctId] = { since: Date.now(), reason: `โดนปฏิเสธ ${s.rejections[acctId].length} ตัวใน 24 ชม.` };
           apMark(s.handled, ad.id, 'frozen');
           const m = `🧊 หยุดระบบอัตโนมัติของบัญชี ${a.name} — โดนปฏิเสธ ${s.rejections[acctId].length} ตัวใน 24 ชม. เสี่ยงโดนแบน เข้าไปดูเองก่อนแล้วค่อยปลดล็อกในเว็บ`;
@@ -2554,7 +2614,7 @@ async function autopilotTick(mode = 'full') {
         }
         const hits = (s.reasons[rk] || []).length;
 
-        if (hits >= AP_SAME_REASON_STOP && !s.noRotate[acctId]) {
+        if (hits >= apLim.sameReasonStop && !s.noRotate[acctId]) {
           s.noRotate[acctId] = mine.noRotate[acctId] = { since: Date.now(), cat, hits };
           const m = `🚧 ${a.name}: หยุดสร้างแอดใหม่ให้บัญชีนี้ — โดนปฏิเสธด้วยเหตุผลเดิม "${cat}" ${hits} ครั้งทั้งที่เปลี่ยนคลิปและแคปชั่นแล้ว\n`
             + `   แปลว่าไม่ใช่ปัญหาที่ครีเอทีฟ แต่เป็นที่ตัวสินค้าหรือหน้าปลายทาง — เปลี่ยนครีเอทีฟต่อไปก็จะโดนข้อเดิม\n`
@@ -2577,9 +2637,9 @@ async function autopilotTick(mode = 'full') {
           continue;
         }
         // ชนเพดานรายวัน = เลื่อนไปพรุ่งนี้ ไม่ใช่ทิ้งถาวร
-        if (s.fixes.length >= AP_MAX_FIX_PER_DAY) {
+        if (s.fixes.length >= apLim.maxFixPerDay) {
           if (s.warned['fixcap:' + acctId] !== apToday()) {
-            const m = `✋ ${a.name}: มีแอดโดนปฏิเสธ แต่วันนี้แก้อัตโนมัติครบ ${AP_MAX_FIX_PER_DAY} ครั้งแล้ว — ค้างไว้ให้พรุ่งนี้หรือคุณจัดการเอง`;
+            const m = `✋ ${a.name}: มีแอดโดนปฏิเสธ แต่วันนี้แก้อัตโนมัติครบ ${apLim.maxFixPerDay} ครั้งแล้ว — ค้างไว้ให้พรุ่งนี้หรือคุณจัดการเอง`;
             alerts.push(m); apLog(s, 'warn', m, acctId); s.warned['fixcap:' + acctId] = apToday();
           }
           continue;
@@ -2592,12 +2652,12 @@ async function autopilotTick(mode = 'full') {
           // AI ล่มชั่วคราว (429/529/เน็ตหลุด) ไม่ใช่คำตัดสินว่าแอดนี้แก้ไม่ได้ — ให้โอกาสลองใหม่แบบมีเพดาน
           const n = ((s.retries[ad.id] || {}).v || 0) + 1;
           apMark(s.retries, ad.id, n);
-          if (n >= AP_MAX_DIAG_RETRY) {
+          if (n >= apLim.maxDiagRetry) {
             apMark(s.handled, ad.id, 'diag-failed');
             const m = `⚠️ ${a.name}: "${ad.name}" โดนปฏิเสธ แต่วินิจฉัยไม่สำเร็จ ${n} ครั้ง เลิกลอง (${e.message})`;
             alerts.push(m); apLog(s, 'warn', m, acctId);
           } else {
-            apLog(s, 'warn', `${a.name}: "${ad.name}" วินิจฉัยไม่สำเร็จ ครั้งที่ ${n}/${AP_MAX_DIAG_RETRY} จะลองใหม่รอบหน้า (${e.message})`, acctId);
+            apLog(s, 'warn', `${a.name}: "${ad.name}" วินิจฉัยไม่สำเร็จ ครั้งที่ ${n}/${apLim.maxDiagRetry} จะลองใหม่รอบหน้า (${e.message})`, acctId);
           }
           continue;
         }
@@ -2672,8 +2732,10 @@ app.get('/api/autopilot', (req, res) => {
     frozen: s.frozen,
     noRotate: s.noRotate || {},
     fixesToday: apRecent(s.fixes, 24 * 3600 * 1000).length,
-    maxPerDay: AP_MAX_FIX_PER_DAY,
-    maxNewPerAcct: AP_MAX_NEW_ADS_PER_ACCT_DAY,
+    maxPerDay: apLimits(cfg).maxFixPerDay,
+    maxNewPerAcct: apLimits(cfg).maxNewAdsPerDay,
+    limits: apLimits(cfg),
+    limitSpec: AP_LIMIT_SPEC,
     createdToday: Object.values(s.created || {}).reduce((n, arr) => n + apRecent(arr, 24 * 3600 * 1000).length, 0),
     pausedToday: apRecent((s.pausedLog || []).map((x) => x.ts), 24 * 3600 * 1000).length,
     fastMins: Math.round(AP_FAST_MS / 60000),
@@ -2683,6 +2745,7 @@ app.get('/api/autopilot', (req, res) => {
 });
 app.post('/api/autopilot', (req, res) => {
   const cfg = loadConfig();
+  const limBefore = apLimits(cfg);
   cfg.autopilot = { ...(cfg.autopilot || {}), enabled: !!req.body.enabled };
   if (req.body.minAds !== undefined) {
     cfg.autopilot.minAds = Math.max(0, Math.min(50, Number(req.body.minAds) || 0));
@@ -2691,12 +2754,27 @@ app.post('/api/autopilot', (req, res) => {
     cfg.autopilot.scaleMaxBudget = Math.max(0, Number(req.body.scaleMaxBudget) || 0);
   }
   if (req.body.testMode !== undefined) cfg.autopilot.testMode = !!req.body.testMode;
+  if (req.body.limits && typeof req.body.limits === 'object') {
+    // เก็บเฉพาะคีย์ที่รู้จัก แล้ว clamp ทันทีตอนเซฟ — ไม่ปล่อยค่านอกกรอบลงดิสก์
+    // ถ้าเก็บดิบแล้วค่อย clamp ตอนอ่าน ไฟล์ config จะโกหกว่าเพดานเป็นเลขที่ตั้งไว้
+    const next = { ...(cfg.autopilot.limits || {}) };
+    for (const k of Object.keys(AP_LIMIT_SPEC)) {
+      if (req.body.limits[k] !== undefined) next[k] = req.body.limits[k];
+    }
+    cfg.autopilot.limits = apLimits({ autopilot: { limits: next } });
+  }
   saveConfig(cfg);
   const s = loadAp();
   if (typeof req.body.killSwitch === 'boolean') s.killSwitch = req.body.killSwitch;
   apLog(s, 'info', req.body.killSwitch ? '🛑 กดหยุดฉุกเฉิน' : (cfg.autopilot.enabled ? '▶️ เปิดระบบอัตโนมัติ' : '⏸️ ปิดระบบอัตโนมัติ'));
+  // เพดานคือเกราะกันบัญชีโดนแบน ใครขยับเมื่อไหร่ต้องมีร่องรอย ไม่ใช่เปลี่ยนเงียบๆ แล้วมางงทีหลัง
+  const limAfter = apLimits(cfg);
+  const changed = Object.keys(AP_LIMIT_SPEC)
+    .filter((k) => limBefore[k] !== limAfter[k])
+    .map((k) => `${AP_LIMIT_SPEC[k].label}: ${limBefore[k]} → ${limAfter[k]}`);
+  if (changed.length) apLog(s, 'info', '⚙️ แก้เพดาน — ' + changed.join(' • '));
   saveAp(s);
-  res.json({ ok: true, enabled: cfg.autopilot.enabled, killSwitch: s.killSwitch });
+  res.json({ ok: true, enabled: cfg.autopilot.enabled, killSwitch: s.killSwitch, limits: limAfter });
 });
 // รอบตรวจหนึ่งกินเวลาเป็นนาที (ไล่ยิง FB ทุกบัญชี + เรียก AI ต่อแอดที่โดนปฏิเสธหนึ่งตัว)
 // สอง tick ที่ซ้อนกันจะอ่าน state ชุดเดียวกันแล้วต่างคนต่างลงมือ → สร้างแอดซ้ำ, แก้แอดซ้ำ,
@@ -2843,5 +2921,5 @@ if (require.main === module) {
     console.log('');
   });
 } else {
-  module.exports = { app, curFactor, apPrune, apMark, apRecent, apFence, resultSpec, pickResult, loadAp, saveAp };
+  module.exports = { app, curFactor, apPrune, apMark, apRecent, apFence, resultSpec, pickResult, loadAp, saveAp, apLimits, AP_LIMIT_SPEC };
 }
