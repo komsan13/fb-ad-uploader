@@ -10,6 +10,10 @@ docker build -t fbad:latest .
 HASH="$(docker inspect fbad --format '{{index .Config.Labels "traefik.http.middlewares.fbad-auth.basicauth.users"}}')"
 [ -n "$HASH" ] || { echo "หา basic auth hash จาก container เดิมไม่เจอ — ถ้าเป็นการติดตั้งครั้งแรกให้ใช้ deploy.sh"; exit 1; }
 
+# router fbadpub = ส่วนที่เปิดสาธารณะ ไม่ผ่าน basic auth
+# หน้า Landing กับรูปของมันต้องเข้าถึงได้โดยไม่มีรหัสผ่าน เพราะคนที่กดโฆษณาไม่มี
+# และ Meta ต้องเข้ามาอ่านพิกเซล/รีวิวโฆษณาได้ด้วย
+# ใช้ Path() ตรงตัวไม่ใช่ PathPrefix(/lp) เพื่อให้ /lp/admin ยังอยู่หลังรหัสผ่าน
 docker rm -f fbad >/dev/null
 docker run -d --name fbad --restart unless-stopped \
   --network web \
@@ -24,9 +28,6 @@ docker run -d --name fbad --restart unless-stopped \
   --label traefik.http.routers.fbad.tls.certresolver=le \
   --label traefik.http.routers.fbad.middlewares=fbad-auth \
   --label "traefik.http.middlewares.fbad-auth.basicauth.users=$HASH" \
-  # หน้า Landing กับรูปของมันต้องเปิดสาธารณะ — คนที่กดโฆษณาไม่มีรหัสผ่าน
-  # และ Meta ต้องเข้ามาอ่านพิกเซล/รีวิวโฆษณาได้ด้วย
-  # ใช้ Path() แบบตรงตัวไม่ใช่ PathPrefix เพื่อให้ /lp/admin ยังอยู่หลังรหัสผ่านเหมือนเดิม
   --label 'traefik.http.routers.fbadpub.rule=Host(`ad.senball.com`) && (Path(`/privacy.html`) || Path(`/lp`) || Path(`/lp/`) || PathPrefix(`/lp-asset/`))' \
   --label traefik.http.routers.fbadpub.entrypoints=websecure \
   --label traefik.http.routers.fbadpub.service=fbad \
