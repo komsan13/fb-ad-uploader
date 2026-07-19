@@ -18,9 +18,11 @@ const baseConfig = (extra = {}) => ({
 });
 
 // บัญชีเดียว สถานะใช้งานได้ ไม่มีอะไรค้าง
+// pages: บัญชีจริงมีเพจที่ลงโฆษณาได้เสมอ — default ให้ 1 เพจ (id ตรงกับ pageId ใน baseConfig)
 const freshWorld = (over = {}) => ({
   accounts: [{ name: 'บัญชีเทส', account_id: ACCT, account_status: 1, currency: 'THB' }],
   campaigns: [], ads: [], adsets: [], insights: [], pixels: [{ id: 'px1' }],
+  pages: [{ id: 'page1', name: 'เพจหลัก', is_published: true, promotion_eligible: true }],
   ...over,
 });
 
@@ -519,5 +521,56 @@ describe('เกราะ rate limit ของ Meta', () => {
     await runTwice(base);
     const made = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/campaigns`);
     assert.strictEqual(made.length, 1, 'โควตาปกติ รอบเต็มต้องเดินงานตามเดิม (สร้างแคมเปญได้)');
+  });
+});
+
+// ---------- บาลานซ์เพจ round-robin + กันเพจแตกขึ้นแอด ----------
+describe('บาลานซ์เพจ + กันเพจแตก', () => {
+  const pagesWorld = () => freshWorld({
+    pages: [
+      { id: 'PG_A', name: 'เพจ A', is_published: true, promotion_eligible: true },
+      { id: 'PG_B', name: 'เพจ B', is_published: true, promotion_eligible: true },
+      { id: 'PG_DEAD', name: 'เพจบิน', is_published: true, promotion_eligible: false },
+    ],
+  });
+  const pageIdsOf = (world) => world.calls
+    .filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/adcreatives`)
+    .map((c) => JSON.parse(c.params.object_story_spec).page_id);
+
+  test('สร้างหลายแอด ต้องหมุนใช้ทั้งเพจ A/B และไม่แตะเพจบินเลย', async (t) => {
+    const cfg = baseConfig({ autopilot: { enabled: true, minAds: 3 } });
+    const { base, world } = await boot(t, { world: pagesWorld(), config: cfg });
+    await runTwice(base);
+    const ids = pageIdsOf(world);
+    assert.ok(ids.length >= 3, 'ต้องสร้างแอดอย่างน้อย 3 ตัว: ได้ ' + ids.length);
+    assert.ok(!ids.includes('PG_DEAD'), 'ห้ามใช้เพจบิน (promotion_eligible=false) ขึ้นแอดเด็ดขาด');
+    assert.deepStrictEqual([...new Set(ids)].sort(), ['PG_A', 'PG_B'], 'ต้องหมุนใช้ทั้งเพจ A และ B ไม่ใช่เพจเดียวรวด');
+  });
+
+  test('ตรวจรายชื่อเพจไม่ได้ (FB สะดุด) ต้องข้ามการเติม ไม่ถอยไปขึ้นแอดบนเพจที่ตั้งเอง', async (t) => {
+    // เพจที่ตั้งเอง (pageId) มักเป็นตัวที่บินอยู่พอดี — ขึ้นแอดบนมันจะโดนปฏิเสธแล้วดันตัวนับ freeze ฟรี
+    const world = freshWorld();
+    world.route = (m, p) => (m === 'GET' && p === 'me/accounts' ? { error: 'ล่มชั่วคราว' } : null);
+    const cfg = baseConfig({ autopilot: { enabled: true, minAds: 3 } });
+    const { base } = await boot(t, { world, config: cfg });
+    await runTwice(base);
+    assert.strictEqual(pageIdsOf(world).length, 0, 'ตรวจเพจไม่ได้ = ต้องไม่สร้างแอดสักตัว รอบหน้าค่อยลองใหม่');
+  });
+
+  test('เพจบินหมดทุกเพจ ต้องไม่เติมแอด (ไม่ถอยไปใช้เพจที่ตั้งเองซึ่งอาจบินอยู่)', async (t) => {
+    const world = freshWorld({
+      pages: [{ id: 'PG_DEAD', name: 'เพจบิน', is_published: true, promotion_eligible: false }],
+    });
+    const cfg = baseConfig({ autopilot: { enabled: true, minAds: 3 } });
+    const { base } = await boot(t, { world, config: cfg });
+    await runTwice(base);
+    assert.strictEqual(pageIdsOf(world).length, 0, 'ไม่มีเพจที่ลงโฆษณาได้ = ต้องไม่สร้างแอดสักตัว');
+  });
+
+  test('/api/accounts ต้องไม่คืนเพจแตกให้ dropdown เลือก', async (t) => {
+    const { base } = await boot(t, { world: pagesWorld() });
+    const r = await get(base, '/api/accounts?profile=p1');
+    const ids = (r.pages || []).map((p) => p.id);
+    assert.deepStrictEqual(ids.sort(), ['PG_A', 'PG_B'], 'dropdown ต้องเห็นเฉพาะเพจที่ลงโฆษณาได้');
   });
 });

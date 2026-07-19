@@ -1394,7 +1394,7 @@ async function populateProfileCard(pid, force) {
   const pageSel = card.querySelector('.p-page');
   pageSel.innerHTML = data.pages.length
     ? data.pages.map(pg => `<option value="${pg.id}">📄 ${esc(pg.name)}</option>`).join('')
-    : '<option value="">— ไม่พบเพจ (token ขาด pages_show_list) —</option>';
+    : '<option value="">— ไม่มีเพจที่ลงโฆษณาได้ (เพจบิน/ถูกจำกัด หรือ token ขาดสิทธิ์เพจ) —</option>';
   if (p.pageId) pageSel.value = p.pageId;
   // บันทึกค่าที่ dropdown เลือกอัตโนมัติ (ตัวแรก) ถ้ายังไม่เคยตั้ง
   if (!p.adAccountId && accSel.value) saveProfileField(pid, { adAccountId: accSel.value });

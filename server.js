@@ -183,6 +183,19 @@ async function fbAll(pathname, params, token, maxPages = 25) {
   return out;
 }
 
+// เพจที่ "ลงโฆษณาได้จริง" = เผยแพร่แล้ว + FB ยืนยัน promotion_eligible
+// (เพจบิน/ถูกจำกัด = promotion_eligible false — พิสูจน์กับบัญชีจริงแล้ว)
+// แหล่งความจริงเดียว: ใช้ทั้งตอนบาลานซ์เพจขึ้นแอด และตอนกรองไม่ให้เพจแตกโผล่ใน dropdown
+async function fbPages(token) {
+  const pages = await fbAll('me/accounts',
+    { fields: 'name,id,is_published,promotion_eligible,promotion_ineligible_reason', limit: 200 }, token);
+  return pages.map((p) => ({
+    id: p.id, name: p.name,
+    ok: !!p.is_published && !!p.promotion_eligible,
+    reason: p.promotion_ineligible_reason || null,
+  }));
+}
+
 // อัปโหลดวิดีโอ (multipart) → คืน video_id
 async function uploadVideo(acct, file, token, attempt = 0) {
   const form = new FormData();
@@ -999,7 +1012,9 @@ app.get('/api/accounts', async (req, res) => {
       ? 'name,account_id,currency,account_status,business{id,name},funding_source_details,adspixels.limit(15){id,name,last_fired_time},dsa_recommendations{recommendations}'
       : 'name,account_id,currency,account_status,business{id,name}';
     const adAccounts = await fbAll('me/adaccounts', { fields: acctFields, limit: 100 }, prof.accessToken);
-    const pages = await fb('me/accounts', { fields: 'name,id', limit: 200 }, 'GET', prof.accessToken);
+    // เพจแตก (บิน/ถูกจำกัด) ไม่โผล่ใน dropdown เลือกเพจ — เอาแค่เพจที่ลงโฆษณาได้จริง
+    // (เพจแตกยังดูได้ในหน้า "สุขภาพบัญชี" ซึ่งใช้ /api/health-overview คนละเส้น)
+    const pages = (await fbPages(prof.accessToken)).filter((p) => p.ok);
     // ธุรกิจที่ยืนยันตัวตนแล้ว = ตัวเลือก "ผู้ลงโฆษณา" (ส่งเป็น id ใน regional_regulation_identities)
     let verifiedBiz = [];
     if (full) {
@@ -1023,7 +1038,7 @@ app.get('/api/accounts', async (req, res) => {
       }
       return out;
     });
-    res.json({ name: me.name, adAccounts: accounts, pages: pages.data || [] });
+    res.json({ name: me.name, adAccounts: accounts, pages });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
@@ -2226,7 +2241,7 @@ async function apSpendRoom(acct, token, cf) {
   return out;
 }
 
-async function apRefill(cfg, prof, a, ads, s, alerts) {
+async function apRefill(cfg, prof, a, ads, s, alerts, livePages) {
   const ap = cfg.autopilot || {};
   const testMode = !!ap.testMode;
   const target = Math.max(0, Math.min(50, Number(ap.minAds) || 0));
@@ -2253,7 +2268,20 @@ async function apRefill(cfg, prof, a, ads, s, alerts) {
   if (!objInfo) problems.push('วัตถุประสงค์ไม่รองรับ');
   if (!d.link) problems.push('ยังไม่ได้ตั้งลิงก์ในค่าเริ่มต้น');
   if (!Number(d.campaignBudget)) problems.push('ยังไม่ได้ตั้งงบ');
-  if (!prof.pageId) problems.push(`โปรไฟล์ "${prof.label}" ยังไม่ได้เลือกเพจ`);
+  // ตรวจรายชื่อเพจไม่ได้รอบนี้ (เน็ต/ลิมิตชั่วคราว) = ข้ามการเติมไว้ก่อน รอบ full ถัดไปลองใหม่เอง
+  // ห้ามถอยไปใช้เพจที่ตั้งเอง (prof.pageId) เพราะเพจนั้นแหละมักเป็นตัวที่บินอยู่ — ขึ้นแอดบนเพจบิน
+  // = โดนปฏิเสธ = ดันตัวนับ freeze ของบัญชีขึ้นฟรี ทั้งที่เป็นความผิดของระบบเอง ข้ามดีกว่าเสี่ยง
+  if (livePages === null) {
+    if (s.warned['pagefetch:' + acctId] !== apToday()) {
+      apLog(s, 'sleep', `${a.name}: ตรวจรายชื่อเพจไม่ได้รอบนี้ — ข้ามการเติมแอดไว้ก่อน รอบหน้าลองใหม่`, acctId);
+      s.warned['pagefetch:' + acctId] = apToday();
+    }
+    return;
+  }
+  s.warned['pagefetch:' + acctId] = '';
+  // พูลเพจสำหรับบาลานซ์ (round-robin): ใช้เพจที่ลงโฆษณาได้ทั้งหมด (เพจแตกถูกกรองไปแล้วที่ต้นรอบ)
+  const pagePool = livePages;
+  if (!pagePool.length) problems.push(`โปรไฟล์ "${prof.label}" ไม่มีเพจที่ลงโฆษณาได้ (เพจบิน/ถูกจำกัดทั้งหมด)`);
   // คำเตือนแต่ละชนิดต้องมีคีย์ของตัวเอง — เดิมใช้คีย์ร่วมกันแล้วล้างทิ้งตรงนี้ทุกรอบ
   // ผลคือ cap/pixel/empty เด้งเข้า Telegram ใหม่ทุกรอบตรวจตราบใดที่เงื่อนไขยังค้าง
   // โดนปฏิเสธด้วยเหตุผลเดิมซ้ำแม้เปลี่ยนครีเอทีฟแล้ว = เติมของใหม่เข้าไปก็โดนข้อเดิม
@@ -2386,8 +2414,10 @@ async function apRefill(cfg, prof, a, ads, s, alerts) {
     const v = ranked[i % ranked.length];
     const cap = captions[(s.capCursor = ((s.capCursor || 0) + 1)) % captions.length];
     const item = { mediaId: v.id, name: `${v.name} - auto`, message: cap.message, headline: cap.headline };
+    // บาลานซ์เพจแบบ round-robin: แต่ละแอดหมุนไปเพจถัดไปในพูล (cursor สะสมข้ามรอบเหมือน capCursor)
+    const pageId = pagePool[(s.pageCursor = (s.pageCursor || 0) + 1) % pagePool.length];
     try {
-      await apCreateOneAd(acct, prof.accessToken, campaignId, prof.pageId, pixelId, d, objInfo, item, testMode,
+      await apCreateOneAd(acct, prof.accessToken, campaignId, pageId, pixelId, d, objInfo, item, testMode,
         (cfg.beneficiaries || {})[acctId]);
       markVideoUsed(v.id, acctId);
       s.created[acctId].push(Date.now());
@@ -2628,6 +2658,14 @@ async function autopilotTick(mode = 'full') {
     try { accts = await fbAll('me/adaccounts', { fields: 'name,account_id,account_status,currency', limit: 100 }, prof.accessToken); }
     catch { continue; }
 
+    // เพจที่ลงโฆษณาได้ของโปรไฟล์นี้ — โหลดครั้งเดียวต่อรอบ ใช้บาลานซ์เพจตอนเติมแอด (round-robin)
+    // เพจแตกถูกกรองทิ้งที่นี่ = ไม่มีวันถูกเลือกขึ้นแอด • โหลดไม่ได้ = null → apRefill ถอยไปใช้เพจที่ตั้งเอง
+    let livePages = null;
+    if (mode === 'full') {
+      try { livePages = (await fbPages(prof.accessToken)).filter((p) => p.ok).map((p) => p.id); }
+      catch { livePages = null; }
+    }
+
     for (const a of accts.filter((x) => x.account_status === 1)) {
       const acctId = a.account_id;
       const acct = `act_${acctId}`;
@@ -2820,7 +2858,7 @@ async function autopilotTick(mode = 'full') {
         // ปิดตัวขาดทุนก่อนเติม เพื่อให้ apRefill เห็นช่องว่างจริงแล้วเอาครีเอทีฟใหม่เข้าไปแทนในรอบเดียวกัน
         try { await apPauseLosers(cfg, prof, a, ads, s, alerts); }
         catch (e) { apLog(s, 'warn', `ปิดแอดขาดทุนใน ${a.name} ไม่สำเร็จ: ${e.message}`, acctId); }
-        try { await apRefill(cfg, prof, a, ads, s, alerts); }
+        try { await apRefill(cfg, prof, a, ads, s, alerts, livePages); }
         catch (e) { apLog(s, 'warn', `เติมแอดให้ ${a.name} ไม่สำเร็จ: ${e.message}`, acctId); }
         try { await apScale(cfg, prof, a, s, alerts); }
         catch (e) { apLog(s, 'warn', `ขยายงบใน ${a.name} ไม่สำเร็จ: ${e.message}`, acctId); }
