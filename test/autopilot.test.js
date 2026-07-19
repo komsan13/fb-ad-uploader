@@ -218,6 +218,62 @@ describe('เพดานปิดแอดขาดทุน', () => {
   });
 });
 
+describe('การเชื่อม Pixel ตอนขึ้นแอด', () => {
+  const withLp = () => {
+    const c = baseConfig();
+    c.launchDefaults.link = 'http://127.0.0.1:9/lp';   // host จะถูกแทนที่ตอนบูตด้วย PUBLIC_URL จริง
+    return c;
+  };
+
+  test('บัญชีไม่มี Pixel ต้องสร้างให้เอง แทนที่จะข้ามไปเฉยๆ', async (t) => {
+    const world = freshWorld({ pixels: [] });
+    const { base } = await boot(t, { world });
+    await runTwice(base);
+    const made = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/adspixels`);
+    assert.strictEqual(made.length, 1, 'ต้องสร้าง Pixel ให้ 1 ตัว');
+    assert.match(made[0].params.name, /^Autopilot /);
+    const ads = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/ads`);
+    assert.ok(ads.length > 0, 'สร้าง Pixel แล้วต้องเติมแอดต่อได้ ไม่ใช่หยุด');
+  });
+
+  test('มี Pixel อยู่แล้วต้องไม่สร้างซ้ำ', async (t) => {
+    const { base, world } = await boot(t);
+    await runTwice(base);
+    const made = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/adspixels`);
+    assert.strictEqual(made.length, 0);
+  });
+
+  test('อ่านรายการ Pixel ไม่ได้ ต้องไม่เดาแล้วสร้างใหม่', async (t) => {
+    const world = freshWorld();
+    world.route = (m, p) => (m === 'GET' && p === `act_${ACCT}/adspixels` ? { error: 'ล่มชั่วคราว' } : null);
+    const { base } = await boot(t, { world });
+    await runTwice(base);
+    const made = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/adspixels`);
+    assert.strictEqual(made.length, 0, 'อ่านไม่ได้ = ไม่รู้ว่ามีอยู่แล้วไหม สร้างตอนนี้เสี่ยงได้พิกเซลซ้ำ');
+  });
+
+  test('ลิงก์ชี้มาหน้า Landing ของเรา ต้องฝัง Pixel ของบัญชีนั้นให้อัตโนมัติ', async (t) => {
+    const world = freshWorld({ pixels: [{ id: '9911223344' }] });
+    const cfg = baseConfig();
+    const { base } = await boot(t, { world, config: cfg });
+    // ตั้งลิงก์ให้ชี้มาหน้า /lp ของเซิร์ฟเวอร์ตัวเองที่กำลังรันอยู่
+    await post(base, '/api/launch-defaults', { ...cfg.launchDefaults, link: base + '/lp' });
+    await runTwice(base);
+    const lp = await get(base, '/api/landing');
+    assert.ok(lp.pixels.some((p) => p.id === '9911223344'),
+      'พิกเซลของบัญชีที่ยิงแอดต้องอยู่บนหน้า ไม่งั้นแคมเปญนั้นเห็นผลลัพธ์เป็นศูนย์ตลอด');
+  });
+
+  test('ลิงก์ไปเว็บอื่น ต้องไม่ไปยุ่งกับหน้า Landing ของเรา', async (t) => {
+    const world = freshWorld({ pixels: [{ id: '8877665544' }] });
+    const { base } = await boot(t, { world });   // baseConfig ใช้ link เป็น example.com
+    await runTwice(base);
+    const lp = await get(base, '/api/landing');
+    assert.ok(!lp.pixels.some((p) => p.id === '8877665544'),
+      'ลิงก์ไม่ได้ชี้มาหน้าเรา การฝังพิกเซลบนหน้าเราก็ไม่มีประโยชน์');
+  });
+});
+
 describe('การอ่านเหตุผลปฏิเสธ', () => {
   test('เหตุผลอยู่ใน ad_review_feedback ต้องไม่ถูกมองข้าม และหมวดเดิมซ้ำต้องหยุดเติมแอด', async (t) => {
     const reject = (id) => ({

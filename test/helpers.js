@@ -35,6 +35,8 @@ async function startServer(dir, fbPort, extraEnv = {}) {
       PORT: String(port),
       CONFIG_PATH: path.join(dir, 'config.json'),
       FB_API_BASE: `http://127.0.0.1:${fbPort}`,
+      // ต้องตรงกับ base ที่เทสใช้เรียก ไม่งั้นโค้ดที่เทียบว่า "ลิงก์ชี้มาหน้าเราไหม" จะไม่ตรง
+      PUBLIC_URL: `http://127.0.0.1:${port}`,
       ...extraEnv,
     },
     stdio: ['ignore', 'pipe', 'pipe'],

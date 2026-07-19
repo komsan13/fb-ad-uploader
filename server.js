@@ -423,6 +423,27 @@ const uploadLpImg = multer({
   fileFilter: (req, file, cb) => cb(null, !!LP_IMG_EXT[file.mimetype]),
 });
 
+// ลิงก์ปลายทางชี้มาที่หน้า Landing ของระบบเราเองหรือเปล่า
+// เช็คทั้ง host และ path — ถ้าไม่ใช่ การไปฝังพิกเซลบนหน้าเราก็ไม่มีประโยชน์อะไร
+function lpIsOurLanding(link) {
+  try {
+    const u = new URL(String(link));
+    const mine = new URL(PUBLIC_URL);
+    return u.host === mine.host && u.pathname.replace(/\/+$/, '') === '/lp';
+  } catch { return false; }
+}
+
+// ฝังพิกเซลลงหน้า Landing ถ้ายังไม่มี — คืน true เมื่อเพิ่งเพิ่มเข้าไป
+function lpEnsurePixel(pixelId) {
+  const id = String(pixelId || '').replace(/[^A-Za-z0-9-]/g, '');
+  if (!id) return false;
+  const v = loadLp();
+  if (v.pixels.some((p) => p.type === 'meta' && p.id === id)) return false;
+  v.pixels.push({ type: 'meta', id });
+  saveLp(v);
+  return true;
+}
+
 app.post('/api/landing/upload', uploadLpImg.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'ต้องเป็นไฟล์รูป (JPG / PNG / WebP / GIF) ขนาดไม่เกิน 8MB' });
   res.json({ url: `/lp-asset/${req.file.filename}` });
@@ -544,7 +565,7 @@ app.post('/api/landing', (req, res) => {
     bg: Object.prototype.hasOwnProperty.call(LP_BGS, b.bg ?? cur.bg) ? (b.bg ?? cur.bg) : '',
     // รับเฉพาะรูปที่อัปผ่านระบบเรา — ลิงก์รูปจากเว็บนอกทำให้หน้าพังเมื่อเว็บนั้นล่ม
     bgImage: /^\/lp-asset\/[0-9a-f-]{36}\.(jpg|png|webp|gif)$/i.test(String(b.bgImage ?? cur.bgImage ?? '')) ? String(b.bgImage ?? cur.bgImage) : '',
-    pixels: (Array.isArray(b.pixels) ? b.pixels : cur.pixels).slice(0, 10).map((p) => ({
+    pixels: (Array.isArray(b.pixels) ? b.pixels : cur.pixels).slice(0, 30).map((p) => ({
       type: p.type === 'ga' ? 'ga' : 'meta',
       id: String(p.id || '').replace(/[^A-Za-z0-9-]/g, '').slice(0, 40),
     })).filter((p) => p.id),
@@ -2133,16 +2154,43 @@ async function apRefill(cfg, prof, a, ads, s, alerts) {
 
   let pixelId = null;
   if (objInfo.needsPixel) {
+    let px = null;
     try {
-      const px = await fbAll(`${acct}/adspixels`, { fields: 'id', limit: 10 }, prof.accessToken);
-      pixelId = (px[0] || {}).id;
-    } catch { /* อ่าน pixel ไม่ได้ */ }
-    if (!pixelId) {
-      const m = `⚠️ ${a.name}: เติมแอดไม่ได้ — วัตถุประสงค์นี้ต้องมี Pixel แต่บัญชีนี้ยังไม่มี`;
-      if (s.warned['pixel:' + acctId] !== 'pixel') { alerts.push(m); apLog(s, 'warn', m, acctId); s.warned['pixel:' + acctId] = 'pixel'; }
+      px = await fbAll(`${acct}/adspixels`, { fields: 'id', limit: 10 }, prof.accessToken);
+    } catch {
+      // อ่านไม่ได้ = ไม่รู้ว่ามีอยู่แล้วหรือเปล่า สร้างตอนนี้เสี่ยงได้พิกเซลซ้ำ รอรอบหน้าดีกว่า
+      apLog(s, 'warn', `${a.name}: อ่านรายการ Pixel ไม่ได้รอบนี้ — ข้ามการเติมแอดไว้ก่อน`, acctId);
       return;
     }
+    pixelId = (px[0] || {}).id;
+
+    // ไม่มีก็สร้างให้เลย ไม่ต้องรอคนมากดเอง
+    if (!pixelId) {
+      try {
+        const r = await fb(`${acct}/adspixels`, { name: `Autopilot ${acctId}` }, 'POST', prof.accessToken);
+        pixelId = r.id;
+        const m = `🎯 ${a.name}: บัญชีนี้ยังไม่มี Pixel — สร้างให้แล้ว (${pixelId})`;
+        alerts.push(m); apLog(s, 'info', m, acctId);
+      } catch (e) {
+        const m = `⚠️ ${a.name}: เติมแอดไม่ได้ — ต้องมี Pixel แต่สร้างให้ไม่สำเร็จ (${e.message})`;
+        if (s.warned['pixel:' + acctId] !== apToday()) { alerts.push(m); apLog(s, 'warn', m, acctId); s.warned['pixel:' + acctId] = apToday(); }
+        return;
+      }
+    }
     s.warned['pixel:' + acctId] = '';
+
+    // แอดพาคนไปหน้า Landing ของเราเอง แต่หน้านั้นจะเก็บคอนเวอร์ชั่นให้บัญชีไหนได้
+    // ขึ้นกับว่ามีพิกเซลของบัญชีนั้นฝังอยู่ไหม — ขาดไปแคมเปญนั้นจะเห็นผลลัพธ์เป็นศูนย์ตลอด
+    // ทั้งที่คนกดจริง แล้วตัวขยายงบ/ปิดตัวขาดทุนก็จะตัดสินจากตัวเลขที่ผิด
+    if (lpIsOurLanding(d.link)) {
+      if (lpEnsurePixel(pixelId)) {
+        const m = `🔗 ${a.name}: ฝัง Pixel ${pixelId} ลงหน้า Landing ให้แล้ว — แคมเปญของบัญชีนี้ถึงจะนับคอนเวอร์ชั่นได้`;
+        alerts.push(m); apLog(s, 'info', m, acctId);
+      }
+    } else if (s.warned['lppx:' + acctId] !== apToday()) {
+      const m = `ℹ️ ${a.name}: ลิงก์ปลายทางไม่ใช่หน้า Landing ของระบบ (${d.link}) — ต้องไปฝัง Pixel ${pixelId} ที่หน้านั้นเอง ไม่งั้นจะไม่นับคอนเวอร์ชั่น`;
+      alerts.push(m); apLog(s, 'warn', m, acctId); s.warned['lppx:' + acctId] = apToday();
+    }
   }
 
   // เลือกวิดีโอ+แคปชั่นด้วยตรรกะเดียวกับตัวจัดแผน: เลี่ยงตัวที่บัญชีนี้เคยใช้
