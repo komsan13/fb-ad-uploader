@@ -1698,7 +1698,7 @@ async function apGetCampaign(acct, token, s, acctId, d, objInfo, cf) {
   return c.id;
 }
 
-async function apCreateOneAd(acct, token, campaignId, pageId, pixelId, d, objInfo, item, testMode) {
+async function apCreateOneAd(acct, token, campaignId, pageId, pixelId, d, objInfo, item, testMode, beneficiaryId) {
   const targeting = {
     geo_locations: { countries: String(d.countries || 'TH').split(',').map((x) => x.trim().toUpperCase()).filter(Boolean) },
     age_min: Number(d.ageMin) || 18,
@@ -1729,12 +1729,29 @@ async function apCreateOneAd(acct, token, campaignId, pageId, pixelId, d, objInf
     const life = d.lifecycleStrategy === undefined ? '100' : String(d.lifecycleStrategy);
     if (life !== '') adsetParams.existing_customer_budget_percentage = Number(life);
   }
+  // ผู้ลงโฆษณา (DSA) — เส้นทางขึ้นแอดด้วยมือตั้งให้อยู่แล้ว แต่ autopilot เดิมไม่เคยตั้ง
+  // ผลคือแอดที่ระบบสร้างขึ้นมาไม่มีข้อมูลนี้ ซึ่ง FB อาจปฏิเสธหรือไม่ยอมยิงให้
+  const bid = String(beneficiaryId || '').replace(/[^0-9]/g, '');
+  if (bid) {
+    adsetParams.regional_regulation_identities = { universal_beneficiary: bid, universal_payer: bid };
+  }
+
+  // field เสริมตัวไหน FB ไม่รับ ให้ถอดออกแล้วลองใหม่ ไม่ให้ล้มทั้งแอด (ตรรกะเดียวกับเส้นทางขึ้นแอดด้วยมือ)
   let adset;
-  try { adset = await fb(`${acct}/adsets`, adsetParams, 'POST', token); }
-  catch (e) {
-    // field เสริมบางตัวบัญชีนี้อาจไม่รองรับ — ถอดแล้วลองใหม่ครั้งเดียว
-    delete adsetParams.existing_customer_budget_percentage;
-    adset = await fb(`${acct}/adsets`, adsetParams, 'POST', token);
+  for (let tryNo = 0; ; tryNo++) {
+    try { adset = await fb(`${acct}/adsets`, adsetParams, 'POST', token); break; }
+    catch (e) {
+      const msg = `${e.message} ${e.fbMessage || ''}`;
+      if (tryNo < 2 && adsetParams.regional_regulation_identities && /regional_regulation|beneficiary|payer|payor/i.test(msg)) {
+        delete adsetParams.regional_regulation_identities;
+        continue;
+      }
+      if (tryNo < 2 && adsetParams.existing_customer_budget_percentage !== undefined) {
+        delete adsetParams.existing_customer_budget_percentage;
+        continue;
+      }
+      throw e;
+    }
   }
 
   // อัปวิดีโอจากคลังขึ้น FB แล้วรอประมวลผล
@@ -1824,6 +1841,12 @@ async function apRefill(cfg, prof, a, ads, s, alerts) {
   if (!prof.pageId) problems.push(`โปรไฟล์ "${prof.label}" ยังไม่ได้เลือกเพจ`);
   // คำเตือนแต่ละชนิดต้องมีคีย์ของตัวเอง — เดิมใช้คีย์ร่วมกันแล้วล้างทิ้งตรงนี้ทุกรอบ
   // ผลคือ cap/pixel/empty เด้งเข้า Telegram ใหม่ทุกรอบตรวจตราบใดที่เงื่อนไขยังค้าง
+  // ไม่ใช่เหตุให้หยุด แต่ต้องรู้ — แอดที่ไม่มีผู้ลงโฆษณาเสี่ยงโดนปฏิเสธหรือไม่ยิง
+  if (!(cfg.beneficiaries || {})[acctId] && s.warned['dsa:' + acctId] !== apToday()) {
+    const m = `⚠️ ${a.name}: ยังไม่ได้เลือก "ผู้ลงโฆษณา" ให้บัญชีนี้ — แอดที่ระบบสร้างจะไม่มีข้อมูลนี้ เสี่ยงโดนปฏิเสธ ไปตั้งที่เมนู "บัญชี FB"`;
+    alerts.push(m); apLog(s, 'warn', m, acctId); s.warned['dsa:' + acctId] = apToday();
+  }
+
   if (problems.length) {
     if (s.warned['setup:' + acctId] !== 'setup') {
       const m = `⚠️ ${a.name}: มีแอดยิงอยู่ ${activeCount}/${target} ตัว แต่เติมให้ไม่ได้ — ${problems.join(', ')}`;
@@ -1910,7 +1933,8 @@ async function apRefill(cfg, prof, a, ads, s, alerts) {
     const cap = captions[(s.capCursor = ((s.capCursor || 0) + 1)) % captions.length];
     const item = { mediaId: v.id, name: `${v.name} - auto`, message: cap.message, headline: cap.headline };
     try {
-      await apCreateOneAd(acct, prof.accessToken, campaignId, prof.pageId, pixelId, d, objInfo, item, testMode);
+      await apCreateOneAd(acct, prof.accessToken, campaignId, prof.pageId, pixelId, d, objInfo, item, testMode,
+        (cfg.beneficiaries || {})[acctId]);
       markVideoUsed(v.id, acctId);
       s.created[acctId].push(Date.now());
       if (testMode) { s.tested = s.tested || {}; (s.tested[acctId] = s.tested[acctId] || []).push(Date.now()); }
