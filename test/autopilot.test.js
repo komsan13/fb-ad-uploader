@@ -567,6 +567,33 @@ describe('บาลานซ์เพจ + กันเพจแตก', () => {
     assert.strictEqual(pageIdsOf(world).length, 0, 'ไม่มีเพจที่ลงโฆษณาได้ = ต้องไม่สร้างแอดสักตัว');
   });
 
+  test('cursor เพจต้องเก็บแยกต่อโปรไฟล์ (object) ไม่ใช่ตัวเลขรวม', async (t) => {
+    const cfg = baseConfig({ autopilot: { enabled: true, minAds: 3 } });
+    const { base, dir } = await boot(t, { world: pagesWorld(), config: cfg });
+    await runTwice(base);
+    const cur = readState(dir).pageCursor;
+    assert.strictEqual(typeof cur, 'object', 'pageCursor ต้องเป็น object แยกต่อโปรไฟล์');
+    assert.ok(cur.p1 > 0, 'โปรไฟล์ p1 ต้องมีตัวนับของตัวเอง');
+  });
+
+  test('migration: state เก่ามี pageCursor เป็นตัวเลข ต้องไม่ค้าง index เดิม/ไม่พัง', async (t) => {
+    // ก่อนแก้ pageCursor เป็น number — ถ้าไม่รีเซ็ตเป็น object การเขียน cur[pid] จะเงียบหาย
+    // แล้ว round-robin ค้างที่ index เดิมทุกแอด เทสนี้จับเคสนั้น (ต้องหมุนครบทั้ง A/B)
+    const cfg = baseConfig({ autopilot: { enabled: true, minAds: 4 } });
+    const { base, dir, world } = await boot(t, { world: pagesWorld(), config: cfg });
+    const fs = require('node:fs'), path = require('node:path');
+    const sp = path.join(dir, 'autopilot-state.json');
+    await post(base, '/api/autopilot/run');              // baseline
+    const st0 = JSON.parse(fs.readFileSync(sp, 'utf8'));
+    st0.pageCursor = 7;                                    // ค่าเดิมแบบเก่า (ตัวเลข)
+    fs.writeFileSync(sp, JSON.stringify(st0));
+    await post(base, '/api/autopilot/run');               // เติมจริง
+    const ids = pageIdsOf(world);
+    assert.ok(ids.length >= 2, 'ต้องยังสร้างแอดได้ ไม่พังเพราะ state เก่า: ได้ ' + ids.length);
+    assert.deepStrictEqual([...new Set(ids)].sort(), ['PG_A', 'PG_B'], 'ต้องหมุนครบ A/B ไม่ค้าง index เดิม');
+    assert.strictEqual(typeof readState(dir).pageCursor, 'object', 'pageCursor ต้องถูกอัปเป็น object');
+  });
+
   test('/api/accounts ต้องไม่คืนเพจแตกให้ dropdown เลือก', async (t) => {
     const { base } = await boot(t, { world: pagesWorld() });
     const r = await get(base, '/api/accounts?profile=p1');

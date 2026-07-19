@@ -2409,13 +2409,17 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages) {
     return;
   }
 
+  // cursor แยกต่อโปรไฟล์ — แต่ละล็อกอิน FB หมุนเพจของตัวเองอิสระ ไม่ให้ offset ปนกันข้ามล็อกอิน
+  // migration: ของเดิมบนดิสก์เป็นตัวเลข (cursor รวม) — ไม่ใช่ object เมื่อไหร่รีเซ็ตเป็น {} ก่อนใช้
+  if (!s.pageCursor || typeof s.pageCursor !== 'object') s.pageCursor = {};
+
   let ok = 0;
   for (let i = 0; i < want; i++) {
     const v = ranked[i % ranked.length];
     const cap = captions[(s.capCursor = ((s.capCursor || 0) + 1)) % captions.length];
     const item = { mediaId: v.id, name: `${v.name} - auto`, message: cap.message, headline: cap.headline };
-    // บาลานซ์เพจแบบ round-robin: แต่ละแอดหมุนไปเพจถัดไปในพูล (cursor สะสมข้ามรอบเหมือน capCursor)
-    const pageId = pagePool[(s.pageCursor = (s.pageCursor || 0) + 1) % pagePool.length];
+    // บาลานซ์เพจแบบ round-robin: แต่ละแอดหมุนไปเพจถัดไปในพูลของโปรไฟล์นี้ (cursor สะสมข้ามรอบ)
+    const pageId = pagePool[(s.pageCursor[prof.id] = (s.pageCursor[prof.id] || 0) + 1) % pagePool.length];
     try {
       await apCreateOneAd(acct, prof.accessToken, campaignId, pageId, pixelId, d, objInfo, item, testMode,
         (cfg.beneficiaries || {})[acctId]);
