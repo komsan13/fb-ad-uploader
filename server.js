@@ -2672,8 +2672,12 @@ async function autopilotTick(mode = 'full') {
         // รอ retry) จะวนกลับมาที่นี่ทุกรอบเลนเร็ว (2 นาที) ถ้านับซ้ำ แอดตัวเดียวจะดันตัวนับถึงเพดาน
         // ภายใน 4 นาที แล้วประกาศว่า "ปัญหาอยู่ที่สินค้า" ทั้งที่ยังไม่เคยลองครีเอทีฟที่สองเลย
         // และจะล็อกกลับทันทีทุกครั้งที่ผู้ใช้กดปลดล็อก
-        if (!s.reasonCounted[ad.id]) {
-          apMark(s.reasonCounted, ad.id, cat);
+        // คีย์ต้องมีบัญชีนำหน้า (แบบเดียวกับ rk ของ reasons) — เพื่อให้ unfreeze ล้างได้
+        // เฉพาะบัญชีที่ปลดจริง เดิมใช้ ad.id เปล่าๆ แล้ว unfreeze ล้างทั้งก้อน ผลคือปลดบัญชี A
+        // ทำให้แอดค้างในบัญชี B ถูกนับซ้ำจน B โดนหยุดเติมแอดทั้งที่โดนปฏิเสธจริงครั้งเดียว
+        const ck = `${acctId}|${ad.id}`;
+        if (!s.reasonCounted[ck]) {
+          apMark(s.reasonCounted, ck, cat);
           s.reasons[rk] = apRecent(s.reasons[rk], AP_REASON_WINDOW).concat(Date.now());
         }
         const hits = (s.reasons[rk] || []).length;
@@ -2918,7 +2922,8 @@ app.post('/api/autopilot/unfreeze', (req, res) => {
   // ล้างตัวนับเหตุผลของบัญชีนี้ด้วย ไม่งั้นโดนอีกครั้งเดียวก็ติดล็อกซ้ำทันที
   for (const k of Object.keys(s.reasons || {})) { if (k.startsWith(id + '|')) delete s.reasons[k]; }
   // ล้างตัวกันนับซ้ำด้วย ไม่งั้นแอดเดิมจะไม่ถูกนับใหม่ และตัวนับจะค้างที่ 0 ตลอด
-  s.reasonCounted = {};
+  // แต่ล้างเฉพาะของบัญชีนี้ — ล้างทั้งก้อนคือทำให้แอดค้างในบัญชีอื่นถูกนับซ้ำ
+  for (const k of Object.keys(s.reasonCounted || {})) { if (k.startsWith(id + '|')) delete s.reasonCounted[k]; }
   s.warned['blocked:' + id] = '';
   apLog(s, 'info', `ปลดล็อกบัญชี ${id} ด้วยมือ`, id);
   saveAp(s);

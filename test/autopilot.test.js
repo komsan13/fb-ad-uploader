@@ -451,3 +451,37 @@ describe('เกราะกันแบนข้าม tick', () => {
     assert.strictEqual(scaled.length, 0, 'แคมเปญรับมาใช้โดนขยายงบ — ผิดสัญญาที่ apGetCampaign ให้ไว้');
   });
 });
+
+describe('unfreeze ต้องไม่กระทบบัญชีอื่น (P2 จากรีวิวรอบยืนยัน)', () => {
+  test('ปลดล็อกบัญชี A แล้วแอดค้างในบัญชี B ต้องไม่ถูกนับซ้ำ', async (t) => {
+    const world = freshWorld({
+      accounts: [
+        { name: 'บัญชี A', account_id: '111', account_status: 1, currency: 'THB' },
+        { name: 'บัญชี B', account_id: '222', account_status: 1, currency: 'THB' },
+      ],
+    });
+    const { base, dir } = await boot(t, { world, env: { ANTHROPIC_API_KEY: '' } });
+    await post(base, '/api/autopilot/run');   // baseline ทั้งสองบัญชี
+    // แอดค้างในบัญชี B (nokey = นับแล้วแต่ปิดเคสไม่ได้ วนกลับมาทุกรอบ)
+    world.ads.push({
+      id: 'B1', acct: '222', name: 'แอดค้าง', effective_status: 'DISAPPROVED', adset_id: 'S1',
+      issues_info: [], ad_review_feedback: { global: { 'หมวดเดียว': 'ผิดนโยบาย' } },
+      creative: { id: 'crB1', object_story_spec: { video_data: { message: 'ข้อความของแอดตัวนี้', title: 'หัว' } } },
+    });
+    await post(base, '/api/autopilot/run');   // B1 ถูกนับครั้งแรก
+
+    // freeze บัญชี A ไว้ (จำลองสภาพจริงก่อนกดปลด) แล้วกดปลดล็อก A
+    const fs = require('node:fs'), path = require('node:path');
+    const sp = path.join(dir, 'autopilot-state.json');
+    const st0 = JSON.parse(fs.readFileSync(sp, 'utf8'));
+    st0.frozen['111'] = { since: Date.now(), reason: 'เทส' };
+    fs.writeFileSync(sp, JSON.stringify(st0));
+    await post(base, '/api/autopilot/unfreeze', { acctId: '111' });
+
+    await post(base, '/api/autopilot/run');   // ถ้า mark ของ B โดนล้าง B1 จะถูกนับซ้ำตรงนี้
+    const st = readState(dir);
+    assert.strictEqual((st.reasons['222|หมวดเดียว'] || []).length, 1,
+      'B1 โดนปฏิเสธจริงครั้งเดียว ตัวนับต้องเป็น 1 — นับซ้ำแปลว่า unfreeze บัญชี A ไปล้าง mark ของ B');
+    assert.ok(!st.noRotate['222'], 'บัญชี B ต้องไม่โดนหยุดเติมแอดจาก false alarm');
+  });
+});
