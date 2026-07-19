@@ -2356,13 +2356,21 @@ async function loadLaunchDefaults() {
   // เติมให้ตอนคลิกออกจากช่อง เพื่อให้เห็นค่าที่แก้แล้วกับตา ไม่ใช่เงียบๆ ตอนกดขึ้นแอด
   const linkEl = document.getElementById('tpl-link');
   if (linkEl) linkEl.addEventListener('blur', () => {
-    const v = linkEl.value.trim();
-    if (v && !/^https?:\/\//i.test(v) && /^[^\s/]+\.[^\s/]/.test(v)) {
-      linkEl.value = 'https://' + v;
-      saveLaunchDefaultsSoon();
-    }
+    if (normalizeLinkInput(linkEl)) saveLaunchDefaultsSoon();
   });
 }
+
+// เติม https:// ให้ค่าที่ดูเป็นโดเมน คืน true ถ้าแก้จริง
+function normalizeLinkInput(el) {
+  const v = el.value.trim();
+  if (!v || /^https?:\/\//i.test(v) || !/^[^\s/]+\.[^\s/]/.test(v)) return false;
+  el.value = 'https://' + v;
+  return true;
+}
+// การ์ดแอดถูกสร้างทีหลังเรื่อยๆ จึงดักที่ document (blur ไม่ bubble ใช้ focusout แทน)
+document.addEventListener('focusout', (e) => {
+  if (e.target && e.target.classList && e.target.classList.contains('f-link')) normalizeLinkInput(e.target);
+});
 
 // ---------- ระบบอัตโนมัติ (autopilot) ----------
 const AP_LEVEL = { fixed: '🔧', dead: '⛔', freeze: '🧊', manual: '✕', warn: '⚠️', info: 'ℹ️',

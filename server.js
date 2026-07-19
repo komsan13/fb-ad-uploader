@@ -456,6 +456,14 @@ function resolveMedia(id) {
 // ---------- AI วิเคราะห์ผลแคมเปญ แล้วเสนอว่าควรทำอะไรต่อ ----------
 const Anthropic = require('@anthropic-ai/sdk');
 
+// สร้าง client ใหม่ทุกครั้งที่เรียก = ทิ้ง connection pool ทุกครั้ง
+// autopilot เรียกวินิจฉัยทีละแอดในลูป ยิ่งเห็นผลชัด — จำไว้ตาม key ที่ใช้จริง
+const aiClients = new Map();
+function aiClient(apiKey) {
+  if (!aiClients.has(apiKey)) aiClients.set(apiKey, new Anthropic({ apiKey }));
+  return aiClients.get(apiKey);
+}
+
 const ADVICE_SCHEMA = {
   type: 'object',
   properties: {
@@ -518,7 +526,7 @@ app.post('/api/ai-advice', async (req, res) => {
   }));
 
   try {
-    const client = new Anthropic({ apiKey });
+    const client = aiClient(apiKey);
     const msg = await client.messages.create({
       model: 'claude-opus-4-8',
       max_tokens: 16000,
@@ -816,6 +824,7 @@ app.get('/api/campaigns', async (req, res) => {
   const datePreset = ['today', 'last_7d', 'last_30d', 'last_90d', 'maximum'].includes(req.query.date) ? req.query.date : 'maximum';
   try {
     const acctInfo = await fb(acct, { fields: 'currency' }, 'GET', token);
+    const cf = curFactor(acctInfo.currency);   // งบจาก FB เป็นหน่วยย่อยของสกุลนั้น บางสกุลไม่มีหน่วยย่อย
     const campData = await fbAll(`${acct}/campaigns`, {
       fields: 'name,objective,status,effective_status,daily_budget,lifetime_budget,created_time,stop_time',
       limit: 100,
@@ -870,8 +879,8 @@ app.get('/api/campaigns', async (req, res) => {
         id: c.id, name: c.name, objective: c.objective,
         status: c.status, effective_status: c.effective_status,
         created_time: c.created_time, stop_time: c.stop_time || null,
-        dailyBudget: dailyBudget / 100,
-        lifetimeBudget: c.lifetime_budget ? Number(c.lifetime_budget) / 100 : null,
+        dailyBudget: dailyBudget / cf,
+        lifetimeBudget: c.lifetime_budget ? Number(c.lifetime_budget) / cf : null,
         spend,
         impressions: ins.impressions ? Number(ins.impressions) : 0,
         reach: ins.reach ? Number(ins.reach) : 0,
@@ -931,7 +940,9 @@ app.get('/api/campaign-detail', async (req, res) => {
   const token = prof.accessToken;
   const datePreset = ['today', 'last_7d', 'last_30d', 'last_90d', 'maximum'].includes(req.query.date) ? req.query.date : 'maximum';
   try {
-    const camp = await fb(id, { fields: 'name,objective' }, 'GET', token);
+    // ขอ account_currency มาด้วย เพื่อแปลงงบจากหน่วยย่อยได้ถูกกับทุกสกุล
+    const camp = await fb(id, { fields: 'name,objective,account{currency}' }, 'GET', token);
+    const cf = curFactor((camp.account || {}).currency);
     const adsets = await fbAll(`${id}/adsets`, { fields: 'name,status,effective_status,daily_budget,promoted_object', limit: 100 }, token);
     const ads = await fbAll(`${id}/ads`, { fields: 'name,status,effective_status,adset_id,creative{thumbnail_url}', limit: 200 }, token);
     let ins = [];
@@ -959,7 +970,7 @@ app.get('/api/campaign-detail', async (req, res) => {
       const own = adRows.filter((a) => a.adsetId === s.id);
       return {
         id: s.id, name: s.name, status: s.status, effective_status: s.effective_status,
-        dailyBudget: s.daily_budget ? Number(s.daily_budget) / 100 : null,
+        dailyBudget: s.daily_budget ? Number(s.daily_budget) / cf : null,
         spend: own.reduce((x, a) => x + a.spend, 0),
         impressions: own.reduce((x, a) => x + a.impressions, 0),
         results: own.some((a) => a.results != null) ? own.reduce((x, a) => x + (a.results || 0), 0) : null,
@@ -1143,6 +1154,10 @@ app.post('/api/launch', upload.any(), async (req, res) => {
   const status = data.active ? 'ACTIVE' : 'PAUSED';
   const acct = `act_${acctId}`;
   const token = prof.accessToken;
+  // สกุลเงินของบัญชีกำหนดว่าต้องคูณเท่าไหร่ตอนส่งงบให้ FB — อ่านไม่ได้ก็ถือว่า 2 ทศนิยมตามค่าปกติ
+  let cf = 100;
+  try { cf = curFactor((await fb(acct, { fields: 'currency' }, 'GET', token)).currency); }
+  catch { /* ใช้ค่าปกติ */ }
   const files = Object.fromEntries((req.files || []).map((f) => [f.fieldname, f]));
   const imageHashCache = {};
   let aborted = false;
@@ -1174,7 +1189,7 @@ app.post('/api/launch', upload.any(), async (req, res) => {
       };
       // CBO: ตั้งงบที่ระดับแคมเปญ (FB กระจายให้ชุดโฆษณาเอง)
       if (data.campaignBudget) {
-        campaignParams.daily_budget = Math.round(Number(data.campaignBudget) * 100);
+        campaignParams.daily_budget = Math.round(Number(data.campaignBudget) * cf);
         campaignParams.bid_strategy = 'LOWEST_COST_WITHOUT_CAP';
       }
       const campaign = await fb(`${acct}/campaigns`, campaignParams, 'POST', token);
@@ -1192,8 +1207,8 @@ app.post('/api/launch', upload.any(), async (req, res) => {
                 { field: 'entity_type', value: 'CAMPAIGN', operator: 'EQUAL' },
                 { field: 'campaign.id', value: [campaignId], operator: 'IN' },
                 { field: 'time_preset', value: 'LIFETIME', operator: 'EQUAL' },
-                { field: 'spent', value: Math.round(Number(data.autoRule.minSpend || 0) * 100), operator: 'GREATER_THAN' },
-                { field: 'cpa', value: Math.round(Number(data.autoRule.cpr) * 100), operator: 'GREATER_THAN' },
+                { field: 'spent', value: Math.round(Number(data.autoRule.minSpend || 0) * cf), operator: 'GREATER_THAN' },
+                { field: 'cpa', value: Math.round(Number(data.autoRule.cpr) * cf), operator: 'GREATER_THAN' },
               ],
             },
             execution_spec: { execution_type: 'PAUSE' },
@@ -1586,7 +1601,7 @@ const REJECT_SYSTEM = `คุณคือผู้เชี่ยวชาญน
 const apFence = (t) => String(t || '').replace(/"""/g, '"​"​"').slice(0, 4000);
 
 async function aiDiagnoseRejection(apiKey, info) {
-  const client = new Anthropic({ apiKey });
+  const client = aiClient(apiKey);
   const msg = await client.messages.create({
     model: 'claude-opus-4-8',
     max_tokens: 8000,
