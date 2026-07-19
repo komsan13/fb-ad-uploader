@@ -3054,6 +3054,8 @@ async function tgPollOnce() {
     const msg = up.message;
     // ตอบเฉพาะแชทที่ตั้งไว้ — บอทถูกค้นเจอได้ ใครทักมาก็ได้ แต่ข้อมูลเงินให้เฉพาะเจ้าของ
     if (!msg || !msg.text || String((msg.chat || {}).id) !== String(t.chatId)) continue;
+    // บอกให้รู้ว่าได้ยินแล้วก่อน — ดึงข้อมูล+เรียก AI ใช้เวลาหลายวินาที เงียบไปเฉยๆ เหมือนบอทตาย
+    try { await tgSend(cfg, '⏳ รับทราบครับ กำลังดึงข้อมูล รอสักครู่...'); } catch { /* ไม่ใช่เหตุให้ไม่ตอบ */ }
     // AI เป็นตัวหลัก — ล่ม/ไม่มี key ค่อยตกไป keyword fallback อย่างน้อยยอดหลักต้องตอบได้เสมอ
     const apiKey = cfg.anthropicKey || process.env.ANTHROPIC_API_KEY;
     let answer;

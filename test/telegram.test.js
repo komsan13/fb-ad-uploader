@@ -58,10 +58,12 @@ describe('ถามยอดผ่าน Telegram', () => {
     });
     await until(() => tg.state.polls >= 1, 20000, 'บอทไม่เคย poll เลย');   // รอให้ drain รอบบูตผ่านก่อน
     tg.push(CHAT, 'ช่วงนี้ใช้เงินไปเยอะไหม');
-    await until(() => tg.state.sent.length >= 1, 20000, 'ไม่มีคำตอบกลับเข้าแชท');
+    await until(() => tg.state.sent.length >= 2, 20000, 'ต้องได้ทั้ง "รอสักครู่" และคำตอบจริง');
 
+    // ลำดับสำคัญ: รับทราบก่อน แล้วค่อยคำตอบ — ไม่ใช่คำตอบมาก่อนแล้วรับทราบตามหลัง
+    assert.match(tg.state.sent[0].text, /รอสักครู่/, 'ข้อความแรกต้องบอกให้รอ ระหว่างดึงข้อมูล');
     assert.strictEqual(String(tg.state.sent[0].chat_id), CHAT);
-    assert.strictEqual(tg.state.sent[0].text, 'วันนี้ใช้ไป 123.45 บาทครับ', 'ต้องเป็นคำตอบจาก AI ไม่ใช่ keyword bot');
+    assert.strictEqual(tg.state.sent[1].text, 'วันนี้ใช้ไป 123.45 บาทครับ', 'ต้องเป็นคำตอบจาก AI ไม่ใช่ keyword bot');
 
     const req = ai.state.requests[0];
     assert.ok(req, 'AI ต้องถูกเรียก');
@@ -85,10 +87,11 @@ describe('ถามยอดผ่าน Telegram', () => {
     const { tg, ai } = await bootTg(t);       // config ไม่มี anthropicKey
     await until(() => tg.state.polls >= 1);
     tg.push(CHAT, 'สรุป');
-    await until(() => tg.state.sent.length >= 1, 20000, 'fallback ต้องตอบ');
-    assert.match(tg.state.sent[0].text, /ใช้เงินวันนี้/, 'ต้องได้สรุปแบบ keyword');
-    assert.match(tg.state.sent[0].text, /123\.45/, 'ต้องมียอดจริง');
-    assert.match(tg.state.sent[0].text, /รวม:/, 'ต้องมีบรรทัดรวม');
+    await until(() => tg.state.sent.length >= 2, 20000, 'fallback ต้องตอบ');
+    assert.match(tg.state.sent[0].text, /รอสักครู่/);
+    assert.match(tg.state.sent[1].text, /ใช้เงินวันนี้/, 'ต้องได้สรุปแบบ keyword');
+    assert.match(tg.state.sent[1].text, /123\.45/, 'ต้องมียอดจริง');
+    assert.match(tg.state.sent[1].text, /รวม:/, 'ต้องมีบรรทัดรวม');
     assert.strictEqual(ai.state.requests.length, 0, 'ไม่มี key ห้ามพยายามเรียก AI');
   });
 
@@ -97,8 +100,9 @@ describe('ถามยอดผ่าน Telegram', () => {
     ai.server.close();                        // AI ตายก่อนคำถามแรก
     await until(() => tg.state.polls >= 1);
     tg.push(CHAT, 'สรุป');
-    await until(() => tg.state.sent.length >= 1, 30000, 'AI ล่มแล้ว fallback ต้องยังตอบ');
-    assert.match(tg.state.sent[0].text, /ใช้เงินวันนี้/);
-    assert.match(tg.state.sent[0].text, /123\.45/);
+    await until(() => tg.state.sent.length >= 2, 30000, 'AI ล่มแล้ว fallback ต้องยังตอบ');
+    assert.match(tg.state.sent[0].text, /รอสักครู่/);
+    assert.match(tg.state.sent[1].text, /ใช้เงินวันนี้/);
+    assert.match(tg.state.sent[1].text, /123\.45/);
   });
 });
