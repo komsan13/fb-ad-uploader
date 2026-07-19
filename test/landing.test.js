@@ -136,6 +136,30 @@ describe('หน้า Landing', () => {
     assert.ok((await html(base)).includes('#232838'), 'CSS ของพื้นหลังที่เลือกต้องอยู่ในหน้า');
   });
 
+  // เคสที่ผู้ใช้เจอจริง: เลือกพื้นหลังสว่าง แต่ theme ค้างเป็น dark เลยได้ปุ่มดำบนพื้นม่วงอ่อน
+  test('พื้นหลังเป็นตัวกำหนดสีการ์ด/ตัวหนังสือ ไม่ใช่ theme ที่ค้างอยู่', async (t) => {
+    const { base } = await boot(t);
+    await post(base, '/api/landing', { bg: 'lilac', theme: 'dark' });
+    const light = await html(base);
+    assert.ok(light.includes('--card:#fdfbff'), 'พื้นสว่างต้องได้การ์ดสว่าง แม้ theme จะเป็น dark');
+    assert.ok(!light.includes('--card:#1b1e26'), 'ต้องไม่ใช้การ์ดมืด');
+
+    await post(base, '/api/landing', { bg: 'night', theme: 'light' });
+    const dark = await html(base);
+    assert.ok(dark.includes('--card:#242a3a'), 'พื้นมืดต้องได้การ์ดมืด แม้ theme จะเป็น light');
+  });
+
+  test('ใช้รูปพื้นหลังเอง ให้ theme เป็นตัวตัดสิน เพราะเราไม่รู้ว่ารูปสว่างหรือมืด', async (t) => {
+    const { base } = await boot(t);
+    const fd = new FormData();
+    fd.append('file', new Blob([Buffer.alloc(64, 3)], { type: 'image/png' }), 'b.png');
+    const up = await (await fetch(base + '/api/landing/upload', { method: 'POST', body: fd })).json();
+    await post(base, '/api/landing', { bgImage: up.url, bg: 'mint', theme: 'dark' });
+    const page = await html(base);
+    assert.ok(page.includes('--card:#1b1e26'), 'มีรูปพื้นหลัง + theme dark ต้องได้ชุดสีมืด');
+    assert.ok(page.includes(up.url), 'รูปต้องถูกใช้เป็นพื้นหลัง');
+  });
+
   test('ค่าที่บันทึกต้องอยู่รอดข้ามการอ่านใหม่', async (t) => {
     const { base } = await boot(t);
     await post(base, '/api/landing', { title: 'ก่อนแก้', links: [{ label: 'ก', url: 'https://ok.test/a' }] });

@@ -855,8 +855,8 @@
               <button class="btn-light btn-sm" type="button" onclick="lpUpload('lpAvatar')">อัปโหลด</button>
             </div>
           </div>
-          <div class="field" style="max-width:200px"><label>ธีม</label>
-            <select id="lpTheme"><option value="light">สว่าง</option><option value="dark">มืด</option></select>
+          <div class="field" id="lpThemeField" style="max-width:230px;display:none"><label>สีตัวหนังสือบนรูปพื้นหลัง</label>
+            <select id="lpTheme" onchange="lpRenderBgs()"><option value="light">เข้ม (ใช้กับรูปสว่าง)</option><option value="dark">อ่อน (ใช้กับรูปมืด)</option></select>
           </div>
         </div>
         <div class="field" style="margin-top:12px"><label>คำอธิบายสั้นๆ</label><textarea id="lpBio" rows="2"></textarea></div>
@@ -2472,29 +2472,49 @@ function lpPickIcon(btn) {
 }
 
 // พื้นหลังสำเร็จรูป — ต้องตรงกับ LP_BGS ฝั่งเซิร์ฟเวอร์ ไม่งั้นเลือกได้แต่ไม่มีผล
+// ต้องตรงกับ LP_BGS ฝั่งเซิร์ฟเวอร์ ไม่งั้นตัวอย่างที่เห็นจะไม่ตรงกับหน้าจริง
 const LP_BGS = {
-  '': { label: 'ไม่มี', css: '#f6f7f9' },
-  mint: { label: 'มินต์', css: 'linear-gradient(160deg,#e8f7f0,#cfeee0)' },
-  sky: { label: 'ฟ้า', css: 'linear-gradient(160deg,#e8f1fb,#d3e4f7)' },
-  peach: { label: 'พีช', css: 'linear-gradient(160deg,#fdeee6,#fbd9c8)' },
-  lilac: { label: 'ม่วงอ่อน', css: 'linear-gradient(160deg,#f0ebfa,#ddd2f3)' },
-  sand: { label: 'ทราย', css: 'linear-gradient(160deg,#f7f2e8,#ece0c8)' },
-  night: { label: 'กลางคืน', css: 'linear-gradient(160deg,#232838,#141824)' },
-  forest: { label: 'ป่า', css: 'linear-gradient(160deg,#1d3128,#0f1c17)' },
-  plum: { label: 'พลัม', css: 'linear-gradient(160deg,#2c2033,#171020)' },
+  '':     { label: 'ไม่มี',    css: '#f6f7f9',                              dark: false, card: '#ffffff', tx: '#1a1d23' },
+  mint:   { label: 'มินต์',    css: 'linear-gradient(160deg,#e8f7f0,#cfeee0)', dark: false, card: '#fbfffd', tx: '#15302a' },
+  sky:    { label: 'ฟ้า',      css: 'linear-gradient(160deg,#e8f1fb,#d3e4f7)', dark: false, card: '#fbfdff', tx: '#16283c' },
+  peach:  { label: 'พีช',      css: 'linear-gradient(160deg,#fdeee6,#fbd9c8)', dark: false, card: '#fffcfa', tx: '#3a2317' },
+  lilac:  { label: 'ม่วงอ่อน', css: 'linear-gradient(160deg,#f0ebfa,#ddd2f3)', dark: false, card: '#fdfbff', tx: '#2a2140' },
+  sand:   { label: 'ทราย',     css: 'linear-gradient(160deg,#f7f2e8,#ece0c8)', dark: false, card: '#fffdf9', tx: '#332c1d' },
+  night:  { label: 'กลางคืน',  css: 'linear-gradient(160deg,#232838,#141824)', dark: true,  card: '#242a3a', tx: '#eef1f8' },
+  forest: { label: 'ป่า',      css: 'linear-gradient(160deg,#1d3128,#0f1c17)', dark: true,  card: '#22382d', tx: '#e9f3ed' },
+  plum:   { label: 'พลัม',     css: 'linear-gradient(160deg,#2c2033,#171020)', dark: true,  card: '#332640', tx: '#f2eaf6' },
 };
 let lpBg = '';
 
 function lpRenderBgs() {
+  // ตัวอย่างมีปุ่มจำลองข้างใน เพราะสิ่งที่ต้องตัดสินใจคือ "พื้นกับปุ่มเข้ากันไหม" ไม่ใช่แค่สีพื้น
   document.getElementById('lpBgList').innerHTML = Object.entries(LP_BGS).map(([k, v]) =>
     `<button type="button" onclick="lpSetBg(${jsStr(k)})" title="${esc(v.label)}"
-      style="width:56px;height:44px;border-radius:9px;cursor:pointer;background:${v.css};
-      border:2px solid ${k === lpBg ? 'var(--brand-dark)' : 'var(--line)'}"></button>`).join('');
+      style="width:66px;height:52px;border-radius:10px;cursor:pointer;background:${v.css};padding:0;
+      display:flex;flex-direction:column;justify-content:center;gap:3px;align-items:center;
+      border:2px solid ${k === lpBg ? 'var(--brand-dark)' : 'var(--line)'}">
+      <span style="display:block;width:44px;height:9px;border-radius:3px;background:${v.card}"></span>
+      <span style="display:block;width:44px;height:9px;border-radius:3px;background:${v.card}"></span>
+      <span style="font-size:9px;color:${v.tx};line-height:1;margin-top:1px">${esc(v.label)}</span>
+    </button>`).join('');
+  lpSyncThemeVisibility();
 }
-function lpSetBg(k) { lpBg = k; lpRenderBgs(); }
+function lpSetBg(k) {
+  lpBg = k;
+  // ธีมตามพื้นหลังที่เลือกเสมอ — เดิมแยกกันเลยจับคู่ผิดได้ เช่นพื้นม่วงอ่อนกับปุ่มดำ
+  document.getElementById('lpTheme').value = LP_BGS[k].dark ? 'dark' : 'light';
+  lpRenderBgs();
+}
+// ตัวเลือกธีมมีความหมายเฉพาะตอนใช้รูปพื้นหลังที่อัปเอง เพราะเราไม่รู้ว่ารูปสว่างหรือมืด
+// นอกนั้นพื้นหลังเป็นตัวกำหนดให้แล้ว โชว์ไว้จะสับสนว่าทำไมเลือกแล้วไม่มีผล
+function lpSyncThemeVisibility() {
+  const useImg = !!document.getElementById('lpBgImage').value.trim();
+  document.getElementById('lpThemeField').style.display = useImg ? '' : 'none';
+}
 function lpClearBgImage() {
   document.getElementById('lpBgImage').value = '';
   document.getElementById('lpBgImage').placeholder = 'ยังไม่ได้ใช้รูปพื้นหลัง';
+  lpSyncThemeVisibility();
 }
 
 // อัปรูปเข้าเซิร์ฟเวอร์เราเอง แทนที่จะให้วางลิงก์จากเว็บนอกซึ่งวันหนึ่งอาจล่มแล้วหน้าพัง
@@ -2516,6 +2536,7 @@ function lpUpload(targetId) {
       if (r.error) throw new Error(r.error);
       el.value = r.url;
       if (targetId === 'lpAvatar') lpAvatarPreview();
+      if (targetId === 'lpBgImage') lpSyncThemeVisibility();
     } catch (e) {
       el.value = old;
       alert('อัปโหลดไม่สำเร็จ: ' + e.message);

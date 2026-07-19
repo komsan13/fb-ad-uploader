@@ -393,16 +393,19 @@ function saveLp(v) {
 const LP_EVENTS = ['', 'Lead', 'Contact', 'Subscribe', 'CompleteRegistration', 'Purchase', 'AddToCart', 'InitiateCheckout'];
 
 // พื้นหลังสำเร็จรูป — ไล่สีล้วนๆ ไม่ดึงรูปจากที่อื่น จะได้ไม่พึ่งเว็บนอกที่วันหนึ่งอาจล่มหรือถูกบล็อก
+// แต่ละแบบพก "ชุดสีทั้งชุด" มาเอง (การ์ด/ตัวหนังสือ/เส้นขอบ) ไม่ใช่แค่สีพื้น
+// เพราะถ้าให้เลือกพื้นหลังกับธีมแยกกัน จะจับคู่ผิดได้ง่ายมาก เช่นพื้นม่วงอ่อนกับปุ่มสีดำ
+// สีการ์ดของแต่ละแบบผสมสีพื้นเข้าไปนิดหน่อย ให้ปุ่มดูเป็นเนื้อเดียวกับพื้น ไม่ใช่ขาวโพลนลอยอยู่
 const LP_BGS = {
-  '': null,
-  mint: 'linear-gradient(160deg,#e8f7f0,#cfeee0)',
-  sky: 'linear-gradient(160deg,#e8f1fb,#d3e4f7)',
-  peach: 'linear-gradient(160deg,#fdeee6,#fbd9c8)',
-  lilac: 'linear-gradient(160deg,#f0ebfa,#ddd2f3)',
-  sand: 'linear-gradient(160deg,#f7f2e8,#ece0c8)',
-  night: 'linear-gradient(160deg,#232838,#141824)',
-  forest: 'linear-gradient(160deg,#1d3128,#0f1c17)',
-  plum: 'linear-gradient(160deg,#2c2033,#171020)',
+  '':       { css: null,                                       dark: false, card: '#ffffff', tx: '#1a1d23', mut: '#6b7280', line: '#e6e8ec' },
+  mint:     { css: 'linear-gradient(160deg,#e8f7f0,#cfeee0)',  dark: false, card: '#fbfffd', tx: '#15302a', mut: '#5b7d72', line: '#d3e8de' },
+  sky:      { css: 'linear-gradient(160deg,#e8f1fb,#d3e4f7)',  dark: false, card: '#fbfdff', tx: '#16283c', mut: '#5f7794', line: '#d5e2f0' },
+  peach:    { css: 'linear-gradient(160deg,#fdeee6,#fbd9c8)',  dark: false, card: '#fffcfa', tx: '#3a2317', mut: '#8b6a58', line: '#f0dccf' },
+  lilac:    { css: 'linear-gradient(160deg,#f0ebfa,#ddd2f3)',  dark: false, card: '#fdfbff', tx: '#2a2140', mut: '#71648f', line: '#e2daf0' },
+  sand:     { css: 'linear-gradient(160deg,#f7f2e8,#ece0c8)',  dark: false, card: '#fffdf9', tx: '#332c1d', mut: '#7d7259', line: '#e8dfcb' },
+  night:    { css: 'linear-gradient(160deg,#232838,#141824)',  dark: true,  card: '#242a3a', tx: '#eef1f8', mut: '#9aa4bd', line: '#333b50' },
+  forest:   { css: 'linear-gradient(160deg,#1d3128,#0f1c17)',  dark: true,  card: '#22382d', tx: '#e9f3ed', mut: '#93b2a2', line: '#314c3e' },
+  plum:     { css: 'linear-gradient(160deg,#2c2033,#171020)',  dark: true,  card: '#332640', tx: '#f2eaf6', mut: '#ac97ba', line: '#453354' },
 };
 
 // รูปที่ผู้ใช้อัปเอง เก็บแยกโฟลเดอร์ ไม่ปนกับคลังวิดีโอ
@@ -439,7 +442,14 @@ const lpEsc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 function lpRender(v) {
-  const dark = v.theme === 'dark';
+  // พื้นหลังเป็นตัวกำหนดชุดสีทั้งหมด — ยกเว้นตอนใช้รูปที่อัปเอง ซึ่งเราไม่รู้ว่ารูปสว่างหรือมืด
+  // กรณีนั้นค่อยให้ theme ที่ผู้ใช้เลือกเป็นตัวตัดสิน
+  const pal = LP_BGS[v.bg] || LP_BGS[''];
+  const dark = v.bgImage ? v.theme === 'dark' : pal.dark;
+  const c = v.bgImage
+    ? (dark ? { card: '#1b1e26', tx: '#eef1f6', mut: '#98a1b3', line: '#2a2f3a' }
+            : { card: '#ffffff', tx: '#1a1d23', mut: '#6b7280', line: '#e6e8ec' })
+    : pal;
   const meta = v.pixels.filter((p) => p.type === 'meta');
   const ga = v.pixels.filter((p) => p.type === 'ga');
   return `<!doctype html>
@@ -455,8 +465,8 @@ ${v.avatar ? `<meta property="og:image" content="${lpEsc(v.avatar)}">` : ''}
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
-  :root{--bg:${dark ? '#12141a' : '#f6f7f9'};--card:${dark ? '#1b1e26' : '#fff'};--tx:${dark ? '#eef1f6' : '#1a1d23'};
-    --mut:${dark ? '#98a1b3' : '#6b7280'};--line:${dark ? '#2a2f3a' : '#e6e8ec'};--ring:${dark ? '#3a4152' : '#d6dae1'}}
+  :root{--bg:${dark ? '#12141a' : '#f6f7f9'};--card:${c.card};--tx:${c.tx};
+    --mut:${c.mut};--line:${c.line};--ring:${c.mut}}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--tx);font-family:'Noto Sans Thai',system-ui,sans-serif;
     display:flex;justify-content:center;padding:32px 16px 56px;min-height:100vh}
@@ -465,7 +475,7 @@ ${v.avatar ? `<meta property="og:image" content="${lpEsc(v.avatar)}">` : ''}
        /* ม่านบางๆ ทับรูป ให้ตัวหนังสืออ่านออกไม่ว่ารูปจะสว่างหรือมืด */
        body::before{content:'';position:fixed;inset:0;background:${dark ? 'rgba(10,12,18,.55)' : 'rgba(255,255,255,.45)'};pointer-events:none}
        .wrap{position:relative;z-index:1}`
-    : (LP_BGS[v.bg] ? `body{background:${LP_BGS[v.bg]};background-attachment:fixed}` : '')}
+    : (pal.css ? `body{background:${pal.css};background-attachment:fixed}` : '')}
   .wrap{width:100%;max-width:520px}
   .top{text-align:center;margin-bottom:26px}
   .av{width:96px;height:96px;border-radius:50%;object-fit:cover;border:3px solid var(--card);
@@ -479,7 +489,8 @@ ${v.avatar ? `<meta property="og:image" content="${lpEsc(v.avatar)}">` : ''}
   a.btn:active{transform:translateY(0)}
   .ic{font-size:20px;line-height:1;width:24px;text-align:center;flex-shrink:0}
   .lb{flex:1}
-  .ar{color:var(--mut);font-size:16px}
+  .ar{color:var(--mut);flex-shrink:0;display:flex;opacity:.55;transition:transform .12s ease,opacity .12s ease}
+  a.btn:hover .ar{opacity:1;transform:translateX(3px)}
   .empty{text-align:center;color:var(--mut);font-size:14px;padding:28px;border:1px dashed var(--line);border-radius:14px}
   @media (prefers-reduced-motion:reduce){a.btn{transition:none}a.btn:hover{transform:none}}
 </style>
@@ -494,7 +505,7 @@ ${ga.map((p) => `<script async src="https://www.googletagmanager.com/gtag/js?id=
     ${v.bio ? `<p class="bio">${lpEsc(v.bio)}</p>` : ''}
   </div>
   ${v.links.length ? v.links.map((l) => `<a class="btn" href="${lpEsc(l.url)}" target="_blank" rel="noopener"${l.event ? ` data-ev="${lpEsc(l.event)}"` : ''}>
-    <span class="ic">${lpEsc(l.icon || '🔗')}</span><span class="lb">${lpEsc(l.label)}</span><span class="ar">→</span>
+    <span class="ic">${lpEsc(l.icon || '🔗')}</span><span class="lb">${lpEsc(l.label)}</span><span class="ar"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span>
   </a>`).join('\n  ') : '<div class="empty">ยังไม่ได้เพิ่มลิงก์ — เพิ่มได้ที่เมนู "หน้า Landing" ในระบบหลัง</div>'}
 </div>
 <script>
