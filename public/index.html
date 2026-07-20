@@ -780,9 +780,9 @@
             <div class="t-sub" id="hPageOkSub">จากทั้งหมด —</div>
           </div>
           <div class="tile">
-            <div class="t-label"><span class="t-ic r"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg></span>บิน (ซ่อนไว้)</div>
+            <div class="t-label"><span class="t-ic r"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg></span>บิน / ถูกปิด</div>
             <div class="t-value" id="hDead">—</div>
-            <div class="t-sub">บัญชีถูกปิด + เพจบิน — ไม่ต้องสนใจ</div>
+            <div class="t-sub">บัญชีถูกปิด + เพจบิน — กดปุ่มตา 👁 เพื่อซ่อนจากหน้าอื่น</div>
           </div>
         </div>
       </div>
@@ -797,8 +797,9 @@
               <th>บัญชีโฆษณา</th>
               <th>Pixel</th>
               <th>บัตรชำระเงิน</th>
+              <th style="width:44px"></th>
             </tr></thead>
-            <tbody id="healthAcctRows"><tr><td colspan="3" class="tbl-msg">กำลังโหลด...</td></tr></tbody>
+            <tbody id="healthAcctRows"><tr><td colspan="4" class="tbl-msg">กำลังโหลด...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -1067,8 +1068,8 @@ function esc(s) {
 //  ชื่อแคมเปญที่มี \ หรือ ' จึงทำให้ปุ่มลบพัง/รันโค้ดแปลกได้)
 function jsStr(s) { return esc(JSON.stringify(String(s == null ? '' : s))); }
 
-// ถูกปิดใช้งาน/กำลังปิด/ปิดแล้ว = บิน — ใช้ซ่อนแถวในหน้าสุขภาพเท่านั้น
-// ห้ามใช้ข้ามการดึงสถิติ: บัญชีสถานะนี้ยังมียอดใช้จ่ายจริงที่ต้องโชว์
+// ถูกปิดใช้งาน/กำลังปิด/ปิดแล้ว = บิน — ใช้ติดป้าย/จัดเรียงในหน้าสุขภาพเท่านั้น (โชว์ทุกตัว
+// แล้วให้ผู้ใช้กดปุ่มตาซ่อนเอง) ห้ามใช้ข้ามการดึงสถิติ: บัญชีสถานะนี้ยังมียอดใช้จ่ายจริงที่ต้องโชว์
 const DEAD_ACCT = new Set([2, 100, 101]);
 
 // ยิงงานพร้อมกันได้ไม่เกิน n ตัว แล้วคืนผลเรียงตามลำดับเดิม
@@ -1511,6 +1512,7 @@ function setDashDate(v, btn) {
   document.querySelectorAll('#page-dashboard .date-pill').forEach(b => b.classList.toggle('active', b === btn));
   loadDashboard();
 }
+let dashHiddenN = 0;   // บัญชีที่ถูกซ่อนจากหน้าสุขภาพ — โชว์เป็นหมายเหตุ ไม่ปล่อยให้เงียบหาย
 async function loadDashboard(force) {
   const tokenProfiles = profiles.filter(p => p.hasToken);
   const acctRows = document.getElementById('dashAcctRows');
@@ -1537,6 +1539,8 @@ async function loadDashboard(force) {
       if (!d.error) accountCache[p.id] = d;
     } catch { /* ข้าม โชว์เป็น error รายบัญชีไม่ได้เพราะไม่รู้รายชื่อ */ }
   }));
+  // จำนวนที่ถูกซ่อนจากหน้าสุขภาพ — ต้องบอกไว้ว่ามีของถูกซ่อน ไม่ใช่ปล่อยให้ดูเหมือนบัญชีหาย
+  dashHiddenN = tokenProfiles.reduce((n, p) => n + ((accountCache[p.id] || {}).hiddenAccounts || 0), 0);
   const targets = [];
   for (const p of tokenProfiles) {
     const d = accountCache[p.id];
@@ -1623,7 +1627,8 @@ function renderDashboard(results) {
       <td>${problems.join(' ') || '<span style="color:var(--muted)">—</span>'}</td>
     </tr>`;
   }).join('') : '<tr><td colspan="8" class="tbl-msg">ไม่พบบัญชีโฆษณา</td></tr>');
-  document.getElementById('dashAcctSub').textContent = `— ${ok.length} บัญชี`;
+  document.getElementById('dashAcctSub').textContent = `— ${ok.length} บัญชี`
+    + (dashHiddenN ? ` • ซ่อนไว้ ${dashHiddenN} (จัดการที่หน้าสุขภาพ)` : '');
 
   // แคมเปญใช้จ่ายสูงสุด 10 อันดับ
   const allCamps = [];
@@ -1645,13 +1650,13 @@ async function loadHealthPage(force) {
   const pageRows = document.getElementById('healthPageRows');
   const tokenProfiles = profiles.filter(p => p.hasToken);
   if (!tokenProfiles.length) {
-    acctRows.innerHTML = '<tr><td colspan="3" class="tbl-msg">เพิ่มบัญชีในเมนู "บัญชี FB" ก่อน</td></tr>';
+    acctRows.innerHTML = '<tr><td colspan="4" class="tbl-msg">เพิ่มบัญชีในเมนู "บัญชี FB" ก่อน</td></tr>';
     pageRows.innerHTML = '<tr><td colspan="3" class="tbl-msg">เพิ่มบัญชีในเมนู "บัญชี FB" ก่อน</td></tr>';
     return;
   }
   // มีครบทุกบัญชีใน cache แล้ว = โชว์ทันที ไม่ต้องหมุน (จอหมุนเฉพาะตอนต้องยิงจริง)
   if (force || tokenProfiles.some(p => !healthCache[p.id])) {
-    acctRows.innerHTML = '<tr><td colspan="3" class="tbl-msg"><span class="spin"></span>กำลังเช็คสดจาก Facebook...</td></tr>';
+    acctRows.innerHTML = '<tr><td colspan="4" class="tbl-msg"><span class="spin"></span>กำลังเช็คสดจาก Facebook...</td></tr>';
     pageRows.innerHTML = '<tr><td colspan="3" class="tbl-msg"><span class="spin"></span>กำลังเช็คสดจาก Facebook...</td></tr>';
   }
   const results = await Promise.all(tokenProfiles.map(async (p) => {
@@ -1666,27 +1671,56 @@ async function loadHealthPage(force) {
   saveCaches();
   renderHealthPage(results);
 }
+// ปุ่มลูกตา: ซ่อน/โชว์จากทุกหน้า (จัดการที่หน้าสุขภาพที่เดียว) — ซ่อนคือเรื่องการแสดงผลเท่านั้น
+const EYE_ON_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/></svg>';
+function eyeBtn(kind, id, hidden) {
+  return `<button class="icon-btn btn-light" title="${hidden ? 'ถูกซ่อนจากหน้าแดชบอร์ด/แคมเปญ/ขึ้นแอดอยู่ — กดเพื่อโชว์กลับ' : 'ซ่อนจากหน้าแดชบอร์ด/แคมเปญ/ขึ้นแอด (จัดการกลับได้ที่หน้านี้)'}" onclick="toggleHidden(${jsStr(kind)},${jsStr(id)},${hidden ? 'false' : 'true'},this)">${hidden ? EYE_OFF_SVG : EYE_ON_SVG}</button>`;
+}
+async function toggleHidden(kind, id, hide, btn) {
+  btn.disabled = true;
+  try {
+    const d = await (await fetch('/api/hidden', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind, id, hidden: hide }),
+    })).json();
+    if (d.error) throw new Error(d.error);
+  } catch (e) { btn.disabled = false; return alert('บันทึกไม่สำเร็จ: ' + e.message); }
+  // อัปเดต cache หน้าสุขภาพทุกโปรไฟล์ (เพจตัวเดียวโผล่ได้หลายโปรไฟล์) แล้ววาดใหม่ทันที
+  for (const h of Object.values(healthCache)) {
+    for (const it of (kind === 'account' ? h.accounts : h.pages) || []) {
+      if (String(it.id) === String(id)) it.hidden = hide;
+    }
+  }
+  // รายชื่อบัญชี/เพจของหน้าอื่นเปลี่ยนแล้ว — ล้าง cache ให้หน้าพวกนั้นดึงชุดใหม่
+  [accountCache, dashCache, campCache].forEach(c => Object.keys(c).forEach(k => delete c[k]));
+  saveCaches();
+  loadHealthPage();
+}
 function renderHealthPage(results) {
   const multi = results.length > 1;
   const WARN = { 3: 'ค้างชำระ', 7: 'รอตรวจความเสี่ยง', 8: 'รอชำระ', 9: 'ช่วงผ่อนผัน' };
+  const DEAD_TXT = { 2: 'ถูกปิดใช้งาน', 100: 'กำลังปิด', 101: 'ปิดแล้ว' };
 
-  // รวมบัญชีที่ยังใช้ได้ทุก profile — ตัวที่ขาดอะไรขึ้นก่อน
+  // โชว์ทุกบัญชีของทุก profile — ต้องแก้ขึ้นก่อน แล้วปกติ / ถูกปิด / ที่ซ่อนไว้ท้ายสุด
   const rows = [];
   const errHtml = [];
-  let nDeadAcct = 0;
   for (const r of results) {
-    if (r.error) { errHtml.push(`<tr><td colspan="3" class="tbl-msg err" style="padding:12px 20px">⚠ ${esc(r.p.label)}: ${esc(r.error)}</td></tr>`); continue; }
+    if (r.error) { errHtml.push(`<tr><td colspan="4" class="tbl-msg err" style="padding:12px 20px">⚠ ${esc(r.p.label)}: ${esc(r.error)}</td></tr>`); continue; }
     for (const a of r.accounts) {
-      if (DEAD_ACCT.has(a.status)) { nDeadAcct++; continue; }
-      rows.push({ ...a, pid: r.p.id, plabel: r.p.label, missing: (a.pixels.length ? 0 : 1) + (a.funding ? 0 : 1) });
+      const dead = DEAD_ACCT.has(a.status);
+      rows.push({ ...a, pid: r.p.id, plabel: r.p.label, dead, missing: dead ? 0 : (a.pixels.length ? 0 : 1) + (a.funding ? 0 : 1) });
     }
   }
-  rows.sort((a, b) => b.missing - a.missing);
-  const nReady = rows.filter(a => !a.missing && a.status === 1).length;
-  const nFix = rows.filter(a => a.missing).length;
+  rows.sort((a, b) => (a.hidden ? 1 : 0) - (b.hidden ? 1 : 0) || (a.dead ? 1 : 0) - (b.dead ? 1 : 0) || b.missing - a.missing);
+  const nHiddenAcct = rows.filter(a => a.hidden).length;
+  const nDeadAcct = rows.filter(a => a.dead).length;
+  const vis = rows.filter(a => !a.hidden);
+  const nReady = vis.filter(a => !a.missing && a.status === 1).length;
+  const nFix = vis.filter(a => !a.dead && a.missing).length;
 
-  // ปุ่มสร้าง Pixel รวบยอด — เฉพาะบัญชีสถานะใช้ได้จริง (ไม่เอาค้างชำระ/มีปัญหา)
-  healthNeedPixel = rows.filter(a => a.status === 1 && !a.pixels.length).map(a => ({ pid: a.pid, id: a.id }));
+  // ปุ่มสร้าง Pixel รวบยอด — เฉพาะบัญชีสถานะใช้ได้จริงที่ไม่ได้ถูกซ่อน
+  healthNeedPixel = vis.filter(a => a.status === 1 && !a.pixels.length).map(a => ({ pid: a.pid, id: a.id }));
   const bulkBtn = document.getElementById('healthBulkPx');
   bulkBtn.style.display = healthNeedPixel.length ? '' : 'none';
   bulkBtn.disabled = false;
@@ -1694,22 +1728,29 @@ function renderHealthPage(results) {
 
   const acctHtml = rows.map(a => {
     const warn = WARN[a.status] ? ` <span class="st-pill issue">⚠ ${WARN[a.status]}</span>` : '';
-    const px = a.pixels.length
+    const deadTag = a.dead ? ` <span class="st-pill rejected">💀 ${DEAD_TXT[a.status] || 'ถูกปิด'}</span>` : '';
+    // ซ่อนบัญชีที่ยังใช้งานได้ = แค่หายจากจอ — autopilot ยังเติมแอด/ใช้เงินตามปกติ ต้องมีป้ายย้ำ
+    const apTag = a.hidden && a.status === 1 ? ' <span class="st-pill issue" title="การซ่อนมีผลแค่การแสดงผล — autopilot ยังเติมแอด/ดูแลบัญชีนี้ตามปกติ">⚠ autopilot ยังดูแลอยู่</span>' : '';
+    const px = a.dead ? '<span style="color:var(--muted)">—</span>' : a.pixels.length
       ? a.pixels.map(x => `<span style="white-space:nowrap"><span class="st-pill on" title="Pixel ID: ${esc(x.id)}">✓ ${esc(x.name)}</span> <button class="btn-light btn-sm" title="คัดลอก Pixel ID ${esc(x.id)}" onclick="copyPixel(${jsStr(x.id)});this.textContent='✓ คัดลอกแล้ว';setTimeout(()=>this.textContent='คัดลอก ID',1200)">คัดลอก ID</button></span>`).join(' ')
       : `<button class="btn-primary btn-sm" onclick="createPixelHealth(${jsStr(a.pid)},${jsStr(a.id)},this)">+ สร้าง Pixel เลย</button>`;
-    const card = a.funding
+    const card = a.dead ? '<span style="color:var(--muted)">—</span>' : a.funding
       ? `<span class="st-pill on">✓ ${esc(a.funding)}</span>`
       : `<a class="btn-primary btn-sm" style="text-decoration:none;display:inline-block;color:#fff" target="_blank" href="https://business.facebook.com/billing_hub/payment_settings?asset_id=${a.id}">เชื่อมบัตรเลย ↗</a>`;
-    return `<tr${a.missing ? ' style="background:#fffbf3"' : ''}>
-      <td style="font-weight:600">${a.missing ? '🔧 ' : '✅ '}${esc(a.name)}${warn}<div class="res-label">${multi ? esc(a.plabel) + ' • ' : ''}${a.id}</div></td>
+    const rowStyle = a.hidden ? ' style="opacity:.45"' : a.dead ? ' style="opacity:.6"' : a.missing ? ' style="background:#fffbf3"' : '';
+    const icon = a.dead ? '💀 ' : a.missing ? '🔧 ' : '✅ ';
+    return `<tr${rowStyle}>
+      <td style="font-weight:600">${icon}${esc(a.name)}${warn}${deadTag}${apTag}<div class="res-label">${multi ? esc(a.plabel) + ' • ' : ''}${a.id}</div></td>
       <td>${px}</td>
       <td>${card}</td>
+      <td style="text-align:right">${eyeBtn('account', a.id, !!a.hidden)}</td>
     </tr>`;
   });
-  document.getElementById('healthAcctRows').innerHTML = errHtml.join('') + (acctHtml.join('') || '<tr><td colspan="3" class="tbl-msg">ไม่มีบัญชีที่ใช้ได้เลย</td></tr>');
-  document.getElementById('healthAcctSub').textContent = `— ${rows.length} บัญชี (ซ่อนที่ถูกปิด ${nDeadAcct})` + (nFix ? ` • ต้องแก้ ${nFix}` : ' • ครบทุกตัว ✓');
+  document.getElementById('healthAcctRows').innerHTML = errHtml.join('') + (acctHtml.join('') || '<tr><td colspan="4" class="tbl-msg">ไม่พบบัญชีโฆษณา</td></tr>');
+  document.getElementById('healthAcctSub').textContent = `— ทั้งหมด ${rows.length} บัญชี`
+    + (nHiddenAcct ? ` • ซ่อนไว้ ${nHiddenAcct}` : '') + (nFix ? ` • ต้องแก้ ${nFix}` : ' • ครบทุกตัว ✓');
 
-  // เพจ — ใช้ได้ขึ้นก่อน เพจบินจางลง (เพจซ้ำข้าม profile โชว์ครั้งเดียว)
+  // เพจ — ใช้ได้ขึ้นก่อน เพจบินจางลง ที่ซ่อนไว้ท้ายสุด (เพจซ้ำข้าม profile โชว์ครั้งเดียว)
   const seen = new Set();
   const pages = [];
   for (const r of results) {
@@ -1720,16 +1761,18 @@ function renderHealthPage(results) {
       pages.push({ ...g, plabel: r.p.label, ok: g.published && g.eligible });
     }
   }
-  pages.sort((a, b) => (b.ok ? 1 : 0) - (a.ok ? 1 : 0));
+  pages.sort((a, b) => (a.hidden ? 1 : 0) - (b.hidden ? 1 : 0) || (b.ok ? 1 : 0) - (a.ok ? 1 : 0));
   const nPageOk = pages.filter(g => g.ok).length;
-  document.getElementById('healthPageRows').innerHTML = pages.map(g => `<tr${g.ok ? '' : ' style="opacity:.55"'}>
+  const nHiddenPage = pages.filter(g => g.hidden).length;
+  document.getElementById('healthPageRows').innerHTML = pages.map(g => `<tr${g.hidden ? ' style="opacity:.45"' : g.ok ? '' : ' style="opacity:.55"'}>
       <td style="font-weight:600">${g.ok ? '✅ ' : '💀 '}${esc(g.name)}<div class="res-label">${multi ? esc(g.plabel) + ' • ' : ''}${g.id}</div></td>
       <td>${g.ok
         ? '<span class="st-pill on">✓ ใช้ลงโฆษณาได้</span>'
         : `<span class="st-pill rejected">✕ บิน${!g.published ? ' (ถูกปิดเผยแพร่)' : ''}</span>${g.reason ? `<div class="res-label">${esc(g.reason)}</div>` : ''}`}</td>
-      <td><a class="btn-light btn-sm" style="text-decoration:none" target="_blank" href="https://www.facebook.com/${g.id}">เปิดเพจ ↗</a></td>
+      <td style="white-space:nowrap;text-align:right"><a class="btn-light btn-sm" style="text-decoration:none" target="_blank" href="https://www.facebook.com/${g.id}">เปิดเพจ ↗</a> ${eyeBtn('page', g.id, !!g.hidden)}</td>
     </tr>`).join('') || '<tr><td colspan="3" class="tbl-msg">ไม่พบเพจ</td></tr>';
-  document.getElementById('healthPageSub').textContent = `— ใช้ได้ ${nPageOk} จาก ${pages.length} เพจ`;
+  document.getElementById('healthPageSub').textContent = `— ใช้ได้ ${nPageOk} จาก ${pages.length} เพจ`
+    + (nHiddenPage ? ` • ซ่อนไว้ ${nHiddenPage}` : '');
 
   // สรุปบนสุด
   document.getElementById('hReady').textContent = nReady;

@@ -1119,7 +1119,15 @@ app.get('/api/accounts', async (req, res) => {
       }
       return out;
     });
-    res.json({ name: me.name, adAccounts: accounts, pages });
+    // บัญชี/เพจที่ผู้ใช้กดซ่อนจากหน้า "สุขภาพบัญชี" — ตัดออกจากทุกหน้าที่ดึงเส้นนี้
+    // (แดชบอร์ด/แคมเปญ/ขึ้นแอด/ต้นแบบ) ส่วนหน้าสุขภาพใช้ /api/health-overview ซึ่งโชว์ครบ + ธง hidden
+    const hidden = cfg.hidden || {};
+    const visible = accounts.filter((a) => !(hidden.accounts || {})[a.account_id]);
+    res.json({
+      name: me.name, adAccounts: visible,
+      pages: pages.filter((p) => !(hidden.pages || {})[p.id]),
+      hiddenAccounts: accounts.length - visible.length,   // ให้หน้าอื่นบอกได้ว่า "ซ่อนอยู่ N — เงินไม่ได้หาย"
+    });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
@@ -1134,6 +1142,23 @@ app.post('/api/beneficiary', (req, res) => {
   const id = String(req.body.id || '').replace(/[^0-9]/g, '');
   if (id) cfg.beneficiaries[acctId] = id;
   else delete cfg.beneficiaries[acctId];
+  saveConfig(cfg);
+  res.json({ ok: true });
+});
+
+// ซ่อน/โชว์บัญชีโฆษณาหรือเพจจากทุกหน้าจอ — จัดการจากหน้า "สุขภาพบัญชี" ที่เดียว
+// มีผลเฉพาะการแสดงผล (/api/accounts): autopilot ยังดูแลบัญชี/เพจตามสถานะจริงบน FB ไม่เกี่ยวกับการซ่อน
+// (จงใจ — ซ่อน ≠ หยุดยิงแอด ถ้าอยากหยุดใช้ปุ่มหยุดของ autopilot ไม่ใช่ปุ่มตา)
+app.post('/api/hidden', (req, res) => {
+  const kind = req.body.kind === 'page' ? 'pages' : req.body.kind === 'account' ? 'accounts' : null;
+  if (!kind) return res.status(400).json({ error: 'kind ต้องเป็น account หรือ page' });
+  const id = String(req.body.id || '').replace(/[^0-9]/g, '');
+  if (!id) return res.status(400).json({ error: 'ไม่ได้ระบุ id' });
+  const cfg = loadConfig();
+  cfg.hidden = cfg.hidden || {};
+  cfg.hidden[kind] = cfg.hidden[kind] || {};
+  if (req.body.hidden) cfg.hidden[kind][id] = true;
+  else delete cfg.hidden[kind][id];
   saveConfig(cfg);
   res.json({ ok: true });
 });
@@ -1406,21 +1431,25 @@ app.get('/api/health-overview', async (req, res) => {
   const prof = getProfile(cfg, req.query.profile);
   if (!prof || !prof.accessToken) return res.status(400).json({ error: 'ยังไม่ได้เชื่อมต่อบัญชี' });
   const token = prof.accessToken;
+  const hidden = cfg.hidden || {};
   try {
     const [accts, pages] = await Promise.all([
       fbAll('me/adaccounts', { fields: 'name,account_id,account_status,business{name},funding_source_details,adspixels.limit(15){id,name}', limit: 100 }, token),
       fbAll('me/accounts', { fields: 'name,is_published,promotion_eligible,promotion_ineligible_reason', limit: 100 }, token),
     ]);
+    // หน้าสุขภาพคือ "ตัวจัดการ" — โชว์ทุกตัวรวมที่ซ่อน/ถูกปิด พร้อมธง hidden ให้กดสลับได้
     res.json({
       accounts: accts.map((a) => ({
         id: a.account_id, name: a.name, status: a.account_status,
         business: a.business ? a.business.name : null,
         pixels: ((a.adspixels || {}).data || []).map((x) => ({ id: x.id, name: x.name })),
         funding: (a.funding_source_details && (a.funding_source_details.display_string || 'เชื่อมแล้ว')) || null,
+        hidden: !!(hidden.accounts || {})[a.account_id],
       })),
       pages: (pages || []).map((p) => ({
         id: p.id, name: p.name, published: !!p.is_published,
         eligible: !!p.promotion_eligible, reason: p.promotion_ineligible_reason || null,
+        hidden: !!(hidden.pages || {})[p.id],
       })),
     });
   } catch (e) {

@@ -602,6 +602,46 @@ describe('บาลานซ์เพจ + กันเพจแตก', () => {
   });
 });
 
+// ---------- ปุ่มลูกตาหน้าสุขภาพ: ซ่อนบัญชี/เพจจากทุกหน้า จัดการที่เดียว ----------
+describe('ซ่อนบัญชี/เพจจากหน้าสุขภาพ (ปุ่มลูกตา)', () => {
+  test('ซ่อนบัญชี: หายจาก /api/accounts แต่หน้าสุขภาพยังเห็นพร้อมธง hidden และโชว์กลับได้', async (t) => {
+    const { base } = await boot(t);
+    let d = await get(base, '/api/accounts?profile=p1');
+    assert.strictEqual(d.adAccounts.length, 1, 'ก่อนซ่อนต้องเห็นบัญชี');
+    await post(base, '/api/hidden', { kind: 'account', id: ACCT, hidden: true });
+    d = await get(base, '/api/accounts?profile=p1');
+    assert.strictEqual(d.adAccounts.length, 0, 'บัญชีที่ซ่อนต้องหายจากแดชบอร์ด/แคมเปญ/ขึ้นแอด (ทุกหน้าที่ใช้เส้นนี้)');
+    assert.strictEqual(d.hiddenAccounts, 1, 'ต้องบอกจำนวนที่ซ่อนไว้ — ให้หน้าอื่นแจ้งได้ว่าเงินไม่ได้หาย');
+    const h = await get(base, '/api/health-overview?profile=p1');
+    assert.strictEqual(h.accounts.length, 1, 'หน้าสุขภาพเป็นตัวจัดการ ต้องเห็นครบทุกตัว');
+    assert.strictEqual(h.accounts[0].hidden, true, 'ต้องมีธง hidden ให้ปุ่มตาแสดงสถานะถูก');
+    await post(base, '/api/hidden', { kind: 'account', id: ACCT, hidden: false });
+    d = await get(base, '/api/accounts?profile=p1');
+    assert.strictEqual(d.adAccounts.length, 1, 'กดโชว์กลับ บัญชีต้องกลับมา');
+  });
+
+  test('ซ่อนเพจ: หายจาก dropdown (/api/accounts) แต่หน้าสุขภาพยังเห็น', async (t) => {
+    const world = freshWorld({ pages: [{ id: '55501', name: 'เพจหลัก', is_published: true, promotion_eligible: true }] });
+    const config = baseConfig();
+    config.profiles[0].pageId = '55501';
+    const { base } = await boot(t, { world, config });
+    await post(base, '/api/hidden', { kind: 'page', id: '55501', hidden: true });
+    const d = await get(base, '/api/accounts?profile=p1');
+    assert.deepStrictEqual(d.pages, [], 'เพจที่ซ่อนต้องไม่โผล่ใน dropdown เลือกเพจ');
+    const h = await get(base, '/api/health-overview?profile=p1');
+    assert.strictEqual(h.pages.length, 1, 'หน้าสุขภาพยังต้องเห็นเพจที่ซ่อน');
+    assert.strictEqual(h.pages[0].hidden, true);
+  });
+
+  test('การซ่อนไม่กระทบ autopilot — บัญชีที่ซ่อนยังถูกเติมแอดตามปกติ', async (t) => {
+    const { base, world } = await boot(t);
+    await post(base, '/api/hidden', { kind: 'account', id: ACCT, hidden: true });
+    await runTwice(base);
+    const made = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/campaigns`);
+    assert.strictEqual(made.length, 1, 'ซ่อน = เรื่องแสดงผลเท่านั้น autopilot ต้องยังทำงานกับบัญชีนี้');
+  });
+});
+
 // ---------- เกราะ Meta block: persist cooldown, app-block backoff, เตือน Telegram ----------
 describe('เกราะ Meta block API', () => {
   const fs = require('node:fs'), path = require('node:path'), http = require('node:http');
