@@ -913,20 +913,41 @@
       </div>
 
       <div class="card">
-        <h2>ปุ่มลิงก์ <span class="h-desc">— ลากพิมพ์ได้เลย ระบบเติม https:// / tel: / mailto: ให้เอง</span></h2>
-        <div id="lpLinks"></div>
-        <button class="btn-light btn-sm" onclick="lpAddLink()">+ เพิ่มปุ่ม</button>
-        <div class="hint" style="margin-top:10px">
-          <b>Event ที่ยิงตอนกด</b> ควรตรงกับ "เหตุการณ์คอนเวอร์ชั่น" ที่แคมเปญใช้วัดผล
-          ไม่งั้นพิกเซลจะเก็บคนละอย่างกับที่แอด optimize แล้วระบบเรียนรู้ไม่ได้
+        <h2>ปุ่มลิงก์ <span class="h-desc" id="lpLinkCount"></span>
+          <button class="btn-primary btn-sm" style="margin-left:auto" onclick="openLpLinkModal()">+ เพิ่มปุ่ม</button>
+        </h2>
+        <div class="hint" style="margin-bottom:10px">คลิกแถวเพื่อแก้ไข • <b>Event ที่ยิงตอนกด</b> ควรตรงกับ "เหตุการณ์คอนเวอร์ชั่น" ที่แคมเปญใช้วัดผล ไม่งั้นพิกเซลจะเก็บคนละอย่างกับที่แอด optimize แล้วระบบเรียนรู้ไม่ได้</div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr>
+              <th style="width:36px">#</th>
+              <th style="width:56px">ไอคอน</th>
+              <th>ข้อความบนปุ่ม</th>
+              <th>ลิงก์</th>
+              <th style="width:210px">Event ที่ยิงตอนกด</th>
+              <th style="width:84px"></th>
+            </tr></thead>
+            <tbody id="lpLinkRows"></tbody>
+          </table>
         </div>
       </div>
 
       <div class="card">
-        <h2>พิกเซล <span class="h-desc">— ใส่ได้หลายตัว ยิงพร้อมกันทั้งหมด</span></h2>
-        <div id="lpPixels"></div>
-        <button class="btn-light btn-sm" onclick="lpAddPixel()">+ เพิ่มพิกเซล</button>
-        <div class="hint" style="margin-top:10px">Meta Pixel ใส่ Pixel ID • Google Analytics ใส่ Measurement ID (G-XXXX)</div>
+        <h2>พิกเซล <span class="h-desc" id="lpPixelCount">— ใส่ได้หลายตัว ยิงพร้อมกันทั้งหมด</span>
+          <button class="btn-primary btn-sm" style="margin-left:auto" onclick="openLpPixelModal()">+ เพิ่มพิกเซล</button>
+        </h2>
+        <div class="hint" style="margin-bottom:10px">คลิกแถวเพื่อแก้ไข • Meta Pixel ใส่ Pixel ID • Google Analytics ใส่ Measurement ID (G-XXXX)</div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr>
+              <th style="width:36px">#</th>
+              <th style="width:190px">ชนิด</th>
+              <th>ID</th>
+              <th style="width:84px"></th>
+            </tr></thead>
+            <tbody id="lpPixelRows"></tbody>
+          </table>
+        </div>
       </div>
 
       <div class="card" style="display:flex;gap:12px;align-items:center;position:sticky;bottom:12px">
@@ -1102,6 +1123,55 @@
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
         <button class="btn-danger-light" onclick="deleteLib(libModalId)">ลบออกจากคลัง</button>
         <button class="btn-light" onclick="closeLibModal()">ปิด</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== Modal เพิ่ม/แก้ไขปุ่มลิงก์หน้า Landing ========== -->
+<div id="lpLinkModal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeLpLinkModal()">
+  <div class="modal-box" style="max-width:520px">
+    <div class="modal-head">
+      <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span id="lpLinkModalTitle">เพิ่มปุ่มลิงก์</span></h3>
+      <button class="icon-btn btn-light" onclick="closeLpLinkModal()"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex;gap:10px">
+        <div class="field" style="max-width:74px"><label>ไอคอน</label>
+          <button type="button" id="lpLinkModalIcon" class="lp-icon-btn" onclick="lpPickIcon(this)" title="เลือกไอคอน"
+            style="width:100%;height:38px;font-size:20px;line-height:1;background:#fff;border:1px solid var(--line);border-radius:8px;cursor:pointer">🔗</button>
+          <input type="hidden" class="lp-icon" id="lpLinkModalIconVal">
+        </div>
+        <div class="field" style="flex:1"><label>ข้อความบนปุ่ม</label><input id="lpLinkModalLabel" placeholder="แอดไลน์"></div>
+      </div>
+      <div class="field" style="margin-top:12px"><label>ลิงก์ <span class="h-desc">— พิมพ์ได้เลย ระบบเติม https:// / tel: / mailto: ให้เอง</span></label>
+        <input id="lpLinkModalUrl" placeholder="line.me/ti/p/... หรือ 021234567">
+      </div>
+      <div class="field" style="margin-top:12px"><label>Event ที่ยิงตอนกด</label><select id="lpLinkModalEvent"></select></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">
+        <button class="btn-light" onclick="closeLpLinkModal()">ยกเลิก</button>
+        <button class="btn-primary" onclick="saveLpLinkModal()">ตกลง</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== Modal เพิ่ม/แก้ไขพิกเซลหน้า Landing ========== -->
+<div id="lpPixelModal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeLpPixelModal()">
+  <div class="modal-box" style="max-width:440px">
+    <div class="modal-head">
+      <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg><span id="lpPixelModalTitle">เพิ่มพิกเซล</span></h3>
+      <button class="icon-btn btn-light" onclick="closeLpPixelModal()"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <div class="field"><label>ชนิด</label><select id="lpPixelModalType">
+        <option value="meta">Meta Pixel</option>
+        <option value="ga">Google Analytics</option>
+      </select></div>
+      <div class="field" style="margin-top:12px"><label>ID</label><input id="lpPixelModalId" placeholder="1234567890 หรือ G-XXXX"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">
+        <button class="btn-light" onclick="closeLpPixelModal()">ยกเลิก</button>
+        <button class="btn-primary" onclick="saveLpPixelModal()">ตกลง</button>
       </div>
     </div>
   </div>
@@ -2851,35 +2921,92 @@ function lpFixUrl(v) {
   return t;
 }
 
-function lpLinkRow(l) {
-  l = l || {};
-  return `<div class="cap-row lp-row" style="align-items:flex-end;gap:8px;flex-wrap:wrap">
-    <div class="field" style="max-width:74px"><label>ไอคอน</label>
-      <button type="button" class="lp-icon-btn" onclick="lpPickIcon(this)" title="เลือกไอคอน"
-        style="width:100%;height:38px;font-size:20px;line-height:1;background:#fff;border:1px solid var(--line);border-radius:8px;cursor:pointer">${esc(l.icon || '🔗')}</button>
-      <input type="hidden" class="lp-icon" value="${esc(l.icon || '')}">
-    </div>
-    <div class="field" style="min-width:150px;flex:1"><label>ข้อความบนปุ่ม</label><input class="lp-label" value="${esc(l.label || '')}" placeholder="แอดไลน์"></div>
-    <div class="field" style="min-width:200px;flex:1.4"><label>ลิงก์</label><input class="lp-url" value="${esc(l.url || '')}" placeholder="line.me/ti/p/... หรือ 021234567"></div>
-    <div class="field" style="min-width:190px"><label>Event ที่ยิงตอนกด</label><select class="lp-event">${
-      LP_EVENTS.map(([v, th]) => `<option value="${v}"${v === (l.event || '') ? ' selected' : ''}>${esc(th)}</option>`).join('')
-    }</select></div>
-    <button class="btn-light btn-sm" onclick="this.closest('.lp-row').remove()">ลบ</button>
-  </div>`;
+// ปุ่มลิงก์/พิกเซลเก็บใน array แล้ว render เป็นตาราง — แก้ผ่าน modal (ตกลง = แก้ในหน่วยความจำ
+// ปุ่ม "บันทึก" แถบล่างยังเป็นตัวเขียนขึ้นเซิร์ฟเวอร์เหมือนเดิมทั้งหน้า)
+let lpLinksData = [];
+let lpPixelsData = [];
+const LP_EVENT_TH = Object.fromEntries(LP_EVENTS);
+
+function renderLpLinks() {
+  document.getElementById('lpLinkCount').textContent = lpLinksData.length ? `— ${lpLinksData.length} ปุ่ม` : '';
+  document.getElementById('lpLinkRows').innerHTML = lpLinksData.map((l, i) => `<tr style="cursor:pointer" onclick="openLpLinkModal(${i})" title="คลิกเพื่อแก้ไข">
+      <td style="color:var(--muted)">${i + 1}</td>
+      <td style="font-size:19px;text-align:center">${esc(l.icon || '🔗')}</td>
+      <td style="font-weight:600">${esc(l.label) || '<span style="color:var(--muted)">—</span>'}</td>
+      <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(l.url || '')}">${esc(l.url) || '<span style="color:var(--muted)">—</span>'}</td>
+      <td>${l.event ? esc(LP_EVENT_TH[l.event] || l.event) : '<span style="color:var(--muted)">— ไม่ยิง —</span>'}</td>
+      <td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
+        <button class="icon-btn btn-light" title="แก้ไข" onclick="openLpLinkModal(${i})"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+        <button class="btn-danger-light icon-btn" title="ลบปุ่มนี้" onclick="lpLinksData.splice(${i},1);renderLpLinks()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="6" class="tbl-msg">ยังไม่มีปุ่ม — กด "+ เพิ่มปุ่ม" มุมขวาบน</td></tr>';
 }
-function lpPixelRow(p) {
-  p = p || {};
-  return `<div class="cap-row lp-prow" style="align-items:flex-end;gap:8px;flex-wrap:wrap">
-    <div class="field" style="min-width:170px"><label>ชนิด</label><select class="lp-ptype">
-      <option value="meta"${p.type !== 'ga' ? ' selected' : ''}>Meta Pixel</option>
-      <option value="ga"${p.type === 'ga' ? ' selected' : ''}>Google Analytics</option>
-    </select></div>
-    <div class="field" style="min-width:200px;flex:1"><label>ID</label><input class="lp-pid" value="${esc(p.id || '')}" placeholder="1234567890"></div>
-    <button class="btn-light btn-sm" onclick="this.closest('.lp-prow').remove()">ลบ</button>
-  </div>`;
+function renderLpPixels() {
+  document.getElementById('lpPixelRows').innerHTML = lpPixelsData.map((p, i) => `<tr style="cursor:pointer" onclick="openLpPixelModal(${i})" title="คลิกเพื่อแก้ไข">
+      <td style="color:var(--muted)">${i + 1}</td>
+      <td>${p.type === 'ga' ? 'Google Analytics' : 'Meta Pixel'}</td>
+      <td style="font-family:monospace">${esc(p.id) || '<span style="color:var(--muted)">—</span>'}</td>
+      <td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
+        <button class="icon-btn btn-light" title="แก้ไข" onclick="openLpPixelModal(${i})"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+        <button class="btn-danger-light icon-btn" title="ลบพิกเซลนี้" onclick="lpPixelsData.splice(${i},1);renderLpPixels()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="4" class="tbl-msg">ยังไม่มีพิกเซล — กด "+ เพิ่มพิกเซล" มุมขวาบน</td></tr>';
 }
-const lpAddLink = () => document.getElementById('lpLinks').insertAdjacentHTML('beforeend', lpLinkRow());
-const lpAddPixel = () => document.getElementById('lpPixels').insertAdjacentHTML('beforeend', lpPixelRow());
+
+// modal ปุ่มลิงก์ — lpLinkEditIdx = null คือเพิ่มใหม่
+let lpLinkEditIdx = null;
+function openLpLinkModal(idx) {
+  lpLinkEditIdx = (idx === undefined || idx === null) ? null : idx;
+  const l = lpLinkEditIdx !== null ? lpLinksData[lpLinkEditIdx] : {};
+  document.getElementById('lpLinkModalTitle').textContent = lpLinkEditIdx !== null ? 'แก้ไขปุ่มลิงก์' : 'เพิ่มปุ่มลิงก์';
+  document.getElementById('lpLinkModalIcon').textContent = l.icon || '🔗';
+  document.getElementById('lpLinkModalIconVal').value = l.icon || '';
+  document.getElementById('lpLinkModalLabel').value = l.label || '';
+  document.getElementById('lpLinkModalUrl').value = l.url || '';
+  const sel = document.getElementById('lpLinkModalEvent');
+  sel.innerHTML = LP_EVENTS.map(([v, th]) => `<option value="${v}">${esc(th)}</option>`).join('');
+  sel.value = l.event || '';
+  document.getElementById('lpLinkModal').style.display = 'flex';
+  document.getElementById('lpLinkModalLabel').focus();
+}
+function closeLpLinkModal() { document.getElementById('lpLinkModal').style.display = 'none'; }
+function saveLpLinkModal() {
+  const item = {
+    icon: document.getElementById('lpLinkModalIconVal').value,
+    label: document.getElementById('lpLinkModalLabel').value.trim(),
+    url: lpFixUrl(document.getElementById('lpLinkModalUrl').value),
+    event: document.getElementById('lpLinkModalEvent').value,
+  };
+  if (!item.label && !item.url) return toast('ใส่ข้อความบนปุ่มหรือลิงก์อย่างน้อยหนึ่งอย่างครับ');
+  if (lpLinkEditIdx !== null) lpLinksData[lpLinkEditIdx] = item;
+  else lpLinksData.push(item);
+  closeLpLinkModal();
+  renderLpLinks();
+}
+
+// modal พิกเซล
+let lpPixelEditIdx = null;
+function openLpPixelModal(idx) {
+  lpPixelEditIdx = (idx === undefined || idx === null) ? null : idx;
+  const p = lpPixelEditIdx !== null ? lpPixelsData[lpPixelEditIdx] : {};
+  document.getElementById('lpPixelModalTitle').textContent = lpPixelEditIdx !== null ? 'แก้ไขพิกเซล' : 'เพิ่มพิกเซล';
+  document.getElementById('lpPixelModalType').value = p.type === 'ga' ? 'ga' : 'meta';
+  document.getElementById('lpPixelModalId').value = p.id || '';
+  document.getElementById('lpPixelModal').style.display = 'flex';
+  document.getElementById('lpPixelModalId').focus();
+}
+function closeLpPixelModal() { document.getElementById('lpPixelModal').style.display = 'none'; }
+function saveLpPixelModal() {
+  const item = {
+    type: document.getElementById('lpPixelModalType').value,
+    id: document.getElementById('lpPixelModalId').value.trim(),
+  };
+  if (!item.id) return toast('ใส่ ID ของพิกเซลก่อนครับ');
+  if (lpPixelEditIdx !== null) lpPixelsData[lpPixelEditIdx] = item;
+  else lpPixelsData.push(item);
+  closeLpPixelModal();
+  renderLpPixels();
+}
 
 async function loadLanding() {
   let d;
@@ -2890,8 +3017,10 @@ async function loadLanding() {
   document.getElementById('lpTheme').value = d.theme || 'light';
   document.getElementById('lpBgImage').value = d.bgImage || '';
   lpBg = d.bg || ''; lpRenderBgs(); lpAvatarPreview();
-  document.getElementById('lpLinks').innerHTML = (d.links || []).map(lpLinkRow).join('');
-  document.getElementById('lpPixels').innerHTML = (d.pixels || []).map(lpPixelRow).join('');
+  lpLinksData = (d.links || []).map(l => ({ icon: l.icon || '', label: l.label || '', url: l.url || '', event: l.event || '' }));
+  lpPixelsData = (d.pixels || []).map(p => ({ type: p.type === 'ga' ? 'ga' : 'meta', id: p.id || '' }));
+  renderLpLinks();
+  renderLpPixels();
 }
 
 function lpCollect() {
@@ -2902,17 +3031,8 @@ function lpCollect() {
     theme: document.getElementById('lpTheme').value,
     bg: lpBg,
     bgImage: document.getElementById('lpBgImage').value.trim(),
-    links: [...document.querySelectorAll('#lpLinks .lp-row')].map((r, i) => ({
-      id: 'l' + i,
-      icon: r.querySelector('.lp-icon').value,
-      label: r.querySelector('.lp-label').value,
-      url: lpFixUrl(r.querySelector('.lp-url').value),
-      event: r.querySelector('.lp-event').value,
-    })),
-    pixels: [...document.querySelectorAll('#lpPixels .lp-prow')].map(r => ({
-      type: r.querySelector('.lp-ptype').value,
-      id: r.querySelector('.lp-pid').value.trim(),
-    })),
+    links: lpLinksData.map((l, i) => ({ id: 'l' + i, icon: l.icon, label: l.label, url: lpFixUrl(l.url), event: l.event })),
+    pixels: lpPixelsData.map(p => ({ type: p.type, id: p.id })),
   };
 }
 
@@ -2945,10 +3065,10 @@ async function lpSave(btn) {
   }
 }
 
-// เติม scheme ให้เห็นกับตาตอนคลิกออกจากช่อง (การ์ดถูกสร้างทีหลัง blur ไม่ bubble จึงใช้ focusout)
+// เติม scheme ให้เห็นกับตาตอนคลิกออกจากช่อง
 document.addEventListener('focusout', (e) => {
   const t = e.target;
-  if (t && t.classList && t.classList.contains('lp-url')) t.value = lpFixUrl(t.value);
+  if (t && t.id === 'lpLinkModalUrl') t.value = lpFixUrl(t.value);
   // รูปที่อัปเองขึ้นต้นด้วย /lp-asset/ ห้ามเติม https:// ทับ
   if (t && t.id === 'lpAvatar') {
     if (!t.value.trim().startsWith('/lp-asset/')) t.value = lpFixUrl(t.value);
