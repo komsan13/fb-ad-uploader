@@ -1147,8 +1147,9 @@ app.post('/api/beneficiary', (req, res) => {
 });
 
 // ซ่อน/โชว์บัญชีโฆษณาหรือเพจจากทุกหน้าจอ — จัดการจากหน้า "สุขภาพบัญชี" ที่เดียว
-// มีผลเฉพาะการแสดงผล (/api/accounts): autopilot ยังดูแลบัญชี/เพจตามสถานะจริงบน FB ไม่เกี่ยวกับการซ่อน
-// (จงใจ — ซ่อน ≠ หยุดยิงแอด ถ้าอยากหยุดใช้ปุ่มหยุดของ autopilot ไม่ใช่ปุ่มตา)
+// ซ่อนบัญชี = หายจากทุกหน้า + autopilot ไม่แตะ (ไม่เติมแอด/ไม่ขยายงบ/ไม่แก้แอด)
+// ซ่อนเพจ = หายจาก dropdown + ถูกตัดออกจากพูล round-robin ตอนเติมแอด
+// แอดที่เปิดค้างอยู่ในบัญชีที่ซ่อนจะวิ่งต่อเอง (ระบบไม่สั่งปิดแอดแทนผู้ใช้) — watchTick ยังเฝ้าเป็นตาข่ายสุดท้าย
 app.post('/api/hidden', (req, res) => {
   const kind = req.body.kind === 'page' ? 'pages' : req.body.kind === 'account' ? 'accounts' : null;
   if (!kind) return res.status(400).json({ error: 'kind ต้องเป็น account หรือ page' });
@@ -2806,7 +2807,9 @@ async function autopilotTick(mode = 'full') {
     // เพจแตกถูกกรองทิ้งที่นี่ = ไม่มีวันถูกเลือกขึ้นแอด • โหลดไม่ได้ = null → apRefill ถอยไปใช้เพจที่ตั้งเอง
     let livePages = null;
     if (mode === 'full') {
-      try { livePages = (await fbPages(prof.accessToken)).filter((p) => p.ok).map((p) => p.id); }
+      // เพจที่ถูกซ่อน (ปุ่มตา) ตัดออกจากพูล round-robin ด้วย — ซ่อนแล้วต้องไม่ถูกเอาขึ้นแอดใหม่
+      const hiddenPages = (cfg.hidden || {}).pages || {};
+      try { livePages = (await fbPages(prof.accessToken)).filter((p) => p.ok && !hiddenPages[p.id]).map((p) => p.id); }
       catch { livePages = null; }
     }
 
@@ -2814,6 +2817,9 @@ async function autopilotTick(mode = 'full') {
       // เช็คซ้ำระดับบัญชี — งานหนัก (เติมแอด/ขยายงบ/อัปวิดีโอ) อยู่ในลูปนี้ โดนสั่งหยุดแล้วต้องหยุดจริง
       if (Date.now() < fbCoolUntil && fbCoolHard) break;
       const acctId = a.account_id;
+      // บัญชีที่ผู้ใช้กดซ่อน (ปุ่มตาหน้าสุขภาพ) = autopilot ไม่แตะเลย — ไม่เติมแอด ไม่ขยายงบ ไม่แก้แอด
+      // (watchTick ยังเฝ้าสถานะ/แอดโดนปฏิเสธของบัญชีพวกนี้ต่อ เป็นตาข่ายสุดท้ายว่าเงินไม่เดินเงียบๆ)
+      if (((cfg.hidden || {}).accounts || {})[acctId]) continue;
       const acct = `act_${acctId}`;
       // รอบหนึ่งกินเวลาเป็นนาที — ผู้ใช้กดหยุดฉุกเฉินแล้วต้องหยุดตรงนี้ ไม่ใช่ไล่ทำต่อจนจบ
       if (loadAp().killSwitch) {

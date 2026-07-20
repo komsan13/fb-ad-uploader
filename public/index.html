@@ -1675,9 +1675,11 @@ async function loadHealthPage(force) {
 const EYE_ON_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
 const EYE_OFF_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/></svg>';
 function eyeBtn(kind, id, hidden) {
-  return `<button class="icon-btn btn-light" title="${hidden ? 'ถูกซ่อนจากหน้าแดชบอร์ด/แคมเปญ/ขึ้นแอดอยู่ — กดเพื่อโชว์กลับ' : 'ซ่อนจากหน้าแดชบอร์ด/แคมเปญ/ขึ้นแอด (จัดการกลับได้ที่หน้านี้)'}" onclick="toggleHidden(${jsStr(kind)},${jsStr(id)},${hidden ? 'false' : 'true'},this)">${hidden ? EYE_OFF_SVG : EYE_ON_SVG}</button>`;
+  return `<button class="icon-btn btn-light" title="${hidden ? 'ถูกซ่อนอยู่ (autopilot ไม่ดูแล) — กดเพื่อโชว์กลับและให้ autopilot ดูแลต่อ' : 'ซ่อนจากหน้าแดชบอร์ด/แคมเปญ/ขึ้นแอด + autopilot หยุดดูแล'}" onclick="toggleHidden(${jsStr(kind)},${jsStr(id)},${hidden ? 'false' : 'true'},this)">${hidden ? EYE_OFF_SVG : EYE_ON_SVG}</button>`;
 }
 async function toggleHidden(kind, id, hide, btn) {
+  // ซ่อนบัญชี = autopilot เลิกดูแล แต่แอดที่เปิดค้างยังวิ่งใช้เงินต่อเอง — ต้องให้ผู้ใช้รู้ก่อนกด
+  if (hide && kind === 'account' && !confirm('ซ่อนบัญชีนี้?\n\n• หายจากหน้าแดชบอร์ด/แคมเปญ/ขึ้นแอด\n• autopilot จะไม่เติมแอด ไม่ขยายงบ ไม่แก้แอดให้บัญชีนี้อีก\n• แอดที่ยังเปิดอยู่จะวิ่งต่อโดยไม่มีระบบดูแล — ถ้าไม่อยากให้เงินเดิน ปิดแอดก่อนซ่อน\n\nกดโชว์กลับได้ที่หน้านี้')) return;
   btn.disabled = true;
   try {
     const d = await (await fetch('/api/hidden', {
@@ -1729,8 +1731,8 @@ function renderHealthPage(results) {
   const acctHtml = rows.map(a => {
     const warn = WARN[a.status] ? ` <span class="st-pill issue">⚠ ${WARN[a.status]}</span>` : '';
     const deadTag = a.dead ? ` <span class="st-pill rejected">💀 ${DEAD_TXT[a.status] || 'ถูกปิด'}</span>` : '';
-    // ซ่อนบัญชีที่ยังใช้งานได้ = แค่หายจากจอ — autopilot ยังเติมแอด/ใช้เงินตามปกติ ต้องมีป้ายย้ำ
-    const apTag = a.hidden && a.status === 1 ? ' <span class="st-pill issue" title="การซ่อนมีผลแค่การแสดงผล — autopilot ยังเติมแอด/ดูแลบัญชีนี้ตามปกติ">⚠ autopilot ยังดูแลอยู่</span>' : '';
+    // บัญชีใช้งานได้ที่ถูกซ่อน: autopilot เลิกดูแลแล้ว แต่แอดที่เปิดค้างยังวิ่งเองได้ — ต้องมีป้ายย้ำ
+    const apTag = a.hidden && a.status === 1 ? ' <span class="st-pill rejected" title="autopilot ไม่เติมแอด/ไม่ขยายงบ/ไม่แก้แอดให้บัญชีนี้แล้ว — แอดที่ยังเปิดอยู่จะวิ่งต่อเองโดยไม่มีระบบดูแล ปิดแอดเองถ้าไม่ต้องการ">⛔ autopilot ไม่ดูแล (ถูกซ่อน)</span>' : '';
     const px = a.dead ? '<span style="color:var(--muted)">—</span>' : a.pixels.length
       ? a.pixels.map(x => `<span style="white-space:nowrap"><span class="st-pill on" title="Pixel ID: ${esc(x.id)}">✓ ${esc(x.name)}</span> <button class="btn-light btn-sm" title="คัดลอก Pixel ID ${esc(x.id)}" onclick="copyPixel(${jsStr(x.id)});this.textContent='✓ คัดลอกแล้ว';setTimeout(()=>this.textContent='คัดลอก ID',1200)">คัดลอก ID</button></span>`).join(' ')
       : `<button class="btn-primary btn-sm" onclick="createPixelHealth(${jsStr(a.pid)},${jsStr(a.id)},this)">+ สร้าง Pixel เลย</button>`;

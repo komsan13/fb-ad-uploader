@@ -633,12 +633,36 @@ describe('ซ่อนบัญชี/เพจจากหน้าสุขภ
     assert.strictEqual(h.pages[0].hidden, true);
   });
 
-  test('การซ่อนไม่กระทบ autopilot — บัญชีที่ซ่อนยังถูกเติมแอดตามปกติ', async (t) => {
+  test('ซ่อนบัญชี = autopilot ไม่แตะบัญชีนั้นเลย (ไม่สร้างแคมเปญ/ไม่เติมแอด)', async (t) => {
     const { base, world } = await boot(t);
     await post(base, '/api/hidden', { kind: 'account', id: ACCT, hidden: true });
     await runTwice(base);
     const made = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/campaigns`);
-    assert.strictEqual(made.length, 1, 'ซ่อน = เรื่องแสดงผลเท่านั้น autopilot ต้องยังทำงานกับบัญชีนี้');
+    assert.strictEqual(made.length, 0, 'บัญชีที่ซ่อนต้องไม่ถูก autopilot เติมแอด/สร้างแคมเปญ');
+    await post(base, '/api/hidden', { kind: 'account', id: ACCT, hidden: false });
+    await runTwice(base);   // ตอนซ่อนอยู่บัญชีไม่เคยถูก baseline — ปลดแล้วรอบแรก baseline รอบสองเติมจริง
+    const after = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/campaigns`);
+    assert.strictEqual(after.length, 1, 'กดโชว์กลับแล้ว autopilot ต้องกลับมาดูแลต่อ');
+  });
+
+  test('ซ่อนเพจ = autopilot ไม่เอาเพจนั้นขึ้นแอด (ตัดออกจากพูล round-robin)', async (t) => {
+    const world = freshWorld({
+      pages: [
+        { id: '70001', name: 'เพจ A', is_published: true, promotion_eligible: true },
+        { id: '70002', name: 'เพจ B', is_published: true, promotion_eligible: true },
+      ],
+    });
+    const config = baseConfig();
+    config.profiles[0].pageId = '70001';
+    const { base } = await boot(t, { world, config });
+    await post(base, '/api/hidden', { kind: 'page', id: '70001', hidden: true });
+    await runTwice(base);
+    const creatives = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/adcreatives`);
+    assert.ok(creatives.length > 0, 'ยังมีเพจ B ใช้ได้ — ต้องเติมแอดตามปกติ');
+    for (const c of creatives) {
+      assert.ok(!String(c.params.object_story_spec || '').includes('70001'),
+        'เพจที่ซ่อนต้องไม่ถูกใช้ขึ้นแอด');
+    }
   });
 });
 
