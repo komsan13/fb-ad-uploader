@@ -350,6 +350,18 @@
 
   /* ---------- Modal ---------- */
   .modal-overlay { position: fixed; inset: 0; background: rgba(23,24,28,.45); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 20px; animation: fadeIn .15s var(--ease); }
+  /* toast แจ้งเตือนมุมขวาล่าง — แทน alert() ที่บล็อกทั้งหน้า */
+  #toastBox { position: fixed; right: 18px; bottom: 18px; z-index: 400; display: flex; flex-direction: column; gap: 8px; max-width: min(420px, calc(100vw - 36px)); }
+  .toast { display: flex; align-items: flex-start; gap: 9px; padding: 11px 14px; border-radius: var(--r-md); background: #fff;
+    border: 1px solid var(--line); border-left: 4px solid var(--muted); box-shadow: 0 8px 30px rgba(0,0,0,.16);
+    font-size: 13px; line-height: 1.45; white-space: pre-line; word-break: break-word; cursor: pointer;
+    animation: toastIn .18s var(--ease); }
+  .toast.ok { border-left-color: var(--green, #0e9268); }
+  .toast.err { border-left-color: var(--red, #d93025); }
+  .toast.warn { border-left-color: #e6a817; }
+  .toast svg { flex-shrink: 0; margin-top: 1px; }
+  .toast.out { opacity: 0; transform: translateX(12px); transition: all .25s var(--ease); }
+  @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
   @keyframes fadeIn { from { opacity: 0; } }
   .modal-box { background: #fff; border-radius: var(--r-lg); box-shadow: 0 20px 60px rgba(0,0,0,.25); width: 100%; max-width: 480px; max-height: 88vh; overflow: hidden; display: flex; flex-direction: column; animation: modalPop .18s var(--ease); }
   @keyframes modalPop { from { opacity: 0; transform: scale(.96) translateY(6px); } }
@@ -555,9 +567,9 @@
       <div class="card">
         <div class="card-head-row">
           <div class="pc-step"><span class="pc-step-num">3</span> รายการแอด <span class="h-desc" id="adCount"></span></div>
-          <button class="btn-primary btn-sm" style="margin-left:auto" onclick="autoLaunch(this)" title="หยิบวิดีโอ+แคปชั่นจากคลัง สร้างแคมเปญ แล้วขึ้นแอดทุกบัญชีที่ใช้ได้ เปิดยิงทันที">⚡ ขึ้นอัตโนมัติทั้งหมด</button>
-          <button class="btn-light btn-sm" onclick="handToAi(this)" title="บันทึกค่าที่ตั้งไว้ทั้งหมด แล้วให้ AI ขึ้นแอดต่อเองอัตโนมัติ">🤖 จำค่านี้ แล้วให้ AI ขึ้นต่อ</button>
-          <button class="btn-light btn-sm" onclick="openLibPick(null)">🎬 เลือกเอง</button>
+          <button class="btn-primary btn-sm" style="margin-left:auto" onclick="autoLaunch(this)" title="หยิบวิดีโอ+แคปชั่นจากคลัง สร้างแคมเปญ แล้วขึ้นแอดทุกบัญชีที่ใช้ได้ เปิดยิงทันที"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg> ขึ้นอัตโนมัติทั้งหมด</button>
+          <button class="btn-light btn-sm" onclick="handToAi(this)" title="บันทึกค่าที่ตั้งไว้ทั้งหมด แล้วให้ AI ขึ้นแอดต่อเองอัตโนมัติ"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg> จำค่านี้ แล้วให้ AI ขึ้นต่อ</button>
+          <button class="btn-light btn-sm" onclick="openLibPick(null)"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1-.3 2.1.3 2.4 1.3Z"/><path d="m6.2 5.3 3.1 3.9"/><path d="m12.4 3.4 3.1 4"/><path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg> เลือกเอง</button>
         </div>
         <div class="hint" style="margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span>กดปุ่มเดียวจบ — ขึ้นให้<b>ทุกบัญชีที่ใช้ได้</b>โดยอัตโนมัติ ไม่ต้องติ๊กเลือกเอง มีสรุปให้ยืนยันก่อนเงินออก —</span>
@@ -586,7 +598,7 @@
             <div id="progressTrack"><div id="progressFill"></div></div>
           </div>
           <div id="doneBanner"></div>
-          <button id="launchBtn" onclick="launch()">🚀 ขึ้นแอดทั้งหมด</button>
+          <button id="launchBtn" onclick="launch()"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg> ขึ้นแอดทั้งหมด</button>
         </div>
       </div>
     </div>
@@ -702,7 +714,7 @@
             </div>
           </div>
           <button class="btn-light" onclick="loadCampaigns(true)" style="display:inline-flex;align-items:center;gap:7px"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>รีเฟรชข้อมูล</button>
-          <button class="btn-light" onclick="aiAdvise(this)" title="ให้ Claude อ่านตัวเลขที่โชว์อยู่ แล้วบอกว่าตัวไหนควรขยาย/หยุด">🤖 ให้ AI วิเคราะห์</button>
+          <button class="btn-light" onclick="aiAdvise(this)" title="ให้ Claude อ่านตัวเลขที่โชว์อยู่ แล้วบอกว่าตัวไหนควรขยาย/หยุด" style="display:inline-flex;align-items:center;gap:7px"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg>ให้ AI วิเคราะห์</button>
           <button class="btn-primary" onclick="openUploadModal()" style="margin-left:0;display:inline-flex;align-items:center;gap:7px"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M3 15v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4"/></svg>ขึ้นแอด</button>
         </div>
       </div>
@@ -787,7 +799,7 @@
           <div class="tile">
             <div class="t-label"><span class="t-ic r"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg></span>บิน / ถูกปิด</div>
             <div class="t-value" id="hDead">—</div>
-            <div class="t-sub">บัญชีถูกปิด + เพจบิน — กดปุ่มตา 👁 เพื่อซ่อนจากหน้าอื่น</div>
+            <div class="t-sub">บัญชีถูกปิด + เพจบิน — กดปุ่มตาเพื่อซ่อนจากหน้าอื่น</div>
           </div>
         </div>
       </div>
@@ -844,7 +856,7 @@
           <button class="btn-primary btn-sm" style="margin-left:auto" onclick="openCapModal()">+ เพิ่มแคปชั่น</button>
         </h2>
         <div class="hint" style="margin-bottom:10px">เตรียมข้อความไว้ล่วงหน้า แล้วตัวจัดแผนจะหยิบไปใส่แอดให้เอง — ยิ่งมีหลายอันยิ่งไม่ต้องใช้ซ้ำ • คลิกแถวเพื่อดู/แก้ไข</div>
-        <input id="capSearch" placeholder="🔍 ค้นหาแคปชั่น..." style="max-width:300px;margin-bottom:10px" oninput="renderCaptions()">
+        <input id="capSearch" placeholder="ค้นหาแคปชั่น..." style="max-width:300px;margin-bottom:10px" oninput="renderCaptions()">
         <div class="tbl-wrap">
           <table>
             <thead><tr>
@@ -955,11 +967,11 @@
         </label>
         <label class="switch-row" style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
           <span class="switch"><input type="checkbox" id="apTest" onchange="saveAutopilot()"><span class="sl"></span></span>
-          <span>🧪 <b>โหมดทดสอบ</b> — สร้างแอดจริงบัญชีละ 1 ตัวแต่<b>ปิดไว้ ไม่ใช้เงินสักบาท</b> ให้ดูฝีมือก่อน • ไม่ปิดแอดขาดทุนและไม่ขยายงบ</span>
+          <span><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#b8860b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M14 2v6a2 2 0 0 0 .245.96l5.51 10.08A2 2 0 0 1 18 22H6a2 2 0 0 1-1.755-2.96l5.51-10.08A2 2 0 0 0 10 8V2"/><path d="M6.453 15h11.094"/><path d="M8.5 2h7"/></svg> <b>โหมดทดสอบ</b> — สร้างแอดจริงบัญชีละ 1 ตัวแต่<b>ปิดไว้ ไม่ใช้เงินสักบาท</b> ให้ดูฝีมือก่อน • ไม่ปิดแอดขาดทุนและไม่ขยายงบ</span>
         </label>
         <label class="switch-row" style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
           <span class="switch"><input type="checkbox" id="apKill" onchange="saveAutopilot()"><span class="sl"></span></span>
-          <span>🛑 <b>หยุดฉุกเฉิน</b> — หยุดทุกการกระทำทันที (ทับสวิตช์ด้านบน)</span>
+          <span><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--red,#d93025)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M12 16h.01"/><path d="M12 8v4"/><path d="M15.312 2a2 2 0 0 1 1.414.586l4.688 4.688A2 2 0 0 1 22 8.688v6.624a2 2 0 0 1-.586 1.414l-4.688 4.688a2 2 0 0 1-1.414.586H8.688a2 2 0 0 1-1.414-.586l-4.688-4.688A2 2 0 0 1 2 15.312V8.688a2 2 0 0 1 .586-1.414l4.688-4.688A2 2 0 0 1 8.688 2z"/></svg> <b>หยุดฉุกเฉิน</b> — หยุดทุกการกระทำทันที (ทับสวิตช์ด้านบน)</span>
         </label>
         <div class="fgrid" style="align-items:flex-end;margin-bottom:6px">
           <div class="field" style="max-width:340px">
@@ -982,7 +994,7 @@
         </div>
 
         <details id="apLimitsBox" style="margin-bottom:10px;border:1px solid var(--line);border-radius:var(--r-md);padding:8px 12px">
-          <summary style="cursor:pointer;font-weight:600">⚙️ ปรับเพดานเอง</summary>
+          <summary style="cursor:pointer;font-weight:600"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg> ปรับเพดานเอง</summary>
           <div class="hint" style="margin:10px 0">
             ทุกช่องมีกรอบต่ำสุด–สูงสุดบังคับไว้ ใส่นอกกรอบระบบจะบีบกลับให้เอง เพราะค่าพวกนี้คือเกราะกันบัญชีโดนแบนและกันเงินไหล<br>
             เว้นว่างหรือกดปุ่มคืนค่าตั้งต้น = กลับไปใช้ค่าเดิมของระบบ • ทุกการแก้ถูกจดไว้ในบันทึกด้านล่าง
@@ -992,7 +1004,7 @@
           <button class="btn-light btn-sm" onclick="apResetLimits()" style="margin-top:8px">คืนค่าตั้งต้นทั้งหมด</button>
         </details>
         <div class="hint" style="margin-bottom:10px;background:#fff6e5;border:1px solid #f0d9a8;border-radius:var(--r-md);padding:10px 12px">
-          ⚠️ <b>วิธีหยุดระบบคือปุ่มในหน้านี้เท่านั้น</b> — ระบบถูกตั้งให้ดูแลตัวเองเต็มที่ ถ้าไม่มีแคมเปญที่เปิดอยู่ มันจะสร้างใหม่ให้เสมอ ดังนั้นการเข้าไป <b>pause แคมเปญใน Ads Manager จะไม่ได้ผล</b> เพราะมันจะสร้างตัวใหม่มาแทนภายในไม่กี่นาที<br>
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#b45309" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg> <b>วิธีหยุดระบบคือปุ่มในหน้านี้เท่านั้น</b> — ระบบถูกตั้งให้ดูแลตัวเองเต็มที่ ถ้าไม่มีแคมเปญที่เปิดอยู่ มันจะสร้างใหม่ให้เสมอ ดังนั้นการเข้าไป <b>pause แคมเปญใน Ads Manager จะไม่ได้ผล</b> เพราะมันจะสร้างตัวใหม่มาแทนภายในไม่กี่นาที<br>
           จะหยุดจริงต้องปิดสวิตช์ "เปิดระบบอัตโนมัติ" หรือกด "หยุดฉุกเฉิน" ที่นี่
         </div>
         <div style="display:flex;gap:8px;margin-bottom:10px">
@@ -1011,7 +1023,7 @@
           <li><span>เมนู การตั้งค่าแอป → <b>พื้นฐาน (Basic)</b> → คัดลอก <b>App ID</b> และ <b>App Secret</b> (กด "แสดง") มาวางในการ์ดบัญชีด้านบน</span></li>
           <li><span>กดปุ่ม <b>เข้าสู่ระบบด้วย Facebook</b> → login → กดยอมรับ → เสร็จ! token มาเองและต่ออายุ 60 วันอัตโนมัติ</span></li>
         </ol>
-        <div class="hint">💡 บัญชี FB ที่ login ต้องเป็นแอดมิน/ผู้ทดสอบของแอปนั้น (เฟสที่สร้างแอปเองเป็นแอดมินอยู่แล้ว ไม่ต้องส่ง App Review) • ถ้าหลาย ad account อยู่ใต้ FB เดียวกัน login ครั้งเดียวเห็นครบทุกบัญชี</div>
+        <div class="hint"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#b8860b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg> บัญชี FB ที่ login ต้องเป็นแอดมิน/ผู้ทดสอบของแอปนั้น (เฟสที่สร้างแอปเองเป็นแอดมินอยู่แล้ว ไม่ต้องส่ง App Review) • ถ้าหลาย ad account อยู่ใต้ FB เดียวกัน login ครั้งเดียวเห็นครบทุกบัญชี</div>
       </div>
     </section>
   </main>
@@ -1036,7 +1048,7 @@
 <div id="aiModal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeAi()">
   <div class="modal-box" style="max-width:820px">
     <div class="modal-head">
-      <h3>🤖 AI วิเคราะห์แคมเปญ</h3>
+      <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg>AI วิเคราะห์แคมเปญ</h3>
       <button class="icon-btn btn-light" onclick="closeAi()"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </div>
     <div id="aiBody" class="modal-body"></div>
@@ -1104,6 +1116,65 @@ function esc(s) {
 // (เดิมใช้ .replace(/'/g,'&#39;') ซึ่งไม่พอ — HTML parser ถอด &#39; กลับเป็น ' ก่อน JS อ่าน
 //  ชื่อแคมเปญที่มี \ หรือ ' จึงทำให้ปุ่มลบพัง/รันโค้ดแปลกได้)
 function jsStr(s) { return esc(JSON.stringify(String(s == null ? '' : s))); }
+
+// ---------- ไอคอน SVG (lucide) — เลิกใช้ emoji ใน UI: ขนาด/สีคุมได้ หน้าตาเหมือนกันทุกเครื่อง ----------
+// ใช้ได้เฉพาะจุดที่ render เป็น HTML — จุดที่เป็น text ล้วน (textContent/option/placeholder/alert)
+// ใส่ SVG ไม่ได้ ให้ใช้ glyph ธรรมดา (✓ ✗) หรือถอด icon ทิ้ง
+const IC_P = {
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  checkCircle: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+  xCircle: '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  skull: '<path d="m12.5 17-.5-1-.5 1h1z"/><path d="M15 22a1 1 0 0 0 1-1v-1a2 2 0 0 0 1.56-3.25 8 8 0 1 0-11.12 0A2 2 0 0 0 8 20v1a1 1 0 0 0 1 1z"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="12" r="1"/>',
+  wrench: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+  ban: '<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>',
+  snow: '<line x1="2" x2="22" y1="12" y2="12"/><line x1="12" x2="12" y1="2" y2="22"/><path d="m20 16-4-4 4-4"/><path d="m4 8 4 4-4 4"/><path d="m16 4-4 4-4-4"/><path d="m8 20 4-4 4 4"/>',
+  warn: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  trend: '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
+  box: '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
+  moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+  inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  stop: '<path d="M12 16h.01"/><path d="M12 8v4"/><path d="M15.312 2a2 2 0 0 1 1.414.586l4.688 4.688A2 2 0 0 1 22 8.688v6.624a2 2 0 0 1-.586 1.414l-4.688 4.688a2 2 0 0 1-1.414.586H8.688a2 2 0 0 1-1.414-.586l-4.688-4.688A2 2 0 0 1 2 15.312V8.688a2 2 0 0 1 .586-1.414l4.688-4.688A2 2 0 0 1 8.688 2z"/>',
+  flask: '<path d="M14 2v6a2 2 0 0 0 .245.96l5.51 10.08A2 2 0 0 1 18 22H6a2 2 0 0 1-1.755-2.96l5.51-10.08A2 2 0 0 0 10 8V2"/><path d="M6.453 15h11.094"/><path d="M8.5 2h7"/>',
+  barrier: '<rect x="2" y="6" width="20" height="8" rx="1"/><path d="M17 14v7"/><path d="M7 14v7"/><path d="M17 3v3"/><path d="M7 3v3"/><path d="M10.5 14 17 6.5"/><path d="M13.5 6.5 7 13"/>',
+  shield: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1 1 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
+  coins: '<circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/>',
+  eye: '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
+  sparkle: '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>',
+  bot: '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/>',
+  rocket: '<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>',
+  chart: '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
+};
+function ic(name, opt = {}) {
+  const { size = 13, color = '', sw = 2.2 } = opt;
+  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px${color ? ';color:' + color : ''}">${IC_P[name] || ''}</svg>`;
+}
+
+// ---------- toast แจ้งเตือน — แทน alert() ----------
+// เดาชนิดจากข้อความเอง เพื่อให้จุดเรียกเดิม (เคยเป็น alert) เปลี่ยนมาได้ตรงๆ โดยไม่ต้องไล่ระบุชนิดเอง 50 จุด
+function toast(msg, type) {
+  msg = String(msg == null ? '' : msg);
+  if (!type) {
+    type = /ไม่สำเร็จ|ล้มเหลว|ผิดพลาด|✗|บล็อก popup/.test(msg) ? 'err'
+      : /^✓|สำเร็จ|เรียบร้อย|บันทึกแล้ว|ลบ key ออกแล้ว/.test(msg) ? 'ok'
+      : 'warn';
+  }
+  let box = document.getElementById('toastBox');
+  if (!box) { box = document.createElement('div'); box.id = 'toastBox'; document.body.appendChild(box); }
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  const icons = { ok: ic('checkCircle', { size: 15, color: 'var(--green,#0e9268)' }), err: ic('xCircle', { size: 15, color: 'var(--red,#d93025)' }), warn: ic('warn', { size: 15, color: '#e6a817' }) };
+  el.innerHTML = (icons[type] || '') + '<div></div>';
+  el.lastChild.textContent = msg.replace(/^[✓✗]\s*/, '');   // ข้อความเป็น text เสมอ — กัน HTML หลุดจาก error ของ FB
+  const kill = () => { el.classList.add('out'); setTimeout(() => el.remove(), 260); };
+  el.onclick = kill;
+  box.appendChild(el);
+  while (box.children.length > 5) box.firstChild.remove();   // ซ้อนได้ไม่เกิน 5 อัน
+  // ข้อความยาวอยู่นานขึ้นให้อ่านทัน • error อยู่นานกว่า
+  setTimeout(kill, Math.min(12000, (type === 'err' ? 6000 : 4000) + Math.max(0, msg.length - 60) * 30));
+}
 
 // ถูกปิดใช้งาน/กำลังปิด/ปิดแล้ว = บิน — ใช้ติดป้าย/จัดเรียงในหน้าสุขภาพเท่านั้น (โชว์ทุกตัว
 // แล้วให้ผู้ใช้กดปุ่มตาซ่อนเอง) ห้ามใช้ข้ามการดึงสถิติ: บัญชีสถานะนี้ยังมียอดใช้จ่ายจริงที่ต้องโชว์
@@ -1252,7 +1323,7 @@ function profCardHTML(p) {
         <div class="field">
           <div style="display:flex;justify-content:space-between;align-items:center">
             <label style="margin:0">บัญชีโฆษณา (Ad Account)</label>
-            <a onclick="openHealth(${jsStr(p.id)})" style="font-size:12px;font-weight:600;cursor:pointer">🩺 ตรวจบัตร/Pixel</a>
+            <a onclick="openHealth(${jsStr(p.id)})" style="font-size:12px;font-weight:600;cursor:pointer"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-1px"><path d="M11 2v2"/><path d="M5 2v2"/><path d="M5 3H4a2 2 0 0 0-2 2v4a6 6 0 0 0 12 0V5a2 2 0 0 0-2-2h-1"/><path d="M8 15a6 6 0 0 0 12 0v-3"/><circle cx="20" cy="10" r="2"/></svg> ตรวจบัตร/Pixel</a>
           </div>
           <select class="p-adaccount" onchange="saveProfileField(${jsStr(p.id)}, {adAccountId: this.value})" style="margin-top:5px"><option value="">— เชื่อมต่อในขั้นตอนที่ 1 ก่อน —</option></select>
         </div>
@@ -1265,13 +1336,13 @@ function fbLogin(pid) {
   const card = document.querySelector(`.prof-card[data-pid="${pid}"]`);
   const appId = card.querySelector('.p-appid').value.trim();
   const appSecret = card.querySelector('.p-appsecret').value.trim();
-  if (!appId) return alert('ใส่ App ID ก่อนครับ (หาได้ในหน้า Basic Settings ของแอป)');
+  if (!appId) return toast('ใส่ App ID ก่อนครับ (หาได้ในหน้า Basic Settings ของแอป)');
   const body = { id: pid, appId };
   if (appSecret) body.appSecret = appSecret;
   fetch('/api/profiles/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(() => {
     const w = 600, h = 720, left = (screen.width - w) / 2, top = (screen.height - h) / 2;
     const popup = window.open('/auth/login?profile=' + pid, 'fblogin', `width=${w},height=${h},left=${left},top=${top}`);
-    if (!popup) alert('เบราว์เซอร์บล็อก popup — อนุญาต popup ให้ localhost แล้วลองใหม่ครับ');
+    if (!popup) toast('เบราว์เซอร์บล็อก popup — อนุญาต popup ให้ localhost แล้วลองใหม่ครับ');
   });
 }
 window.addEventListener('message', async (e) => {
@@ -1292,7 +1363,7 @@ function closeHealth() { document.getElementById('healthModal').style.display = 
 async function openHealth(pid) {
   const card = document.querySelector(`.prof-card[data-pid="${pid}"]`);
   const acct = card.querySelector('.p-adaccount').value;
-  if (!acct) return alert('เลือกบัญชีโฆษณาก่อนครับ');
+  if (!acct) return toast('เลือกบัญชีโฆษณาก่อนครับ');
   healthCtx = { pid, acct };
   document.getElementById('healthModal').style.display = 'flex';
   document.getElementById('healthBody').innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted)"><span class="spin"></span> กำลังตรวจสอบ...</div>';
@@ -1306,11 +1377,11 @@ async function renderHealth() {
   if (d.error) { body.innerHTML = `<div style="color:var(--red)">ตรวจไม่สำเร็จ: ${esc(d.error)}</div>`; return; }
   const billUrl = `https://business.facebook.com/ads/manager/account_settings/account_billing/?act=${acct}`;
   const pxList = d.pixels.length
-    ? d.pixels.map(p => `<div class="px-item">📊 ${esc(p.name)} <code>${esc(p.id)}</code> <button class="btn-light btn-sm" style="margin-left:auto" onclick="copyPixel(${jsStr(p.id)})">คัดลอก ID</button></div>`).join('')
+    ? d.pixels.map(p => `<div class="px-item">${ic('chart')} ${esc(p.name)} <code>${esc(p.id)}</code> <button class="btn-light btn-sm" style="margin-left:auto" onclick="copyPixel(${jsStr(p.id)})">คัดลอก ID</button></div>`).join('')
     : '<div style="color:var(--muted);font-size:13px;padding:6px 0">ยังไม่มี Pixel</div>';
   body.innerHTML = `
     <div class="health-item">
-      <div class="hi-head">💳 วิธีการชำระเงิน
+      <div class="hi-head"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><rect width="20" height="14" x="2" y="5" rx="2"/><path d="M2 10h20"/></svg> วิธีการชำระเงิน
         <span class="hi-badge ${d.hasPayment ? 'ok' : 'bad'}">${d.hasPayment ? 'เชื่อมบัตรแล้ว' : 'ยังไม่เชื่อมบัตร'}</span>
       </div>
       ${d.hasPayment
@@ -1319,7 +1390,7 @@ async function renderHealth() {
            <a href="${billUrl}" target="_blank" class="btn-primary btn-sm" style="text-decoration:none;display:inline-block">+ เพิ่มบัตร/วิธีชำระเงิน ↗</a>`}
     </div>
     <div class="health-item">
-      <div class="hi-head">📊 Pixel / Dataset
+      <div class="hi-head">${ic('chart', { size: 14 })} Pixel / Dataset
         <span class="hi-badge ${d.pixels.length ? 'ok' : 'bad'}">${d.pixels.length ? d.pixels.length + ' ตัว' : 'ยังไม่มี'}</span>
       </div>
       ${pxList}
@@ -1332,14 +1403,14 @@ async function renderHealth() {
 function copyPixel(id) { navigator.clipboard.writeText(id); }
 async function createPixel(btn) {
   const name = document.getElementById('newPixelName').value.trim();
-  if (!name) return alert('ตั้งชื่อ Pixel ก่อนครับ');
+  if (!name) return toast('ตั้งชื่อ Pixel ก่อนครับ');
   btn.disabled = true; btn.textContent = 'กำลังสร้าง...';
   const res = await fetch('/api/create-pixel', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ profile: healthCtx.pid, account: healthCtx.acct, name }),
   });
   const d = await res.json();
-  if (d.error) { alert('สร้างไม่สำเร็จ: ' + d.error); btn.disabled = false; btn.textContent = '+ สร้าง Pixel'; return; }
+  if (d.error) { toast('สร้างไม่สำเร็จ: ' + d.error); btn.disabled = false; btn.textContent = '+ สร้าง Pixel'; return; }
   await renderHealth();
 }
 function renderSettings() {
@@ -1373,14 +1444,14 @@ async function saveTelegram() {
       chatId: document.getElementById('tgChat').value.trim(),
     }),
   })).json();
-  if (r.ok) { alert('บันทึกแล้ว — กด "ส่งทดสอบ" เพื่อยืนยันว่าถึงมือถือจริง'); loadTelegramUI(); }
-  else alert('บันทึกไม่สำเร็จ');
+  if (r.ok) { toast('บันทึกแล้ว — กด "ส่งทดสอบ" เพื่อยืนยันว่าถึงมือถือจริง'); loadTelegramUI(); }
+  else toast('บันทึกไม่สำเร็จ');
 }
 async function testTelegram(btn) {
   btn.disabled = true; btn.textContent = 'กำลังส่ง...';
   const r = await (await fetch('/api/telegram-test', { method: 'POST' })).json();
   btn.disabled = false; btn.textContent = 'ส่งทดสอบ';
-  alert(r.ok ? '✅ ส่งสำเร็จ! เช็คข้อความในแชท Telegram' : '❌ ' + r.error);
+  toast(r.ok ? '✓ ส่งสำเร็จ! เช็คข้อความในแชท Telegram' : '✗ ' + r.error);
 }
 async function connectProfile(pid) {
   const card = document.querySelector(`.prof-card[data-pid="${pid}"]`);
@@ -1405,7 +1476,7 @@ async function populateProfileCard(pid, force) {
     const res = await fetch('/api/accounts?profile=' + pid);
     const data = await res.json();
     if (data.error) {
-      st.textContent = '❌ ' + data.error;
+      st.textContent = '✗ ' + data.error;
       st.className = 'p-status err';
       return;
     }
@@ -1413,7 +1484,7 @@ async function populateProfileCard(pid, force) {
   }
   const data = accountCache[pid];
   const p = profiles.find(x => x.id === pid);
-  st.textContent = '✅ เชื่อมต่อแล้ว: ' + data.name;
+  st.textContent = '✓ เชื่อมต่อแล้ว: ' + data.name;
   st.className = 'p-status ok';
   const accSel = card.querySelector('.p-adaccount');
   // account_status จาก FB: 1=ใช้ได้, 2=ถูกปิดใช้งาน, 3=ค้างชำระ, 7=รอตรวจความเสี่ยง, 9=ช่วงผ่อนผัน, 100/101=ปิดแล้ว
@@ -1431,7 +1502,7 @@ async function populateProfileCard(pid, force) {
   st.textContent += ` • บัญชีโฆษณาใช้ได้ ${okCount}/${data.adAccounts.length}`;
   const pageSel = card.querySelector('.p-page');
   pageSel.innerHTML = data.pages.length
-    ? data.pages.map(pg => `<option value="${pg.id}">📄 ${esc(pg.name)}</option>`).join('')
+    ? data.pages.map(pg => `<option value="${pg.id}">${esc(pg.name)}</option>`).join('')
     : '<option value="">— ไม่มีเพจที่ลงโฆษณาได้ (เพจบิน/ถูกจำกัด หรือ token ขาดสิทธิ์เพจ) —</option>';
   if (p.pageId) pageSel.value = p.pageId;
   // บันทึกค่าที่ dropdown เลือกอัตโนมัติ (ตัวแรก) ถ้ายังไม่เคยตั้ง
@@ -1724,7 +1795,7 @@ async function toggleHidden(kind, id, hide, btn) {
       body: JSON.stringify({ kind, id, hidden: hide }),
     })).json();
     if (d.error) throw new Error(d.error);
-  } catch (e) { btn.disabled = false; return alert('บันทึกไม่สำเร็จ: ' + e.message); }
+  } catch (e) { btn.disabled = false; return toast('บันทึกไม่สำเร็จ: ' + e.message); }
   // อัปเดต cache หน้าสุขภาพทุกโปรไฟล์ (เพจตัวเดียวโผล่ได้หลายโปรไฟล์) แล้ววาดใหม่ทันที
   for (const h of Object.values(healthCache)) {
     for (const it of (kind === 'account' ? h.accounts : h.pages) || []) {
@@ -1767,9 +1838,9 @@ function renderHealthPage(results) {
 
   const acctHtml = rows.map(a => {
     const warn = WARN[a.status] ? ` <span class="st-pill issue">⚠ ${WARN[a.status]}</span>` : '';
-    const deadTag = a.dead ? ` <span class="st-pill rejected">💀 ${DEAD_TXT[a.status] || 'ถูกปิด'}</span>` : '';
+    const deadTag = a.dead ? ` <span class="st-pill rejected">${ic('skull', { size: 12 })} ${DEAD_TXT[a.status] || 'ถูกปิด'}</span>` : '';
     // บัญชีใช้งานได้ที่ถูกซ่อน: autopilot เลิกดูแลแล้ว แต่แอดที่เปิดค้างยังวิ่งเองได้ — ต้องมีป้ายย้ำ
-    const apTag = a.hidden && a.status === 1 ? ' <span class="st-pill rejected" title="autopilot ไม่เติมแอด/ไม่ขยายงบ/ไม่แก้แอดให้บัญชีนี้แล้ว — แอดที่ยังเปิดอยู่จะวิ่งต่อเองโดยไม่มีระบบดูแล ปิดแอดเองถ้าไม่ต้องการ">⛔ autopilot ไม่ดูแล (ถูกซ่อน)</span>' : '';
+    const apTag = a.hidden && a.status === 1 ? ` <span class="st-pill rejected" title="autopilot ไม่เติมแอด/ไม่ขยายงบ/ไม่แก้แอดให้บัญชีนี้แล้ว — แอดที่ยังเปิดอยู่จะวิ่งต่อเองโดยไม่มีระบบดูแล ปิดแอดเองถ้าไม่ต้องการ">${ic('ban', { size: 12 })} autopilot ไม่ดูแล (ถูกซ่อน)</span>` : '';
     const px = a.dead ? '<span style="color:var(--muted)">—</span>' : a.pixels.length
       ? a.pixels.map(x => `<span style="white-space:nowrap"><span class="st-pill on" title="Pixel ID: ${esc(x.id)}">✓ ${esc(x.name)}</span> <button class="btn-light btn-sm" title="คัดลอก Pixel ID ${esc(x.id)}" onclick="copyPixel(${jsStr(x.id)});this.textContent='✓ คัดลอกแล้ว';setTimeout(()=>this.textContent='คัดลอก ID',1200)">คัดลอก ID</button></span>`).join(' ')
       : `<button class="btn-primary btn-sm" onclick="createPixelHealth(${jsStr(a.pid)},${jsStr(a.id)},this)">+ สร้าง Pixel เลย</button>`;
@@ -1777,7 +1848,9 @@ function renderHealthPage(results) {
       ? `<span class="st-pill on">✓ ${esc(a.funding)}</span>`
       : `<a class="btn-primary btn-sm" style="text-decoration:none;display:inline-block;color:#fff" target="_blank" href="https://business.facebook.com/billing_hub/payment_settings?asset_id=${a.id}">เชื่อมบัตรเลย ↗</a>`;
     const rowStyle = a.hidden ? ' style="opacity:.45"' : a.dead ? ' style="opacity:.6"' : a.missing ? ' style="background:#fffbf3"' : '';
-    const icon = a.dead ? '💀 ' : a.missing ? '🔧 ' : '✅ ';
+    const icon = a.dead ? ic('skull', { color: 'var(--red,#d93025)' }) + ' '
+      : a.missing ? ic('wrench', { color: '#b45309' }) + ' '
+      : ic('checkCircle', { color: 'var(--green,#0e9268)' }) + ' ';
     return `<tr${rowStyle}>
       <td style="font-weight:600">${icon}${esc(a.name)}${warn}${deadTag}${apTag}<div class="res-label">${multi ? esc(a.plabel) + ' • ' : ''}${a.id}</div></td>
       <td>${px}</td>
@@ -1804,7 +1877,7 @@ function renderHealthPage(results) {
   const nPageOk = pages.filter(g => g.ok).length;
   const nHiddenPage = pages.filter(g => g.hidden).length;
   document.getElementById('healthPageRows').innerHTML = pages.map(g => `<tr${g.hidden ? ' style="opacity:.45"' : g.ok ? '' : ' style="opacity:.55"'}>
-      <td style="font-weight:600">${g.ok ? '✅ ' : '💀 '}${esc(g.name)}<div class="res-label">${multi ? esc(g.plabel) + ' • ' : ''}${g.id}</div></td>
+      <td style="font-weight:600">${g.ok ? ic('checkCircle', { color: 'var(--green,#0e9268)' }) : ic('skull', { color: 'var(--red,#d93025)' })} ${esc(g.name)}<div class="res-label">${multi ? esc(g.plabel) + ' • ' : ''}${g.id}</div></td>
       <td>${g.ok
         ? '<span class="st-pill on">✓ ใช้ลงโฆษณาได้</span>'
         : `<span class="st-pill rejected">✕ บิน${!g.published ? ' (ถูกปิดเผยแพร่)' : ''}</span>${g.reason ? `<div class="res-label">${esc(g.reason)}</div>` : ''}`}</td>
@@ -1844,7 +1917,7 @@ async function createAllPixelsHealth(btn) {
     } catch (e) { fails.push(`${list[i].id}: ${e.message}`); }
   }
   launchAccountsBuilt = false;
-  if (fails.length) alert(`สร้างไม่สำเร็จ ${fails.length} บัญชี:\n` + fails.join('\n'));
+  if (fails.length) toast(`สร้างไม่สำเร็จ ${fails.length} บัญชี:\n` + fails.join('\n'));
   loadHealthPage(true);
 }
 async function createPixelHealth(pid, acctId, btn) {
@@ -1856,7 +1929,7 @@ async function createPixelHealth(pid, acctId, btn) {
   })).json();
   if (r.error) {
     if (btn) { btn.disabled = false; btn.textContent = '+ สร้าง Pixel เลย'; }
-    return alert('สร้าง Pixel ไม่สำเร็จ: ' + r.error);
+    return toast('สร้าง Pixel ไม่สำเร็จ: ' + r.error);
   }
   delete fullAccountCache[pid]; // ให้หน้าขึ้นแอดเห็น Pixel ใหม่ด้วย
   launchAccountsBuilt = false;
@@ -1942,17 +2015,17 @@ function renderLaunchAccounts() {
       const detail = (r.ready && isChecked) ? `<div class="acct-detail">
         <select onchange="launchSetPixel(${jsStr(v)}, this.value)" title="Pixel ของบัญชีนี้">
           ${a.pixels.length
-            ? a.pixels.map(x => `<option value="${x.id}" ${x.id === a.chosenPixel ? 'selected' : ''}>📊 ${esc(x.name || x.id)}</option>`).join('')
+            ? a.pixels.map(x => `<option value="${x.id}" ${x.id === a.chosenPixel ? 'selected' : ''}>${esc(x.name || x.id)}</option>`).join('')
             : '<option value="">— ไม่มี Pixel —</option>'}
         </select>
         <select onchange="launchSetPage(${jsStr(v)}, this.value)" title="เพจที่ใช้ลงโฆษณา">
           ${a.pages.length
-            ? a.pages.map(g => `<option value="${g.id}" ${g.id === a.chosenPage ? 'selected' : ''}>📄 ${esc(g.name)}</option>`).join('')
+            ? a.pages.map(g => `<option value="${g.id}" ${g.id === a.chosenPage ? 'selected' : ''}>${esc(g.name)}</option>`).join('')
             : '<option value="">— ไม่พบเพจ —</option>'}
         </select>
         <select onchange="launchSetBeneficiary(${jsStr(v)}, this.value)" title="ผู้ลงโฆษณา (ธุรกิจที่ยืนยันตัวตนกับ FB แล้ว) — จำค่าให้ถาวรต่อบัญชี ไม่บังคับ">
           <option value="">— ผู้ลงโฆษณา: ไม่ระบุ —</option>
-          ${a.beneficiaryOptions.map(b => `<option value="${b.id}" ${b.id === a.beneficiaryId ? 'selected' : ''}>✅ ${esc(b.name)}</option>`).join('')}
+          ${a.beneficiaryOptions.map(b => `<option value="${b.id}" ${b.id === a.beneficiaryId ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}
         </select>
       </div>` : '';
       return `<label class="acct-row ${r.ready ? '' : 'row-off'}" title="${esc(tip)}">
@@ -2249,7 +2322,7 @@ async function copyAdset(id, btn) {
     body: JSON.stringify({ id, profile: detailCtx.pid }),
   })).json();
   btn.disabled = false; btn.textContent = '⧉ ก๊อปสเกล';
-  if (r.error) return alert('ก๊อปไม่สำเร็จ: ' + r.error);
+  if (r.error) return toast('ก๊อปไม่สำเร็จ: ' + r.error);
   bustCaches({ dash: 1, camp: 1 });
   renderCampaignDetail(); // โชว์ตัวก๊อปทันที
 }
@@ -2260,7 +2333,7 @@ async function toggleDetailObj(id, cur) {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id, status: to, profile: detailCtx.pid }),
   })).json();
-  if (r.error) alert('เปลี่ยนสถานะไม่สำเร็จ: ' + r.error);
+  if (r.error) toast('เปลี่ยนสถานะไม่สำเร็จ: ' + r.error);
   else bustCaches({ dash: 1, camp: 1 }); // สถานะเปลี่ยน → เลขที่ cache ไว้ทั้งแดชบอร์ดและหน้าแคมเปญไม่จริงแล้ว
   renderCampaignDetail();
 }
@@ -2272,7 +2345,7 @@ async function deleteCampaign(id, name, pid) {
     body: JSON.stringify({ id, profile: pid }),
   });
   const data = await res.json();
-  if (data.error) return alert('ลบไม่สำเร็จ: ' + data.error);
+  if (data.error) return toast('ลบไม่สำเร็จ: ' + data.error);
   bustCaches({ dash: 1, camp: 1 }); // ทุกช่วงเวลา/ทุกชุดบัญชีต้องโหลดใหม่ ไม่ให้แคมเปญที่ลบแล้วหลอนกลับมา
   loadCampaigns(true);
 }
@@ -2311,7 +2384,7 @@ async function bulkDeleteCampaigns() {
     } catch (e) { fails.push(`${x.name}: ${e.message}`); }
   }
   btn.disabled = false;
-  if (fails.length) alert(`ลบไม่สำเร็จ ${fails.length}/${sel.length} แคมเปญ:\n\n` + fails.join('\n'));
+  if (fails.length) toast(`ลบไม่สำเร็จ ${fails.length}/${sel.length} แคมเปญ:\n\n` + fails.join('\n'));
   bustCaches({ dash: 1, camp: 1 });
   loadCampaigns(true);
 }
@@ -2323,7 +2396,7 @@ async function toggleCampaign(id, cur, pid) {
     body: JSON.stringify({ id, status: to, profile: pid }),
   });
   const data = await res.json();
-  if (data.error) { alert('เปลี่ยนสถานะไม่สำเร็จ: ' + data.error); return loadCampaigns(true); }
+  if (data.error) { toast('เปลี่ยนสถานะไม่สำเร็จ: ' + data.error); return loadCampaigns(true); }
   bustCaches({ dash: 1, camp: 1 });
   loadCampaigns(true);
 }
@@ -2388,7 +2461,7 @@ function renderLibrary() {
 
 function libFilesPicked(files) {
   const vids = [...files].filter(f => f.type.startsWith('video/'));
-  if (vids.length < files.length) alert('คลังนี้เก็บเฉพาะวิดีโอ — ไฟล์ที่ไม่ใช่วิดีโอถูกข้ามไป');
+  if (vids.length < files.length) toast('คลังนี้เก็บเฉพาะวิดีโอ — ไฟล์ที่ไม่ใช่วิดีโอถูกข้ามไป');
   vids.forEach(uploadToLib);
 }
 
@@ -2405,7 +2478,7 @@ async function uploadToLib(file) {
   if (thumb) form.append('thumb', thumb);
   form.append('file', file);
 
-  const fail = (msg) => { row.remove(); alert(`อัป "${file.name}" เข้าคลังไม่สำเร็จ${msg ? ' — ' + msg : ''}`); };
+  const fail = (msg) => { row.remove(); toast(`อัป "${file.name}" เข้าคลังไม่สำเร็จ${msg ? ' — ' + msg : ''}`); };
   const xhr = new XMLHttpRequest();
   xhr.open('POST', '/api/library');
   xhr.upload.onprogress = (e) => {
@@ -2437,7 +2510,7 @@ async function renameLib(id, input) {
     if (d.error) throw new Error(d.error);
     if (item) item.name = name;
   } catch (e) {
-    alert('เปลี่ยนชื่อไม่สำเร็จ: ' + e.message);
+    toast('เปลี่ยนชื่อไม่สำเร็จ: ' + e.message);
     if (item) input.value = item.name;
   }
 }
@@ -2450,7 +2523,7 @@ async function deleteLib(id) {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id }),
     })).json();
     if (d.error) throw new Error(d.error);
-  } catch (e) { return alert('ลบไม่สำเร็จ: ' + e.message); }
+  } catch (e) { return toast('ลบไม่สำเร็จ: ' + e.message); }
   libItems = libItems.filter(x => x.id !== id);
   renderLibrary();
 }
@@ -2465,9 +2538,9 @@ async function saveAiKey(btn) {
       body: JSON.stringify({ key: document.getElementById('aiKey').value.trim() }),
     })).json();
     if (d.error) throw new Error(d.error);
-    alert(d.hasKey ? 'บันทึก key แล้ว' : 'ลบ key ออกแล้ว');
+    toast(d.hasKey ? 'บันทึก key แล้ว' : 'ลบ key ออกแล้ว');
     loadAiKeyState();
-  } catch (e) { alert('บันทึกไม่สำเร็จ: ' + e.message); }
+  } catch (e) { toast('บันทึกไม่สำเร็จ: ' + e.message); }
   finally { btn.disabled = false; }
 }
 async function loadAiKeyState() {
@@ -2477,7 +2550,7 @@ async function loadAiKeyState() {
     const d = await (await fetch('/api/ai-key')).json();
     const base = 'เอา key จาก <b>console.anthropic.com</b> → API Keys → Create Key • คิดเงินตามการใช้งานจริง (วิเคราะห์รอบละไม่กี่สตางค์) • ปล่อยว่างแล้วกดบันทึก = ลบ key ออก';
     el.innerHTML = d.hasKey
-      ? `✅ ใส่ key แล้ว${d.fromEnv ? ' (จาก environment variable)' : ''} — ใช้ปุ่ม "ให้ AI วิเคราะห์" ในหน้าแคมเปญได้เลย<br>${base}`
+      ? `${ic('checkCircle', { color: 'var(--green,#0e9268)' })} ใส่ key แล้ว${d.fromEnv ? ' (จาก environment variable)' : ''} — ใช้ปุ่ม "ให้ AI วิเคราะห์" ในหน้าแคมเปญได้เลย<br>${base}`
       : base;
   } catch { /* โหลดสถานะไม่ได้ ไม่กระทบการใช้งาน */ }
 }
@@ -2532,7 +2605,7 @@ function saveLaunchDefaultsSoon() {
         body: JSON.stringify(collectLaunchDefaults()),
       });
       if (tag) { tag.textContent = '✓ จำค่าไว้แล้ว'; setTimeout(() => { tag.textContent = ''; }, 2000); }
-    } catch { if (tag) tag.textContent = '⚠️ จำค่าไม่สำเร็จ'; }
+    } catch { if (tag) tag.textContent = '⚠ จำค่าไม่สำเร็จ'; }
   }, 800);
 }
 async function loadLaunchDefaults() {
@@ -2663,7 +2736,7 @@ function lpUpload(targetId) {
   inp.onchange = async () => {
     const f = inp.files[0];
     if (!f) return;
-    if (f.size > 8 * 1024 * 1024) return alert('ไฟล์ใหญ่เกิน 8MB — ย่อรูปก่อนแล้วลองใหม่');
+    if (f.size > 8 * 1024 * 1024) return toast('ไฟล์ใหญ่เกิน 8MB — ย่อรูปก่อนแล้วลองใหม่');
     const fd = new FormData();
     fd.append('file', f);
     const el = document.getElementById(targetId);
@@ -2677,7 +2750,7 @@ function lpUpload(targetId) {
       if (targetId === 'lpBgImage') lpSyncThemeVisibility();
     } catch (e) {
       el.value = old;
-      alert('อัปโหลดไม่สำเร็จ: ' + e.message);
+      toast('อัปโหลดไม่สำเร็จ: ' + e.message);
     }
   };
   inp.click();
@@ -2821,8 +2894,14 @@ document.addEventListener('focusout', (e) => {
 });
 
 // ---------- ระบบอัตโนมัติ (autopilot) ----------
-const AP_LEVEL = { fixed: '🔧', dead: '⛔', freeze: '🧊', manual: '✕', warn: '⚠️', info: 'ℹ️',
-  refill: '➕', scale: '📈', stock: '📦', sleep: '💤', empty: '📭', pause: '🛑', test: '🧪', blocked: '🚧' };
+const AP_LEVEL = {
+  fixed: ic('wrench', { color: '#b45309' }), dead: ic('ban', { color: 'var(--red,#d93025)' }),
+  freeze: ic('snow', { color: '#2b6cb0' }), manual: ic('x'), warn: ic('warn', { color: '#b45309' }),
+  info: ic('info', { color: 'var(--muted,#888)' }), refill: ic('plus', { color: 'var(--green,#0e9268)' }),
+  scale: ic('trend', { color: 'var(--green,#0e9268)' }), stock: ic('box'), sleep: ic('moon', { color: 'var(--muted,#888)' }),
+  empty: ic('inbox'), pause: ic('stop', { color: 'var(--red,#d93025)' }), test: ic('flask', { color: '#b8860b' }),
+  blocked: ic('barrier', { color: '#b45309' }),
+};
 // เรนเดอร์ช่องเพดานจาก limitSpec ที่เซิร์ฟเวอร์ส่งมา — ป้าย/กรอบอยู่ที่เดียวใน server.js
 // ถ้าก๊อปมาเขียนซ้ำที่นี่ วันหนึ่งกรอบสองฝั่งจะไม่ตรงกันแล้วหน้าเว็บจะโกหกว่าตั้งได้ถึงเท่าไหร่
 let apLimitsBuilt = false;
@@ -2840,7 +2919,7 @@ function apRenderLimits(d) {
   put('apFreezeCap', cur.freezeRejections);
 
   if (!apLimitsBuilt) {
-    const head = { safety: '🛡️ เกราะกันบัญชีโดนแบน', money: '💰 เพดานฝั่งเงิน' };
+    const head = { safety: `${ic('shield')} เกราะกันบัญชีโดนแบน`, money: `${ic('coins')} เพดานฝั่งเงิน` };
     for (const g of ['safety', 'money']) {
       const rows = Object.entries(spec).filter(([, s]) => s.group === g).map(([k, s]) => `
         <div class="field" style="max-width:none;margin-bottom:10px">
@@ -2898,8 +2977,8 @@ async function loadAutopilot() {
 
   const frozen = Object.entries(d.frozen || {});
   const st = [];
-  if (d.testMode && d.enabled && !d.killSwitch) st.push('<b style="color:#b8860b">🧪 โหมดทดสอบ — แอดที่สร้างจะถูกปิดไว้ ไม่ใช้เงิน</b>');
-  st.push(d.killSwitch ? '<b style="color:var(--red)">🛑 หยุดฉุกเฉินอยู่ — ไม่ทำอะไรทั้งสิ้น</b>'
+  if (d.testMode && d.enabled && !d.killSwitch) st.push(`<b style="color:#b8860b">${ic('flask')} โหมดทดสอบ — แอดที่สร้างจะถูกปิดไว้ ไม่ใช้เงิน</b>`);
+  st.push(d.killSwitch ? `<b style="color:var(--red)">${ic('stop')} หยุดฉุกเฉินอยู่ — ไม่ทำอะไรทั้งสิ้น</b>`
     : d.enabled ? `<b style="color:var(--brand-dark)">▶️ ทำงานอยู่</b> — เช็คแอดโดนปฏิเสธทุก ${d.fastMins || 2} นาที, รอบเต็มทุก ${d.fullMins || 20} นาที <span id="apLive" class="muted"></span>`
     : '<span class="muted">⏸️ ปิดอยู่</span>');
   st.push(`แก้ข้อความไปแล้ววันนี้ ${d.fixesToday}/${d.maxPerDay} ครั้ง`);
@@ -2982,7 +3061,7 @@ async function saveAutopilot(extra) {
       }),
     });
     if (!r.ok) throw new Error('เซิร์ฟเวอร์ตอบ ' + r.status);
-  } catch (e) { alert('บันทึกไม่สำเร็จ: ' + e.message); }
+  } catch (e) { toast('บันทึกไม่สำเร็จ: ' + e.message); }
   loadAutopilot();
 }
 async function apRunNow(btn) {
@@ -2990,8 +3069,8 @@ async function apRunNow(btn) {
   try {
     const d = await (await fetch('/api/autopilot/run', { method: 'POST' })).json();
     if (d.error) throw new Error(d.error);
-    if (d.paused) alert(d.message);   // รอบถูกพักเพราะ Meta จำกัด/บล็อก API — ต้องบอก ไม่ใช่เงียบ
-  } catch (e) { alert('ตรวจไม่สำเร็จ: ' + e.message); }
+    if (d.paused) toast(d.message);   // รอบถูกพักเพราะ Meta จำกัด/บล็อก API — ต้องบอก ไม่ใช่เงียบ
+  } catch (e) { toast('ตรวจไม่สำเร็จ: ' + e.message); }
   finally { btn.disabled = false; btn.textContent = 'ตรวจเดี๋ยวนี้'; loadAutopilot(); }
 }
 async function apUnfreeze(acctId) {
@@ -3001,21 +3080,21 @@ async function apUnfreeze(acctId) {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ acctId }),
     })).json();
     if (d.error) throw new Error(d.error);
-  } catch (e) { return alert('ปลดล็อกไม่สำเร็จ: ' + e.message); }
+  } catch (e) { return toast('ปลดล็อกไม่สำเร็จ: ' + e.message); }
   loadAutopilot();
 }
 
 const AI_ACTION = {
-  scale: { label: '📈 ควรขยาย', color: 'var(--green,#0e9268)' },
-  pause: { label: '🛑 ควรหยุด', color: 'var(--red,#d93025)' },
-  watch: { label: '👀 จับตาดู', color: '#b8860b' },
-  keep: { label: '✅ ปล่อยไว้', color: 'var(--muted)' },
+  scale: { label: `${ic('trend', { size: 12 })} ควรขยาย`, color: 'var(--green,#0e9268)' },
+  pause: { label: `${ic('stop', { size: 12 })} ควรหยุด`, color: 'var(--red,#d93025)' },
+  watch: { label: `${ic('eye', { size: 12 })} จับตาดู`, color: '#b8860b' },
+  keep: { label: `${ic('checkCircle', { size: 12 })} ปล่อยไว้`, color: 'var(--muted)' },
 };
 
 function closeAi() { document.getElementById('aiModal').style.display = 'none'; }
 
 async function aiAdvise(btn) {
-  if (!lastCampRows.length) return alert('ยังไม่มีข้อมูลแคมเปญบนหน้าจอ — ติ๊กบัญชีแล้วรอโหลดให้เสร็จก่อนครับ');
+  if (!lastCampRows.length) return toast('ยังไม่มีข้อมูลแคมเปญบนหน้าจอ — ติ๊กบัญชีแล้วรอโหลดให้เสร็จก่อนครับ');
   const modal = document.getElementById('aiModal');
   const body = document.getElementById('aiBody');
   modal.style.display = 'flex';
@@ -3062,7 +3141,7 @@ async function aiAdvise(btn) {
 
   body.innerHTML = `
     <div style="background:var(--brand-soft);border-radius:var(--r-md);padding:12px 14px;margin-bottom:14px;font-size:13.5px;line-height:1.6">${esc(d.summary || '')}</div>
-    ${gaps.length ? `<div style="background:#fff6e5;border:1px solid #f0d9a8;border-radius:var(--r-md);padding:10px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.6">⚠️ ${gaps.join('<br>')}</div>` : ''}
+    ${gaps.length ? `<div style="background:#fff6e5;border:1px solid #f0d9a8;border-radius:var(--r-md);padding:10px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.6">⚠ ${gaps.join('<br>')}</div>` : ''}
     ${actions.map(rowOf).join('')}
     <div class="hint" style="margin-top:12px">นี่เป็นแค่ข้อเสนอจากตัวเลขที่เห็น — ตัดสินใจเองอีกทีก่อนกดนะครับ${d.usage ? ` • ใช้ ${d.usage.input.toLocaleString()} + ${d.usage.output.toLocaleString()} โทเคน` : ''}</div>`;
 }
@@ -3081,7 +3160,7 @@ async function aiPause(pid, campaignId, btn) {
     loadCampaigns(true);
   } catch (e) {
     btn.disabled = false; btn.textContent = 'หยุดแคมเปญนี้';
-    alert('หยุดไม่สำเร็จ: ' + e.message);
+    toast('หยุดไม่สำเร็จ: ' + e.message);
   }
 }
 
@@ -3095,7 +3174,7 @@ function readyAccounts() {
 async function runAutoPlan(btn, opts = {}) {
   const ready = readyAccounts();
   if (!ready.length) {
-    alert('ยังไม่มีบัญชีที่พร้อมยิงเลย — เช็คในเมนู "สุขภาพบัญชี" ว่าขาดอะไร (บัตร / เพจ / Pixel)');
+    toast('ยังไม่มีบัญชีที่พร้อมยิงเลย — เช็คในเมนู "สุขภาพบัญชี" ว่าขาดอะไร (บัตร / เพจ / Pixel)');
     return null;
   }
   const accounts = ready.map(a => ({ pid: a.pid, acctId: a.acctId, name: a.name }));
@@ -3120,7 +3199,7 @@ async function runAutoPlan(btn, opts = {}) {
     })).json();
     if (d.error) throw new Error(d.error);
   } catch (e) {
-    alert('จัดแผนไม่สำเร็จ: ' + e.message);
+    toast('จัดแผนไม่สำเร็จ: ' + e.message);
     return null;
   } finally {
     btn.disabled = false; btn.textContent = oldText;
@@ -3138,7 +3217,7 @@ async function runAutoPlan(btn, opts = {}) {
       card.querySelector('.f-message').value = item.message;
       card.querySelector('.f-headline').value = item.headline || '';
       if (link) card.querySelector('.f-link').value = link;
-      setBadge(card, 'wait', `🤖 ${acct.name || acct.acctId}`);
+      setBadge(card, 'wait', `AI • ${acct.name || acct.acctId}`);
     }
   }
   updateStats();
@@ -3149,12 +3228,12 @@ async function runAutoPlan(btn, opts = {}) {
 async function handToAi(btn) {
   const link = document.getElementById('tpl-link').value.trim();
   if (!/^https?:\/\//.test(link)) {
-    return alert(link
+    return toast(link
       ? `ลิงก์ปลายทางต้องขึ้นต้นด้วย https:// ครับ\n\nตอนนี้ใส่ไว้ว่า "${link}"\nลองแก้เป็น "https://${link}"`
       : 'ใส่ "ลิงก์ปลายทาง" (ขั้นตอนที่ 2) ก่อนครับ — AI ใช้ลิงก์นี้กับทุกแอดที่ขึ้นให้');
   }
   const budget = Number(document.getElementById('campaignBudget').value) || 0;
-  if (budget <= 0) return alert('ใส่ "งบแคมเปญ/วัน" (ขั้นตอนที่ 1) ก่อนครับ');
+  if (budget <= 0) return toast('ใส่ "งบแคมเปญ/วัน" (ขั้นตอนที่ 1) ก่อนครับ');
   const perAccount = Number(document.getElementById('planPerAccount').value) || 3;
 
   const ready = readyAccounts();
@@ -3169,14 +3248,14 @@ async function handToAi(btn) {
 
   let msg = `จะจำค่าพวกนี้ไว้ แล้วให้ AI ขึ้นแอดต่อเอง:\n\n`
     + `• คุมทุกบัญชีที่ใช้ได้ (ตอนนี้ ${ready.length} บัญชี) ให้มีแอดยิงอยู่บัญชีละ ${perAccount} ตัว\n`
-    + `• ต่ำกว่านั้นเมื่อไหร่ หยิบวิดีโอ+แคปชั่นจากคลังขึ้นให้เอง ⚡ เปิดยิงทันที\n`
+    + `• ต่ำกว่านั้นเมื่อไหร่ หยิบวิดีโอ+แคปชั่นจากคลังขึ้นให้เอง เปิดยิงทันที\n`
     + `• งบ ${budget.toLocaleString()} บาท/วัน/บัญชี • ลิงก์ ${link}\n`
     + `• เช็คแอดโดนปฏิเสธทุก 2 นาที, เติมแอดทุก 20 นาที • งบวันไหนเต็มแล้วหยุดเติม รอวันถัดไป\n`
     + `• แอดโดนปฏิเสธ → อ่านเหตุผลแล้วแก้ข้อความให้ (ครั้งเดียวต่อตัว)\n`;
-  if (!ruleOn) msg += `\n⚠️ ยังไม่ได้เปิด "กฎหยุดอัตโนมัติ" — ระบบจะยิงเงินต่อแม้แอดไม่เวิร์ก แนะนำให้เปิด\n`;
-  else if (!cpa) msg += `\n⚠️ ยังไม่ได้ใส่ตัวเลข "หยุดเมื่อต้นทุน/ผลลัพธ์เกิน" — ตัวขยายงบจะไม่ทำงาน\n`;
-  if (cur.killSwitch) msg += `\n⚠️ ตอนนี้ "หยุดฉุกเฉิน" เปิดอยู่ — กดยืนยันแล้วจะถามอีกครั้งว่าจะปลดให้ไหม\n`;
-  if (!ready.length) msg += `\n⚠️ ตอนนี้ยังไม่มีบัญชีที่พร้อมเลย — AI จะยังไม่ขึ้นอะไรจนกว่าจะมีบัญชีพร้อม\n`;
+  if (!ruleOn) msg += `\n⚠ ยังไม่ได้เปิด "กฎหยุดอัตโนมัติ" — ระบบจะยิงเงินต่อแม้แอดไม่เวิร์ก แนะนำให้เปิด\n`;
+  else if (!cpa) msg += `\n⚠ ยังไม่ได้ใส่ตัวเลข "หยุดเมื่อต้นทุน/ผลลัพธ์เกิน" — ตัวขยายงบจะไม่ทำงาน\n`;
+  if (cur.killSwitch) msg += `\n⚠ ตอนนี้ "หยุดฉุกเฉิน" เปิดอยู่ — กดยืนยันแล้วจะถามอีกครั้งว่าจะปลดให้ไหม\n`;
+  if (!ready.length) msg += `\n⚠ ตอนนี้ยังไม่มีบัญชีที่พร้อมเลย — AI จะยังไม่ขึ้นอะไรจนกว่าจะมีบัญชีพร้อม\n`;
   msg += `\nยืนยันไหม?`;
   if (!confirm(msg)) return;
 
@@ -3205,22 +3284,22 @@ async function handToAi(btn) {
     if (d.error) throw new Error(d.error);
   } catch (e) {
     btn.disabled = false; btn.textContent = old;
-    return alert('เปิดระบบอัตโนมัติไม่สำเร็จ: ' + e.message);
+    return toast('เปิดระบบอัตโนมัติไม่สำเร็จ: ' + e.message);
   }
   btn.disabled = false; btn.textContent = old;
-  alert('✅ เรียบร้อย — AI รับช่วงต่อแล้ว\n\nดูสิ่งที่มันทำได้ที่ เมนู "บัญชี FB" → ระบบอัตโนมัติ (มีบันทึกทุกการกระทำ + ปุ่มหยุดฉุกเฉิน)\nและจะแจ้งเข้า Telegram ทุกครั้งที่ลงมือ');
+  toast('✓ เรียบร้อย — AI รับช่วงต่อแล้ว\n\nดูสิ่งที่มันทำได้ที่ เมนู "บัญชี FB" → ระบบอัตโนมัติ (มีบันทึกทุกการกระทำ + ปุ่มหยุดฉุกเฉิน)\nและจะแจ้งเข้า Telegram ทุกครั้งที่ลงมือ');
 }
 
 // ปุ่มเดียวจบ: จัดแผน → ยืนยัน → ขึ้นจริง (เปิดยิงทันที)
 async function autoLaunch(btn) {
   const link = document.getElementById('tpl-link').value.trim();
   if (!/^https?:\/\//.test(link)) {
-    return alert(link
+    return toast(link
       ? `ลิงก์ต้องขึ้นต้นด้วย https:// ครับ\n\nตอนนี้ใส่ไว้ว่า "${link}"\nลองแก้เป็น "https://${link}"`
       : 'ใส่ "ลิงก์" ในค่าเริ่มต้น (ขั้นตอนที่ 2) ก่อนครับ — ทุกแอดใช้ลิงก์นี้');
   }
   const budget = Number(document.getElementById('campaignBudget').value) || 0;
-  if (budget <= 0) return alert('ใส่ "งบแคมเปญ/วัน" (ขั้นตอนที่ 1) ก่อนครับ');
+  if (budget <= 0) return toast('ใส่ "งบแคมเปญ/วัน" (ขั้นตอนที่ 1) ก่อนครับ');
 
   const nameEl = document.getElementById('campaignName');
   if (!nameEl.value.trim()) {
@@ -3237,7 +3316,7 @@ async function autoLaunch(btn) {
   const objText = document.getElementById('objective').selectedOptions[0].textContent.trim();
 
   // สรุปให้เห็นตัวเลขเงินก่อนกด — นี่คือจุดที่เงินเริ่มไหลจริง
-  let msg = `กำลังจะขึ้นแอดจริงและ ⚡ เปิดยิงทันที\n\n`
+  let msg = `กำลังจะขึ้นแอดจริงและ เปิดยิงทันที\n\n`
     + `• ทุกบัญชีที่ใช้ได้ ${nAcct} บัญชี × ${r.total / nAcct} แอด = ${r.total} แอด\n`
     + `• แคมเปญ: "${nameEl.value.trim()}" (${objText})\n`
     + `• งบ ${budget.toLocaleString()} บาท/วัน/บัญชี → รวม ${totalDaily.toLocaleString()} บาท/วัน\n`
@@ -3245,8 +3324,8 @@ async function autoLaunch(btn) {
     + `• สถานะ: ACTIVE — เงินเริ่มเดินทันทีที่ FB อนุมัติ\n`;
   msg += ruleOn
     ? `• กฎหยุดอัตโนมัติ: เปิดอยู่ (CPA เกิน ${document.getElementById('ruleCpr').value} บาท)\n`
-    : `\n⚠️ ยังไม่ได้เปิด "กฎหยุดอัตโนมัติ" — ถ้าแอดไม่เวิร์กมันจะยิงเงินต่อจนคุณเข้ามาปิดเอง\n`;
-  if (r.warnings.length) msg += `\n⚠️ ${r.warnings.join('\n⚠️ ')}\n`;
+    : `\n⚠ ยังไม่ได้เปิด "กฎหยุดอัตโนมัติ" — ถ้าแอดไม่เวิร์กมันจะยิงเงินต่อจนคุณเข้ามาปิดเอง\n`;
+  if (r.warnings.length) msg += `\n⚠ ${r.warnings.join('\n⚠ ')}\n`;
   msg += `\nยืนยันขึ้นเลยไหม?`;
 
   if (!confirm(msg)) return;
@@ -3313,7 +3392,7 @@ function capModalCounter() {
 async function saveCapModal(btn) {
   const message = document.getElementById('capModalMsg').value.trim();
   const headline = document.getElementById('capModalHead').value.trim();
-  if (!message) return alert('ใส่ข้อความหลักก่อนครับ');
+  if (!message) return toast('ใส่ข้อความหลักก่อนครับ');
   btn.disabled = true;
   try {
     if (capEditId) {
@@ -3334,7 +3413,7 @@ async function saveCapModal(btn) {
     }
     closeCapModal();
     renderCaptions();
-  } catch (e) { alert('บันทึกไม่สำเร็จ: ' + e.message); }
+  } catch (e) { toast('บันทึกไม่สำเร็จ: ' + e.message); }
   finally { btn.disabled = false; }
 }
 async function deleteCaption(id) {
@@ -3345,7 +3424,7 @@ async function deleteCaption(id) {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id }),
     })).json();
     if (d.error) throw new Error(d.error);
-  } catch (e) { return alert('ลบไม่สำเร็จ: ' + e.message); }
+  } catch (e) { return toast('ลบไม่สำเร็จ: ' + e.message); }
   capItems = capItems.filter(x => x.id !== id);
   renderCaptions();
 }
@@ -3394,7 +3473,7 @@ function applyLibToCard(card, item) {
   card.querySelector('.media-tag').style.display = 'block';
   const nameInput = card.querySelector('.f-name');
   if (!nameInput.value.trim()) nameInput.value = item.name;
-  setBadge(card, 'wait', '🎬 วิดีโอจากคลัง');
+  setBadge(card, 'wait', 'วิดีโอจากคลัง');
 }
 
 // ---------- template ----------
@@ -3555,7 +3634,8 @@ function updateLaunchGate() {
   const btn = document.getElementById('launchBtn');
   if (btn.dataset.launching === '1') return;
   btn.disabled = mediaUploadsInFlight > 0;
-  btn.textContent = mediaUploadsInFlight > 0 ? `⏫ รออัปโหลดวิดีโอให้เสร็จก่อน (${mediaUploadsInFlight} ไฟล์)...` : '🚀 ขึ้นแอดทั้งหมด';
+  // ปุ่มนี้มี icon SVG — ต้องเขียนด้วย innerHTML (textContent จะลบ icon ทิ้ง) ข้อความเป็นค่าคงที่ ปลอดภัย
+  btn.innerHTML = mediaUploadsInFlight > 0 ? `รออัปโหลดวิดีโอให้เสร็จก่อน (${mediaUploadsInFlight} ไฟล์)...` : `${ic('rocket', { size: 15 })} ขึ้นแอดทั้งหมด`;
 }
 let uploadSeq = 0;
 function uploadMedia(card, file) {
@@ -3577,14 +3657,14 @@ function uploadMedia(card, file) {
   const xhr = new XMLHttpRequest();
   xhr.open('POST', '/api/media');
   xhr.upload.onprogress = (e) => {
-    if (e.lengthComputable && isCurrent()) setBadge(card, 'run', `⏫ อัปโหลดวิดีโอ ${Math.round(e.loaded / e.total * 100)}%`);
+    if (e.lengthComputable && isCurrent()) setBadge(card, 'run', `อัปโหลดวิดีโอ ${Math.round(e.loaded / e.total * 100)}%`);
   };
   xhr.onload = () => {
     done();
     if (!isCurrent()) return; // ผู้ใช้เปลี่ยนไฟล์ไปแล้ว ผลรอบนี้ใช้ไม่ได้
     let d = null;
     try { d = JSON.parse(xhr.responseText); } catch { /* ตอบไม่เป็น JSON */ }
-    if (d && d.id) { card.dataset.mediaId = d.id; setBadge(card, 'wait', '🎬 วิดีโอพร้อมขึ้น'); }
+    if (d && d.id) { card.dataset.mediaId = d.id; setBadge(card, 'wait', 'วิดีโอพร้อมขึ้น'); }
     else setBadge(card, 'err', 'อัปโหลดวิดีโอไม่สำเร็จ — จะลองส่งอีกทีตอนกดขึ้นแอด');
   };
   xhr.onerror = () => { done(); if (isCurrent()) setBadge(card, 'err', 'อัปโหลดวิดีโอไม่สำเร็จ — จะลองส่งอีกทีตอนกดขึ้นแอด'); };
@@ -3720,32 +3800,32 @@ function aggregateBadge(card, selected) {
   const okN = selected.filter(p => r.ok.has(p)).length;
   const failN = selected.filter(p => r.fail.has(p)).length;
   if (okN === selected.length) {
-    setBadge(card, 'ok', selected.length > 1 ? `✅ สำเร็จทั้ง ${okN} บัญชี` : '✅ สำเร็จ');
+    setBadge(card, 'ok', selected.length > 1 ? `✓ สำเร็จทั้ง ${okN} บัญชี` : '✓ สำเร็จ');
   } else if (failN) {
-    setBadge(card, 'err', `❌ ล้มเหลว ${failN}/${selected.length} บัญชี`);
+    setBadge(card, 'err', `✗ ล้มเหลว ${failN}/${selected.length} บัญชี`);
   }
 }
 
 async function launch() {
   const allCards = [...document.querySelectorAll('.ad-card')];
-  if (!allCards.length) return alert('ยังไม่มีแอด — ลากรูป/วิดีโอมาวางก่อนครับ');
-  if (mediaUploadsInFlight > 0) return alert('รออัปโหลดวิดีโอขึ้นเซิร์ฟเวอร์ให้เสร็จก่อนครับ (ดู % ที่มุมการ์ด)');
+  if (!allCards.length) return toast('ยังไม่มีแอด — ลากรูป/วิดีโอมาวางก่อนครับ');
+  if (mediaUploadsInFlight > 0) return toast('รออัปโหลดวิดีโอขึ้นเซิร์ฟเวอร์ให้เสร็จก่อนครับ (ดู % ที่มุมการ์ด)');
   const campaignName = document.getElementById('campaignName').value.trim();
-  if (!campaignName) return alert('กรุณาใส่ชื่อแคมเปญ (ขั้นตอนที่ 1)');
+  if (!campaignName) return toast('กรุณาใส่ชื่อแคมเปญ (ขั้นตอนที่ 1)');
   const objective = document.getElementById('objective').value;
 
   // บัญชีที่ติ๊ก (ขั้นตอนที่ 4) = คีย์ "pid:acctId"
   const selKeys = [...document.querySelectorAll('#launchAccounts input:checked')].map(i => i.value);
-  if (!selKeys.length) return alert('ติ๊กเลือกบัญชีที่จะขึ้นในแผงด้านซ้ายก่อนครับ');
+  if (!selKeys.length) return toast('ติ๊กเลือกบัญชีที่จะขึ้นในแผงด้านซ้ายก่อนครับ');
   const targets = selKeys.map(k => launchAccounts.find(a => `${a.pid}:${a.acctId}` === k)).filter(Boolean);
 
   // ตรวจข้อมูลการ์ดทุกใบก่อนเริ่ม
   for (const c of allCards) {
     const num = allCards.indexOf(c) + 1;
     const name = c.querySelector('.f-name').value.trim() || `Ad-${num}`;
-    if (!c.dataset.mediaId && !c.querySelector('.f-image').files[0]) return alert(`แอด #${num} (${name}): ยังไม่มีรูป/วิดีโอ — คลิกที่กรอบเพื่อเลือกไฟล์ หรือกด 🎬 เลือกจากคลังวิดีโอ`);
-    if (!c.querySelector('.f-message').value.trim()) return alert(`แอด #${num} (${name}): ยังไม่ได้ใส่ข้อความหลัก`);
-    if (!/^https?:\/\//.test(c.querySelector('.f-link').value.trim())) return alert(`แอด #${num} (${name}): ลิงก์ต้องขึ้นต้นด้วย http:// หรือ https://`);
+    if (!c.dataset.mediaId && !c.querySelector('.f-image').files[0]) return toast(`แอด #${num} (${name}): ยังไม่มีรูป/วิดีโอ — คลิกที่กรอบเพื่อเลือกไฟล์ หรือกดปุ่ม "เลือกเอง" เพื่อหยิบจากคลังวิดีโอ`);
+    if (!c.querySelector('.f-message').value.trim()) return toast(`แอด #${num} (${name}): ยังไม่ได้ใส่ข้อความหลัก`);
+    if (!/^https?:\/\//.test(c.querySelector('.f-link').value.trim())) return toast(`แอด #${num} (${name}): ลิงก์ต้องขึ้นต้นด้วย http:// หรือ https://`);
   }
 
   // แผนงาน: แต่ละบัญชีขึ้นเฉพาะการ์ดที่ยังไม่สำเร็จในบัญชีนั้น (คีย์ = pid:acctId)
@@ -3756,7 +3836,7 @@ async function launch() {
       return { t, key, cards: allCards.filter(c => !getRes(c).ok.has(key) && (!c.dataset.onlyAcct || c.dataset.onlyAcct === key)) };
     })
     .filter(x => x.cards.length);
-  if (!plan.length) return alert('แอดทุกตัวขึ้นครบทุกบัญชีที่เลือกแล้วครับ 🎉');
+  if (!plan.length) return toast('แอดทุกตัวขึ้นครบทุกบัญชีที่เลือกแล้วครับ');
   // การ์ดที่ล็อกไว้กับบัญชีที่ไม่ได้ติ๊ก จะไม่ถูกขึ้นเลย — บอกก่อนแทนที่จะเงียบ
   const orphan = allCards.filter(c => c.dataset.onlyAcct && !plan.some(x => x.key === c.dataset.onlyAcct));
   if (orphan.length && !confirm(`มีการ์ด ${orphan.length} ใบที่ล็อกไว้กับบัญชีที่ไม่ได้ติ๊ก — จะถูกข้ามไป ไปต่อไหม?`)) return;
@@ -3842,11 +3922,11 @@ async function launch() {
               okCount++;
               r.ok.add(key);
               r.fail.delete(key);
-              setBadge(card, 'ok', `✅ ${label}`);
+              setBadge(card, 'ok', `✓ ${label}`);
             } else {
               failCount++;
               r.fail.set(key, ev.error);
-              setBadge(card, 'err', `❌ ${label}`);
+              setBadge(card, 'err', `✗ ${label}`);
               const em = card.querySelector('.ad-err-msg');
               em.innerHTML += `<div>⚠ ${esc(label)}: ${esc(ev.error)}</div>`;
               em.style.display = 'block';
@@ -3900,7 +3980,7 @@ async function launch() {
       });
     }
   } catch (e) {
-    alert('ผิดพลาด: ' + e.message);
+    toast('ผิดพลาด: ' + e.message);
   }
 
   allCards.forEach(c => aggregateBadge(c, selected));
@@ -3910,7 +3990,7 @@ async function launch() {
   banner.style.display = 'block';
   banner.innerHTML = failCount
     ? `⚠ สำเร็จ ${okCount} • ล้มเหลว ${failCount} รายการ — แก้ตามข้อความสีแดงแล้วกดขึ้นอีกครั้ง (ที่สำเร็จแล้วไม่ขึ้นซ้ำ) &nbsp;${links}`
-    : `🎉 สำเร็จทั้งหมด ${okCount} รายการ ใน ${plan.length} บัญชี &nbsp;${links}`;
+    : `${ic('sparkle', { color: 'var(--green,#0e9268)' })} สำเร็จทั้งหมด ${okCount} รายการ ใน ${plan.length} บัญชี &nbsp;${links}`;
   if (launchVerify) {
     banner.innerHTML += `<div style="margin-top:6px;font-weight:400;font-size:12.5px;color:var(--muted)">ตรวจค่าจริงจาก FB: ${
       launchVerify.map(x => `<span style="margin-right:12px;color:${x.ok ? 'var(--green)' : 'var(--red)'}">${x.ok ? '✓' : '✗'} ${esc(x.label)}</span>`).join('')
@@ -3924,7 +4004,7 @@ async function launch() {
   pw.style.display = 'none';
   delete btn.dataset.launching;
   btn.disabled = false;
-  btn.textContent = '🚀 ขึ้นแอดทั้งหมด';
+  btn.innerHTML = `${ic('rocket', { size: 15 })} ขึ้นแอดทั้งหมด`;   // ปุ่มมี icon — ห้าม textContent
   updateLaunchGate();
 }
 </script>
