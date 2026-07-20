@@ -959,34 +959,22 @@
 
     <!-- ========== PAGE: บัญชี FB ========== -->
     <section class="page" id="page-settings">
+      <!-- ลำดับการ์ด: เชื่อมบัญชี (พร้อมคู่มือ) → ระบบอัตโนมัติ → ช่องทางแจ้งเตือน/AI
+           เรียงตามลำดับที่ผู้ใช้ต้องตั้งจริง และของที่เปิดบ่อยสุด (autopilot) อยู่ใกล้บนสุด -->
       <div class="card">
-        <h2>บัญชี FB ทั้งหมด <span class="h-desc">— เพิ่มได้หลายบัญชี แต่ละบัญชีมี token + บัญชีโฆษณา + เพจของตัวเอง</span></h2>
+        <h2><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/><path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3"/></svg></span>บัญชี FB ทั้งหมด <span class="h-desc">— เพิ่มได้หลายบัญชี แต่ละบัญชีมี token + บัญชีโฆษณา + เพจของตัวเอง</span></h2>
         <div id="profList"></div>
         <button class="btn-primary" onclick="addProfile()">+ เพิ่มบัญชี FB</button>
-      </div>
-
-      <div class="card">
-        <h2><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></span>แจ้งเตือน Telegram <span class="h-desc">— เตือนทันทีเมื่อแอดโดนปฏิเสธ / บัญชีถูกปิด-ค้างชำระ / token มีปัญหา (ต่ออายุให้อัตโนมัติ) + สรุปยอดทุกเช้า 8 โมง</span></h2>
-        <div class="fgrid">
-          <div class="field"><label>Bot Token</label><input id="tgToken" placeholder="123456789:ABCdef..."></div>
-          <div class="field"><label>Chat ID</label><input id="tgChat" placeholder="เช่น 123456789"></div>
-          <div class="field" style="display:flex;align-items:flex-end;gap:8px">
-            <button class="btn-primary" onclick="saveTelegram()">บันทึก</button>
-            <button class="btn-light" onclick="testTelegram(this)">ส่งทดสอบ</button>
-          </div>
-        </div>
-        <div class="hint" style="margin-top:8px">วิธีตั้ง (ครั้งเดียว): ① ใน Telegram แชทกับ <b>@BotFather</b> → พิมพ์ /newbot → ได้ <b>Bot Token</b> มาวางช่องแรก ② แชทกับ <b>@userinfobot</b> → ได้เลข <b>Id</b> มาวางช่องสอง ③ เข้าไปกด <b>Start</b> ในแชทบอทที่เพิ่งสร้าง ④ กดบันทึก → ส่งทดสอบ</div>
-      </div>
-
-      <div class="card">
-        <h2><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg></span>AI ช่วยวิเคราะห์ <span class="h-desc">— ให้ Claude อ่านตัวเลขแคมเปญแล้วบอกว่าตัวไหนควรขยาย/หยุด</span></h2>
-        <div class="fgrid">
-          <div class="field" style="flex:2"><label>Anthropic API Key</label><input id="aiKey" type="password" placeholder="sk-ant-..."></div>
-          <div class="field" style="display:flex;align-items:flex-end;gap:8px">
-            <button class="btn-primary" onclick="saveAiKey(this)">บันทึก</button>
-          </div>
-        </div>
-        <div class="hint" style="margin-top:8px" id="aiKeyHint">เอา key จาก <b>console.anthropic.com</b> → API Keys → Create Key • คิดเงินตามการใช้งานจริง (วิเคราะห์รอบละประมาณ 1 บาท) • ปล่อยว่างแล้วกดบันทึก = ลบ key ออก</div>
+        <details style="margin-top:14px;border:1px solid var(--line);border-radius:var(--r-md);padding:8px 12px">
+          <summary style="cursor:pointer;font-weight:600">คู่มือตั้งค่า "เข้าสู่ระบบด้วย Facebook" — ทำครั้งเดียวต่อแอป หลังจากนั้นกดปุ่มเดียวจบ</summary>
+          <ol class="setup-list" style="margin-top:10px">
+            <li><span>เปิดแอปที่ <a href="https://developers.facebook.com/apps" target="_blank">developers.facebook.com/apps</a> → "เพิ่มผลิตภัณฑ์" → เพิ่ม <b>Facebook Login</b> (Login ด้วย Facebook)</span></li>
+            <li><span>ไปที่ Facebook Login → <b>การตั้งค่า (Settings)</b> → ช่อง <b>Valid OAuth Redirect URIs</b> วาง: <code id="redirectUriText">http://localhost:4000/auth/callback</code> → บันทึก</span></li>
+            <li><span>เมนู การตั้งค่าแอป → <b>พื้นฐาน (Basic)</b> → คัดลอก <b>App ID</b> และ <b>App Secret</b> (กด "แสดง") มาวางในการ์ดบัญชีด้านบน</span></li>
+            <li><span>กดปุ่ม <b>เข้าสู่ระบบด้วย Facebook</b> → login → กดยอมรับ → เสร็จ! token มาเองและต่ออายุ 60 วันอัตโนมัติ</span></li>
+          </ol>
+          <div class="hint"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#b8860b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg> บัญชี FB ที่ login ต้องเป็นแอดมิน/ผู้ทดสอบของแอปนั้น (เฟสที่สร้างแอปเองเป็นแอดมินอยู่แล้ว ไม่ต้องส่ง App Review) • ถ้าหลาย ad account อยู่ใต้ FB เดียวกัน login ครั้งเดียวเห็นครบทุกบัญชี</div>
+        </details>
       </div>
 
       <div class="card">
@@ -1013,15 +1001,20 @@
             <input id="apScaleMax" type="number" min="0" value="0" onchange="saveAutopilot()">
           </div>
         </div>
-        <div class="hint" style="margin-bottom:10px">
-          <b>ขยายงบ:</b> ใส่ <b>0</b> = ไม่ขยาย • ถ้าใส่เลข แคมเปญที่ต้นทุน/ผลลัพธ์ถูกกว่าเพดานที่ตั้งไว้ 30%+ (และมีผลลัพธ์อย่างน้อย 3 ครั้ง) จะถูกเพิ่มงบ <b>+20% วันละครั้ง</b> จนถึงเลขนี้แล้วหยุด — เพิ่มทีละน้อยเพราะขยับแรงกว่านี้ FB รีเซ็ต learning phase แล้วผลตก
-        </div>
-        <div class="hint" style="margin-bottom:10px">ใส่ <b>0</b> = ไม่เติมให้ • ถ้าใส่เลข มันจะหยิบวิดีโอ+แคปชั่นจากคลังขึ้นแอดเองจนครบ <b>เปิดยิงทันที</b> โดยใช้ค่าตั้งต้นในหน้าขึ้นแอด (งบ/ลิงก์/วัตถุประสงค์/กลุ่มเป้าหมาย) — งบอยู่ระดับแคมเปญ (CBO) เพิ่มแอดกี่ตัวก็ไม่ใช้จ่ายเกินงบที่ตั้งไว้</div>
-        <div class="hint" style="margin-bottom:10px">
-          <b>สิ่งที่มันทำ:</b> อ่านเหตุผลที่ FB ปฏิเสธ → ถ้าปัญหาอยู่ที่ข้อความและระบุได้ชัด จะแก้แล้วขึ้นใหม่ให้ <b>ครั้งเดียวต่อครีเอทีฟ</b> • ถ้าปัญหาอยู่ที่วิดีโอ/หน้าขาย/ระดับบัญชี จะไม่แตะ แค่เตือนคุณ<br>
-          <b>ปิดตัวขาดทุนเอง:</b> แอดที่ใช้เงินเกิน <b id="apLoserSpend">2</b> เท่าของเพดาน CPA แล้วยังไม่มีผลลัพธ์ หรือต้นทุนแพงกว่าเพดาน <b id="apLoserMult">1.5</b> เท่า จะถูกปิด (ไม่เกิน <b id="apPauseCap">10</b> ตัว/บัญชี/วัน) แล้วเติมครีเอทีฟใหม่เข้าไปแทน — ใช้เลขจากช่อง "หยุดเมื่อต้นทุน/ผลลัพธ์เกิน" ในหน้าขึ้นแอด ถ้าไม่ได้ตั้งไว้จะไม่ปิดอะไรเลย<br>
-          <b>เพดานกันพัง:</b> แก้ได้ไม่เกิน <b id="apCap">10</b> ครั้ง/วันทั้งระบบ • บัญชีไหนโดนปฏิเสธ <b id="apFreezeCap">3</b> ตัวใน 24 ชม. จะ<b>หยุดบัญชีนั้นทันที</b>เพื่อกันโดนแบน • แจ้งทุกอย่างเข้า Telegram
-        </div>
+        <details style="margin-bottom:10px;border:1px solid var(--line);border-radius:var(--r-md);padding:8px 12px">
+          <summary style="cursor:pointer;font-weight:600">วิธีทำงานของระบบ — อ่านครั้งแรกครั้งเดียวพอ</summary>
+          <div class="hint" style="margin:10px 0 8px">
+            <b>เติมแอด:</b> ใส่ <b>0</b> = ไม่เติมให้ • ถ้าใส่เลข มันจะหยิบวิดีโอ+แคปชั่นจากคลังขึ้นแอดเองจนครบ <b>เปิดยิงทันที</b> โดยใช้ค่าตั้งต้นในหน้าขึ้นแอด (งบ/ลิงก์/วัตถุประสงค์/กลุ่มเป้าหมาย) — งบอยู่ระดับแคมเปญ (CBO) เพิ่มแอดกี่ตัวก็ไม่ใช้จ่ายเกินงบที่ตั้งไว้
+          </div>
+          <div class="hint" style="margin-bottom:8px">
+            <b>ขยายงบ:</b> ใส่ <b>0</b> = ไม่ขยาย • ถ้าใส่เลข แคมเปญที่ต้นทุน/ผลลัพธ์ถูกกว่าเพดานที่ตั้งไว้ 30%+ (และมีผลลัพธ์อย่างน้อย 3 ครั้ง) จะถูกเพิ่มงบ <b>+20% วันละครั้ง</b> จนถึงเลขนี้แล้วหยุด — เพิ่มทีละน้อยเพราะขยับแรงกว่านี้ FB รีเซ็ต learning phase แล้วผลตก
+          </div>
+          <div class="hint" style="margin-bottom:4px">
+            <b>แก้แอดโดนปฏิเสธ:</b> อ่านเหตุผลที่ FB ปฏิเสธ → ถ้าปัญหาอยู่ที่ข้อความและระบุได้ชัด จะแก้แล้วขึ้นใหม่ให้ <b>ครั้งเดียวต่อครีเอทีฟ</b> • ถ้าปัญหาอยู่ที่วิดีโอ/หน้าขาย/ระดับบัญชี จะไม่แตะ แค่เตือนคุณ<br>
+            <b>ปิดตัวขาดทุนเอง:</b> แอดที่ใช้เงินเกิน <b id="apLoserSpend">2</b> เท่าของเพดาน CPA แล้วยังไม่มีผลลัพธ์ หรือต้นทุนแพงกว่าเพดาน <b id="apLoserMult">1.5</b> เท่า จะถูกปิด (ไม่เกิน <b id="apPauseCap">10</b> ตัว/บัญชี/วัน) แล้วเติมครีเอทีฟใหม่เข้าไปแทน — ใช้เลขจากช่อง "หยุดเมื่อต้นทุน/ผลลัพธ์เกิน" ในหน้าขึ้นแอด ถ้าไม่ได้ตั้งไว้จะไม่ปิดอะไรเลย<br>
+            <b>เพดานกันพัง:</b> แก้ได้ไม่เกิน <b id="apCap">10</b> ครั้ง/วันทั้งระบบ • บัญชีไหนโดนปฏิเสธ <b id="apFreezeCap">3</b> ตัวใน 24 ชม. จะ<b>หยุดบัญชีนั้นทันที</b>เพื่อกันโดนแบน • แจ้งทุกอย่างเข้า Telegram
+          </div>
+        </details>
 
         <details id="apLimitsBox" style="margin-bottom:10px;border:1px solid var(--line);border-radius:var(--r-md);padding:8px 12px">
           <summary style="cursor:pointer;font-weight:600"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg> ปรับเพดานเอง</summary>
@@ -1046,14 +1039,27 @@
       </div>
 
       <div class="card">
-        <h2>ตั้งค่า "เข้าสู่ระบบด้วย Facebook" <span class="h-desc">— ทำครั้งเดียวต่อแอป หลังจากนั้นกดปุ่มเดียวจบ</span></h2>
-        <ol class="setup-list">
-          <li><span>เปิดแอปที่ <a href="https://developers.facebook.com/apps" target="_blank">developers.facebook.com/apps</a> → "เพิ่มผลิตภัณฑ์" → เพิ่ม <b>Facebook Login</b> (Login ด้วย Facebook)</span></li>
-          <li><span>ไปที่ Facebook Login → <b>การตั้งค่า (Settings)</b> → ช่อง <b>Valid OAuth Redirect URIs</b> วาง: <code id="redirectUriText">http://localhost:4000/auth/callback</code> → บันทึก</span></li>
-          <li><span>เมนู การตั้งค่าแอป → <b>พื้นฐาน (Basic)</b> → คัดลอก <b>App ID</b> และ <b>App Secret</b> (กด "แสดง") มาวางในการ์ดบัญชีด้านบน</span></li>
-          <li><span>กดปุ่ม <b>เข้าสู่ระบบด้วย Facebook</b> → login → กดยอมรับ → เสร็จ! token มาเองและต่ออายุ 60 วันอัตโนมัติ</span></li>
-        </ol>
-        <div class="hint"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#b8860b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg> บัญชี FB ที่ login ต้องเป็นแอดมิน/ผู้ทดสอบของแอปนั้น (เฟสที่สร้างแอปเองเป็นแอดมินอยู่แล้ว ไม่ต้องส่ง App Review) • ถ้าหลาย ad account อยู่ใต้ FB เดียวกัน login ครั้งเดียวเห็นครบทุกบัญชี</div>
+        <h2><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></span>แจ้งเตือน Telegram <span class="h-desc">— เตือนทันทีเมื่อแอดโดนปฏิเสธ / บัญชีถูกปิด-ค้างชำระ / token มีปัญหา (ต่ออายุให้อัตโนมัติ) + สรุปยอดทุกเช้า 8 โมง</span></h2>
+        <div class="fgrid">
+          <div class="field"><label>Bot Token</label><input id="tgToken" placeholder="123456789:ABCdef..."></div>
+          <div class="field"><label>Chat ID</label><input id="tgChat" placeholder="เช่น 123456789"></div>
+          <div class="field" style="display:flex;align-items:flex-end;gap:8px">
+            <button class="btn-primary" onclick="saveTelegram()">บันทึก</button>
+            <button class="btn-light" onclick="testTelegram(this)">ส่งทดสอบ</button>
+          </div>
+        </div>
+        <div class="hint" style="margin-top:8px">วิธีตั้ง (ครั้งเดียว): ① ใน Telegram แชทกับ <b>@BotFather</b> → พิมพ์ /newbot → ได้ <b>Bot Token</b> มาวางช่องแรก ② แชทกับ <b>@userinfobot</b> → ได้เลข <b>Id</b> มาวางช่องสอง ③ เข้าไปกด <b>Start</b> ในแชทบอทที่เพิ่งสร้าง ④ กดบันทึก → ส่งทดสอบ</div>
+      </div>
+
+      <div class="card">
+        <h2><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg></span>AI ช่วยวิเคราะห์ <span class="h-desc">— ให้ Claude อ่านตัวเลขแคมเปญแล้วบอกว่าตัวไหนควรขยาย/หยุด</span></h2>
+        <div class="fgrid">
+          <div class="field" style="flex:2"><label>Anthropic API Key</label><input id="aiKey" type="password" placeholder="sk-ant-..."></div>
+          <div class="field" style="display:flex;align-items:flex-end;gap:8px">
+            <button class="btn-primary" onclick="saveAiKey(this)">บันทึก</button>
+          </div>
+        </div>
+        <div class="hint" style="margin-top:8px" id="aiKeyHint">เอา key จาก <b>console.anthropic.com</b> → API Keys → Create Key • คิดเงินตามการใช้งานจริง (วิเคราะห์รอบละประมาณ 1 บาท) • ปล่อยว่างแล้วกดบันทึก = ลบ key ออก</div>
       </div>
     </section>
   </main>
