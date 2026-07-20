@@ -835,7 +835,9 @@
     <!-- ========== PAGE: คลังวิดีโอ ========== -->
     <section class="page" id="page-library">
       <div class="card">
-        <h2><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 8 6 4-6 4Z"/><rect width="20" height="14" x="2" y="5" rx="2"/></svg></span>คลังวิดีโอ <span class="h-desc" id="libCount"></span></h2>
+        <h2><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m10 8 6 4-6 4Z"/><rect width="20" height="14" x="2" y="5" rx="2"/></svg></span>คลังวิดีโอ <span class="h-desc" id="libCount"></span>
+          <button class="btn-light btn-sm" style="margin-left:auto" onclick="aiTagLibrary(this)" title="Claude ดูภาพหน้าปกวิดีโอที่ยังไม่มีแท็ก (ครั้งละไม่เกิน 20 ตัว) แล้วจัดแท็กสไตล์ให้ — ใช้เชื่อมกับรายงานกลยุทธ์ว่าวิดีโอสไตล์ไหนชนะ">✨ ให้ AI จัดแท็ก</button>
+        </h2>
         <div class="dropzone" id="libDropzone" onclick="document.getElementById('libFile').click()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M20 15v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4"/></svg>
           <div class="big">ลากวิดีโอมาวางเพื่อเก็บเข้าคลัง (หลายไฟล์พร้อมกันได้)</div>
@@ -2552,6 +2554,26 @@ async function loadLibrary() {
   renderLibrary();
 }
 
+// ให้ AI ดูภาพหน้าปกแล้วจัดแท็กสไตล์ให้วิดีโอที่ยังไม่มีแท็ก (ครั้งละ ≤20)
+async function aiTagLibrary(btn) {
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ AI กำลังดูภาพ...';
+  try {
+    const d = await (await fetch('/api/library/analyze', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).json();
+    if (d.error) return toast('จัดแท็กไม่สำเร็จ: ' + d.error);
+    await loadLibrary();
+    toast(d.tagged
+      ? `✓ จัดแท็กแล้ว ${d.tagged} วิดีโอ${d.remaining ? ` — เหลืออีก ${d.remaining} ตัว กดซ้ำได้` : ' — ครบทุกตัวแล้ว'}`
+      : 'ทุกวิดีโอมีแท็กครบแล้ว (หรือยังไม่มีภาพหน้าปก)', 'ok');
+  } catch (e) {
+    toast('จัดแท็กไม่สำเร็จ: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
+}
+
 let libSortKey = 'ts', libSortDir = -1;   // เริ่มที่ใหม่สุดก่อน (เหมือนคลังแคปชั่น)
 function libSortBy(key) {
   if (libSortKey === key) libSortDir = -libSortDir;
@@ -2572,7 +2594,7 @@ function renderLibrary() {
   document.getElementById('libRows').innerHTML = rows.map((it, i) => `<tr style="cursor:pointer" onclick="openLibModal(${jsStr(it.id)})" title="คลิกเพื่อดูรายละเอียด/แก้ชื่อ">
       <td style="color:var(--muted)">${i + 1}</td>
       <td><img src="/api/library/thumb/${encodeURIComponent(it.id)}" alt="" style="width:64px;height:40px;object-fit:cover;border-radius:6px;background:#f2f4f6;display:block" onerror="this.style.visibility='hidden'"></td>
-      <td style="font-weight:600">${esc(it.name)}<div class="res-label">${esc(it.filename || '')}</div></td>
+      <td style="font-weight:600">${esc(it.name)}<div class="res-label">${esc(it.filename || '')}</div>${(it.tags || []).length ? `<div style="margin-top:3px" title="${esc(it.aiNote || '')}">${it.tags.map(tg => `<span style="display:inline-block;margin:1px 3px 0 0;padding:0 7px;border-radius:99px;font-size:10.5px;background:var(--bg);border:1px solid var(--line);color:var(--muted)">${esc(tg)}</span>`).join('')}</div>` : ''}</td>
       <td class="num-cell">${libSize(it.size || 0)}</td>
       <td>${(it.usedOn || []).length ? `${(it.usedOn || []).length} บัญชี` : '<span style="color:var(--muted)">ยังไม่เคยใช้</span>'}</td>
       <td style="white-space:nowrap;color:var(--muted);font-size:12.5px">${fmtD(it.ts)}</td>
