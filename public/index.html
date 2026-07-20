@@ -1063,11 +1063,20 @@
         <h2><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg></span>AI ช่วยวิเคราะห์ <span class="h-desc">— ให้ Claude อ่านตัวเลขแคมเปญแล้วบอกว่าตัวไหนควรขยาย/หยุด</span></h2>
         <div class="fgrid">
           <div class="field" style="flex:2"><label>Anthropic API Key</label><input id="aiKey" type="password" placeholder="sk-ant-..."></div>
+          <div class="field" style="flex:1.4"><label>รุ่น AI (model)</label>
+            <input id="aiModel" list="aiModelList" placeholder="ค่าตั้งต้น: claude-opus-4-8" spellcheck="false">
+            <datalist id="aiModelList">
+              <option value="claude-opus-4-8"></option>
+              <option value="claude-sonnet-5"></option>
+              <option value="claude-haiku-4-5-20251001"></option>
+            </datalist>
+          </div>
           <div class="field" style="display:flex;align-items:flex-end;gap:8px">
             <button class="btn-primary" onclick="saveAiKey(this)">บันทึก</button>
           </div>
         </div>
         <div class="hint" style="margin-top:8px" id="aiKeyHint">เอา key จาก <b>console.anthropic.com</b> → API Keys → Create Key • คิดเงินตามการใช้งานจริง (วิเคราะห์รอบละประมาณ 1 บาท) • ปล่อยว่างแล้วกดบันทึก = ลบ key ออก</div>
+        <div class="hint" style="margin-top:4px">รุ่น AI: opus = ฉลาดสุด (ค่าตั้งต้น) • sonnet = เร็ว/ถูกกว่า • haiku = เร็วสุด • รุ่นใหม่ออกเมื่อไหร่พิมพ์ชื่อรุ่นลงช่องได้เลย ระบบจะยิงทดสอบกับ API ก่อนเซฟ ชื่อผิดจะไม่ถูกเซฟ • ปล่อยว่าง = กลับไปใช้ค่าตั้งต้น</div>
       </div>
     </section>
   </main>
@@ -2705,7 +2714,17 @@ async function saveAiKey(btn) {
       body: JSON.stringify({ key: document.getElementById('aiKey').value.trim() }),
     })).json();
     if (d.error) throw new Error(d.error);
-    toast(d.hasKey ? 'บันทึก key แล้ว' : 'ลบ key ออกแล้ว');
+    // รุ่น AI เซฟแยก — ชื่อรุ่นผิดต้องไม่ทำให้ key ที่เพิ่งเซฟหายไปด้วย
+    const m = await (await fetch('/api/ai-model', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model: document.getElementById('aiModel').value.trim() }),
+    })).json();
+    if (m.error) {
+      toast(`${d.hasKey ? 'บันทึก key แล้ว แต่' : ''}รุ่น AI ไม่ผ่าน: ${m.error}`, 'err');
+    } else {
+      toast(d.hasKey ? `บันทึกแล้ว — ใช้รุ่น ${m.effective}` : 'ลบ key ออกแล้ว');
+      if (m.warning) toast(m.warning, 'warn');
+    }
     loadAiKeyState();
   } catch (e) { toast('บันทึกไม่สำเร็จ: ' + e.message); }
   finally { btn.disabled = false; }
@@ -2715,10 +2734,13 @@ async function loadAiKeyState() {
   if (!el) return;
   try {
     const d = await (await fetch('/api/ai-key')).json();
+    const mEl = document.getElementById('aiModel');
+    if (mEl && document.activeElement !== mEl) mEl.value = d.model || '';
+    const modelLine = ` • รุ่นที่ใช้อยู่: <b>${d.model || `${d.defaultModel} (ค่าตั้งต้น)`}</b>`;
     const base = 'เอา key จาก <b>console.anthropic.com</b> → API Keys → Create Key • คิดเงินตามการใช้งานจริง (วิเคราะห์รอบละไม่กี่สตางค์) • ปล่อยว่างแล้วกดบันทึก = ลบ key ออก';
     el.innerHTML = d.hasKey
-      ? `${ic('checkCircle', { color: 'var(--green,#0e9268)' })} ใส่ key แล้ว${d.fromEnv ? ' (จาก environment variable)' : ''} — ใช้ปุ่ม "ให้ AI วิเคราะห์" ในหน้าแคมเปญได้เลย<br>${base}`
-      : base;
+      ? `${ic('checkCircle', { color: 'var(--green,#0e9268)' })} ใส่ key แล้ว${d.fromEnv ? ' (จาก environment variable)' : ''}${modelLine}<br>${base}`
+      : base + modelLine;
   } catch { /* โหลดสถานะไม่ได้ ไม่กระทบการใช้งาน */ }
 }
 
