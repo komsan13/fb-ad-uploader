@@ -2091,7 +2091,9 @@ async function loadFullAccounts(force) {
         pages, chosenPage: (pages.some(g => g.id === p.pageId) ? p.pageId : (pages[0] || {}).id) || null,
         beneficiaryOptions: a.beneficiaryOptions || [],
         // default: ค่าที่เคยตั้ง (จำถาวร) > ธุรกิจเจ้าของบัญชี (ถ้ายืนยันแล้ว)
-        beneficiaryId: ((a.beneficiaryOptions || []).some(b => b.id === a.savedBeneficiaryId) ? a.savedBeneficiaryId : '')
+        // 'none' = ผู้ใช้เคยเลือก "ไม่ระบุ" เอง — ต้องคงไว้ ไม่ถอยไป preselect ให้ใหม่
+        beneficiaryId: a.savedBeneficiaryId === 'none' ? ''
+          : ((a.beneficiaryOptions || []).some(b => b.id === a.savedBeneficiaryId) ? a.savedBeneficiaryId : '')
           || ((a.business && (a.beneficiaryOptions || []).some(b => b.id === a.business.id)) ? a.business.id : ''),
       });
     }
@@ -2193,7 +2195,7 @@ function launchSetBeneficiary(v, id) {
   });
   const d = fullAccountCache[a.pid];
   const cached = d && d.adAccounts.find(x => x.account_id === a.acctId);
-  if (cached) cached.savedBeneficiaryId = id;
+  if (cached) cached.savedBeneficiaryId = id || 'none';   // ให้ตรงกับที่เซิร์ฟเวอร์จด (ไม่ระบุ = 'none')
 }
 function launchSelectReady() {
   document.querySelectorAll('#launchAccounts input[type=checkbox]').forEach(i => { i.checked = !i.disabled; });

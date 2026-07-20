@@ -2,6 +2,8 @@
 // เทสระดับนี้จับ regression ได้จริงเพราะเดินผ่านโค้ดทั้งเส้น ไม่ได้ stub ตรรกะทิ้ง
 const { test, before, after, describe } = require('node:test');
 const assert = require('node:assert');
+const fs = require('fs');
+const path = require('path');
 const { makeFakeFb } = require('./fake-fb');
 const { tmpDir, seed, startServer, get, post, readState } = require('./helpers');
 
@@ -119,6 +121,83 @@ describe('ผู้ลงโฆษณา DSA', () => {
     const as = world.calls.find((c) => c.method === 'POST' && c.path === `act_${ACCT}/adsets`);
     assert.ok(as);
     assert.ok(!('regional_regulation_identities' in as.params), 'ไม่มีค่าก็ไม่ควรส่งฟิลด์');
+  });
+
+  test('ไม่ได้ตั้ง แต่ธุรกิจเจ้าของบัญชียืนยันตัวตนแล้ว ต้องเลือกให้เองและจำลง config', async (t) => {
+    const world = freshWorld({
+      accounts: [{ name: 'บัญชีเทส', account_id: ACCT, account_status: 1, currency: 'THB', business: { id: '777000', name: 'บริษัทเจ้าของ' } }],
+      // เจ้าของอยู่ท้ายลิสต์ — กัน regression แบบ "หยิบตัวแรกที่ยืนยันแล้ว" ผ่านเทสโดยบังเอิญ
+      businesses: [
+        { id: '888000', name: 'อีกบริษัท', verification_status: 'verified' },
+        { id: '777000', name: 'บริษัทเจ้าของ', verification_status: 'verified' },
+      ],
+    });
+    const { base, world: w, dir } = await boot(t, { world });
+    await runTwice(base);
+    const as = w.calls.find((c) => c.method === 'POST' && c.path === `act_${ACCT}/adsets`);
+    assert.ok(as, 'ต้องมีการสร้างชุดโฆษณา');
+    const rri = JSON.parse(as.params.regional_regulation_identities || '{}');
+    assert.strictEqual(rri.universal_beneficiary, '777000', 'ต้องเลือกธุรกิจเจ้าของบัญชี ไม่ใช่ตัวอื่น');
+    const cfg = JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8'));
+    assert.strictEqual((cfg.beneficiaries || {})[ACCT], '777000', 'ต้องจำลง config ถาวรเหมือนผู้ใช้เลือกเอง');
+  });
+
+  test('มีธุรกิจยืนยันแล้วตัวเดียว แม้ไม่ใช่เจ้าของบัญชี ต้องใช้ตัวนั้น', async (t) => {
+    const world = freshWorld({
+      businesses: [
+        { id: '555666', name: 'ธุรกิจเดียว', verification_status: 'verified' },
+        { id: '999000', name: 'ยังไม่ยืนยัน', verification_status: 'not_verified' },
+      ],
+    });
+    const { base, world: w } = await boot(t, { world });
+    await runTwice(base);
+    const as = w.calls.find((c) => c.method === 'POST' && c.path === `act_${ACCT}/adsets`);
+    assert.ok(as, 'ต้องมีการสร้างชุดโฆษณา');
+    const rri = JSON.parse(as.params.regional_regulation_identities || '{}');
+    assert.strictEqual(rri.universal_beneficiary, '555666');
+  });
+
+  test('หลายธุรกิจยืนยันแล้วและไม่รู้เจ้าของบัญชี — ต้องไม่เดา ไม่ส่งฟิลด์', async (t) => {
+    const world = freshWorld({
+      businesses: [
+        { id: '111222', name: 'หนึ่ง', verification_status: 'verified' },
+        { id: '333444', name: 'สอง', verification_status: 'verified' },
+      ],
+    });
+    const { base, world: w } = await boot(t, { world });
+    await runTwice(base);
+    const as = w.calls.find((c) => c.method === 'POST' && c.path === `act_${ACCT}/adsets`);
+    assert.ok(as);
+    assert.ok(!('regional_regulation_identities' in as.params), 'เดาการประกาศตัวตนทางกฎหมายไม่ได้');
+  });
+
+  test('เจ้าของบัญชียังไม่ยืนยัน ต้องไม่ถอยไปหยิบธุรกิจอื่น (เคสบัญชีลูกค้า/agency)', async (t) => {
+    const world = freshWorld({
+      accounts: [{ name: 'บัญชีเทส', account_id: ACCT, account_status: 1, currency: 'THB', business: { id: '777000', name: 'ธุรกิจลูกค้า' } }],
+      businesses: [{ id: '888000', name: 'ธุรกิจของเราเอง', verification_status: 'verified' }],
+    });
+    const { base, world: w, dir } = await boot(t, { world });
+    await runTwice(base);
+    const as = w.calls.find((c) => c.method === 'POST' && c.path === `act_${ACCT}/adsets`);
+    assert.ok(as);
+    assert.ok(!('regional_regulation_identities' in as.params), 'ธุรกิจที่ยืนยันแล้วของเราไม่ใช่เจ้าของบัญชีนี้ ห้ามประกาศแทน');
+    const cfg = JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8'));
+    assert.ok(!(cfg.beneficiaries || {})[ACCT], 'ต้องไม่จำค่าที่เดาไม่ได้ลง config');
+  });
+
+  test('ผู้ใช้เลือก "ไม่ระบุ" เอง ระบบต้องไม่เลือกให้ใหม่ทับ', async (t) => {
+    const world = freshWorld({
+      accounts: [{ name: 'บัญชีเทส', account_id: ACCT, account_status: 1, currency: 'THB', business: { id: '777000', name: 'บริษัทเจ้าของ' } }],
+      businesses: [{ id: '777000', name: 'บริษัทเจ้าของ', verification_status: 'verified' }],
+    });
+    const { base, world: w, dir } = await boot(t, { world });
+    await post(base, '/api/beneficiary', { account: ACCT, id: '' });   // ตั้งใจเลือก "ไม่ระบุ"
+    await runTwice(base);
+    const as = w.calls.find((c) => c.method === 'POST' && c.path === `act_${ACCT}/adsets`);
+    assert.ok(as, 'ต้องมีการสร้างชุดโฆษณา');
+    assert.ok(!('regional_regulation_identities' in as.params), 'เลือกไม่ระบุแล้วต้องไม่ส่งฟิลด์');
+    const cfg = JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8'));
+    assert.strictEqual((cfg.beneficiaries || {})[ACCT], 'none', 'ความตั้งใจของผู้ใช้ต้องคงอยู่ ไม่ถูกทับด้วยตัวเลือกอัตโนมัติ');
   });
 });
 

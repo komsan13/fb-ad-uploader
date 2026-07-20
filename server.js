@@ -1540,8 +1540,10 @@ app.post('/api/beneficiary', (req, res) => {
   const cfg = loadConfig();
   cfg.beneficiaries = cfg.beneficiaries || {};
   const id = String(req.body.id || '').replace(/[^0-9]/g, '');
+  // เลือก "ไม่ระบุ" = ตั้งใจไม่เอา จด 'none' ไว้ (ลบทิ้งเฉยๆ จะแยกไม่ออกจาก "ยังไม่เคยตั้ง"
+  // แล้ว autopilot จะเลือกให้ใหม่ทับความตั้งใจของผู้ใช้)
   if (id) cfg.beneficiaries[acctId] = id;
-  else delete cfg.beneficiaries[acctId];
+  else cfg.beneficiaries[acctId] = 'none';
   saveConfig(cfg);
   res.json({ ok: true });
 });
@@ -2700,7 +2702,7 @@ async function apGetCampaign(acct, token, s, acctId, d, objInfo, cf) {
   return c.id;
 }
 
-async function apCreateOneAd(acct, token, campaignId, pageId, pixelId, d, objInfo, item, testMode, beneficiaryId) {
+async function apCreateOneAd(acct, token, campaignId, pageId, pixelId, d, objInfo, item, testMode, beneficiaryId, onRriRejected) {
   const targeting = {
     geo_locations: { countries: String(d.countries || 'TH').split(',').map((x) => x.trim().toUpperCase()).filter(Boolean) },
     age_min: Number(d.ageMin) || 18,
@@ -2746,6 +2748,9 @@ async function apCreateOneAd(acct, token, campaignId, pageId, pixelId, d, objInf
       const msg = `${e.message} ${e.fbMessage || ''}`;
       if (tryNo < 2 && adsetParams.regional_regulation_identities && /regional_regulation|beneficiary|payer|payor/i.test(msg)) {
         delete adsetParams.regional_regulation_identities;
+        // ต้องบอกคนเรียก — ไม่งั้นค่าที่จำไว้ใน config พังเงียบๆ แอดขึ้นแบบไม่มีผู้ลงโฆษณาตลอดไป
+        // โดยไม่มีใครรู้ (ฝั่ง config บอกว่าตั้งแล้ว คำเตือน "ยังไม่ได้ตั้ง" เลยไม่เด้งอีก)
+        if (onRriRejected) onRriRejected(e);
         continue;
       }
       if (tryNo < 2 && adsetParams.existing_customer_budget_percentage !== undefined) {
@@ -2971,10 +2976,31 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages) {
     return;
   }
 
-  // ไม่ใช่เหตุให้หยุด แต่ต้องรู้ — แอดที่ไม่มีผู้ลงโฆษณาเสี่ยงโดนปฏิเสธหรือไม่ยิง
+  // ผู้ลงโฆษณายังไม่ถูกตั้ง — เลือกให้เองก่อนสร้างแอด (ค่า 'none' = ผู้ใช้เลือก "ไม่ระบุ" เอง ห้ามทับ)
+  // บัญชีมีธุรกิจเจ้าของ: ใช้ได้เฉพาะตัวนั้นและต้องยืนยันแล้ว — เจ้าของยังไม่ยืนยัน = ไม่ถอยไปเดาตัวอื่น
+  // (เคสบัญชีลูกค้า/agency ธุรกิจที่ยืนยันแล้วของเราอาจไม่เกี่ยวกับบัญชีนั้นเลย)
+  // บัญชีไม่มีธุรกิจเจ้าของ: ใช้ธุรกิจยืนยันแล้วตัวเดียวที่มี — มีหลายตัว = กำกวม ไม่เดา
+  // เพราะนี่คือการประกาศตัวตนทางกฎหมายกับ FB เดาผิดแย่กว่าเว้นว่าง
   if (!(cfg.beneficiaries || {})[acctId] && s.warned['dsa:' + acctId] !== apToday()) {
-    const m = `⚠️ ${a.name}: ยังไม่ได้เลือก "ผู้ลงโฆษณา" ให้บัญชีนี้ — แอดที่ระบบสร้างจะไม่มีข้อมูลนี้ เสี่ยงโดนปฏิเสธ ไปตั้งที่เมนู "บัญชี FB"`;
-    alerts.push(m); apLog(s, 'warn', m, acctId); s.warned['dsa:' + acctId] = apToday();
+    let picked = null;
+    try {
+      const vb = (await fbAll('me/businesses', { fields: 'name,verification_status', limit: 100 }, prof.accessToken))
+        .filter((b) => b.verification_status === 'verified');
+      picked = a.business ? (vb.find((b) => b.id === a.business.id) || null) : (vb.length === 1 ? vb[0] : null);
+    } catch { /* อ่านไม่ได้รอบนี้ = ถือว่าเลือกไม่ได้ เตือนแล้วลองใหม่พรุ่งนี้ */ }
+    if (picked) {
+      // เขียนลง config ตัวล่าสุดจากดิสก์ ไม่ใช่ตัวที่ถือมาตั้งแต่ต้นรอบ — กันทับค่าอื่นที่ผู้ใช้เพิ่งแก้
+      const fresh = loadConfig();
+      fresh.beneficiaries = fresh.beneficiaries || {};
+      fresh.beneficiaries[acctId] = picked.id;
+      saveConfig(fresh);
+      cfg.beneficiaries = fresh.beneficiaries;
+      const m = `✅ ${a.name}: เลือก "ผู้ลงโฆษณา" ให้อัตโนมัติ → ${picked.name} (จำถาวรแล้ว เปลี่ยนได้ที่เมนู "บัญชี FB")`;
+      alerts.push(m); apLog(s, 'info', m, acctId);
+    } else {
+      const m = `⚠️ ${a.name}: ยังไม่ได้เลือก "ผู้ลงโฆษณา" และระบบเลือกให้เองไม่ได้ (ไม่มีธุรกิจที่ยืนยันตัวตน หรือมีหลายตัวจนไม่กล้าเดา) — แอดที่สร้างจะไม่มีข้อมูลนี้ เสี่ยงโดนปฏิเสธ ไปตั้งที่เมนู "บัญชี FB"`;
+      alerts.push(m); apLog(s, 'warn', m, acctId); s.warned['dsa:' + acctId] = apToday();
+    }
   }
 
   if (problems.length) {
@@ -3123,7 +3149,12 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages) {
     const pageId = pagePool[(s.pageCursor[prof.id] = (s.pageCursor[prof.id] || 0) + 1) % pagePool.length];
     try {
       const adId = await apCreateOneAd(acct, prof.accessToken, campaignId, pageId, pixelId, d, objInfo, item, testMode,
-        (cfg.beneficiaries || {})[acctId]);
+        (cfg.beneficiaries || {})[acctId], () => {
+          if (s.warned['dsabad:' + acctId] !== apToday()) {
+            const m = `⚠️ ${a.name}: FB ไม่ยอมรับ "ผู้ลงโฆษณา" ที่ตั้งไว้ — แอดขึ้นต่อโดยไม่ระบุ ไปเลือกตัวใหม่ที่เมนู "บัญชี FB"`;
+            alerts.push(m); apLog(s, 'warn', m, acctId); s.warned['dsabad:' + acctId] = apToday();
+          }
+        });
       // จดที่มาของแอด (วิดีโอไหน+แคปชั่นไหน+สกุลเงิน) — ฐานข้อมูลของตัวจัดอันดับแคปชั่น
       if (adId) {
         s.adMeta = s.adMeta || {};
@@ -3426,7 +3457,8 @@ async function autopilotTick(mode = 'full') {
     if (Date.now() < fbAppBlockedUntil(prof.accessToken)) continue;
     let accts = [];
     // ขอ funding_source_details มาด้วย — apRefill ใช้เช็คว่าบัญชีผูกบัตรแล้วก่อนเติมแอด
-    try { accts = await fbAll('me/adaccounts', { fields: 'name,account_id,account_status,currency,funding_source_details', limit: 100 }, prof.accessToken); fbOk = true; }
+    // business{id,name} ใช้เลือก "ผู้ลงโฆษณา" ให้อัตโนมัติเมื่อยังไม่ได้ตั้ง
+    try { accts = await fbAll('me/adaccounts', { fields: 'name,account_id,account_status,currency,funding_source_details,business{id,name}', limit: 100 }, prof.accessToken); fbOk = true; }
     catch { continue; }
 
     // เพจที่ลงโฆษณาได้ของโปรไฟล์นี้ — โหลดครั้งเดียวต่อรอบ ใช้บาลานซ์เพจตอนเติมแอด (round-robin)
