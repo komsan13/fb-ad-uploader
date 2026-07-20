@@ -666,6 +666,37 @@ describe('ซ่อนบัญชี/เพจจากหน้าสุขภ
   });
 });
 
+// ---------- ด่านตรวจบัตรก่อนเติมแอด: autopilot ต้องไม่เติมให้บัญชีที่ยังไม่ผูกบัตร ----------
+describe('autopilot เช็คบัตรก่อนเติมแอด', () => {
+  test('บัญชีไม่มีบัตรถูกข้าม บัญชีมีบัตรเติมตามปกติ', async (t) => {
+    const world = freshWorld({
+      accounts: [
+        { name: 'ไม่มีบัตร', account_id: '901', account_status: 1, currency: 'THB', funding_source_details: null },
+        { name: 'มีบัตร', account_id: '902', account_status: 1, currency: 'THB' },
+      ],
+    });
+    const { base, world: w } = await boot(t, { world });
+    await runTwice(base);
+    const noCard = w.calls.filter((c) => c.method === 'POST' && c.path === 'act_901/campaigns');
+    const withCard = w.calls.filter((c) => c.method === 'POST' && c.path === 'act_902/campaigns');
+    assert.strictEqual(noCard.length, 0, 'บัญชีไม่มีบัตรต้องถูกข้าม — สร้างไปก็โดนปฏิเสธ เสีย API เปล่า');
+    assert.strictEqual(withCard.length, 1, 'บัญชีมีบัตรต้องเติมตามปกติ ไม่โดนลากพัง');
+  });
+
+  test('ผูกบัตรแล้ว รอบถัดไปต้องกลับมาเติมให้เอง', async (t) => {
+    const world = freshWorld({
+      accounts: [{ name: 'เพิ่งผูกบัตร', account_id: '903', account_status: 1, currency: 'THB', funding_source_details: null }],
+    });
+    const { base, world: w } = await boot(t, { world });
+    await runTwice(base);
+    assert.strictEqual(w.calls.filter((c) => c.method === 'POST' && c.path === 'act_903/campaigns').length, 0, 'ยังไม่มีบัตรต้องไม่เติม');
+    w.accounts[0].funding_source_details = { id: 'f_new', display_string: 'VISA 1234' };   // ผู้ใช้ผูกบัตรแล้ว
+    await runTwice(base);
+    assert.strictEqual(w.calls.filter((c) => c.method === 'POST' && c.path === 'act_903/campaigns').length, 1,
+      'ผูกบัตรแล้วระบบต้องกลับมาเติมเอง ไม่ต้องกดอะไรเพิ่ม');
+  });
+});
+
 // ---------- เกราะ Meta block: persist cooldown, app-block backoff, เตือน Telegram ----------
 describe('เกราะ Meta block API', () => {
   const fs = require('node:fs'), path = require('node:path'), http = require('node:http');

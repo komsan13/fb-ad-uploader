@@ -30,7 +30,14 @@ function makeFakeFb(world) {
 
       // ---- อ่าน ----
       if (req.method === 'GET') {
-        if (path === 'me/adaccounts') return send({ data: world.accounts || [] });
+        if (path === 'me/adaccounts') {
+          // บัญชีเทสถือว่าผูกบัตรแล้วโดยปริยาย (เหมือนบัญชีจริงส่วนใหญ่) — เทสที่อยากจำลอง
+          // "ยังไม่เชื่อมบัตร" ให้ประกาศ funding_source_details: null ในบัญชีนั้นตรงๆ
+          return send({
+            data: (world.accounts || []).map((a) =>
+              'funding_source_details' in a ? a : { ...a, funding_source_details: { id: 'f_test', display_string: 'บัตรเทส' } }),
+          });
+        }
         if (path === 'me/accounts') return send({ data: world.pages || [] });
         if (path === 'me/businesses') return send({ data: world.businesses || [] });
         if (path === 'me') return send({ name: 'เทส' });

@@ -2388,6 +2388,18 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages) {
     if (apRecent(s.tested[acctId], 24 * 3600 * 1000).length) return;
   }
 
+  // บัญชียังไม่ผูกบัตร = สร้างแอดไปก็โดน FB ปฏิเสธแน่นอน — ข้ามก่อนเสีย API call เปล่าๆ ทุกรอบ
+  // (หน้าขึ้นแอดเช็คเรื่องนี้อยู่แล้วผ่าน evalReady แต่ autopilot ไล่ทุกบัญชี active เอง ต้องเช็คเอง)
+  const fsd = a.funding_source_details || {};
+  if (!fsd.id && !fsd.display_string) {
+    if (s.warned['card:' + acctId] !== apToday()) {
+      const m = `💳 ${a.name}: ยังไม่เชื่อมบัตร — ข้ามการเติมแอดให้บัญชีนี้ (เชื่อมได้จากหน้า "สุขภาพบัญชี" แล้วระบบจะเติมต่อเองรอบหน้า)`;
+      alerts.push(m); apLog(s, 'warn', m, acctId); s.warned['card:' + acctId] = apToday();
+    }
+    return;
+  }
+  s.warned['card:' + acctId] = '';
+
   const d = cfg.launchDefaults || {};
   const objInfo = OBJECTIVES[d.objective || 'OUTCOME_SALES'];
   const problems = [];
@@ -2800,7 +2812,8 @@ async function autopilotTick(mode = 'full') {
     // แอปของโปรไฟล์นี้ยังติดบล็อกอยู่ — ข้ามเฉพาะโปรไฟล์นี้ ไม่ลากทั้งระบบพักตาม
     if (Date.now() < fbAppBlockedUntil(prof.accessToken)) continue;
     let accts = [];
-    try { accts = await fbAll('me/adaccounts', { fields: 'name,account_id,account_status,currency', limit: 100 }, prof.accessToken); fbOk = true; }
+    // ขอ funding_source_details มาด้วย — apRefill ใช้เช็คว่าบัญชีผูกบัตรแล้วก่อนเติมแอด
+    try { accts = await fbAll('me/adaccounts', { fields: 'name,account_id,account_status,currency,funding_source_details', limit: 100 }, prof.accessToken); fbOk = true; }
     catch { continue; }
 
     // เพจที่ลงโฆษณาได้ของโปรไฟล์นี้ — โหลดครั้งเดียวต่อรอบ ใช้บาลานซ์เพจตอนเติมแอด (round-robin)
