@@ -565,6 +565,7 @@
           <button class="btn-primary btn-sm" style="margin-left:auto" onclick="autoLaunch(this)" title="หยิบวิดีโอ+แคปชั่นจากคลัง สร้างแคมเปญ แล้วขึ้นแอดทุกบัญชีที่ใช้ได้ เปิดยิงทันที"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg> ขึ้นอัตโนมัติทั้งหมด</button>
           <button class="btn-light btn-sm" onclick="handToAi(this)" title="บันทึกค่าที่ตั้งไว้ทั้งหมด แล้วให้ AI ขึ้นแอดต่อเองอัตโนมัติ"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg> จำค่านี้ แล้วให้ AI ขึ้นต่อ</button>
           <button class="btn-light btn-sm" onclick="openLibPick(null)"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1-.3 2.1.3 2.4 1.3Z"/><path d="m6.2 5.3 3.1 3.9"/><path d="m12.4 3.4 3.1 4"/><path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg> เลือกเอง</button>
+          <button class="btn-light btn-sm" onclick="aiPreflightCheck(this)" title="ให้ AI ตรวจข้อความ+หัวข้อ+ภาพหน้าปกของทุกแอด เทียบนโยบาย Meta ก่อนขึ้นจริง — อ่านอย่างเดียว ไม่ขึ้นแอด ไม่ใช้เงิน"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg> ตรวจนโยบาย (AI)</button>
         </div>
         <div class="hint" style="margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span>กดปุ่มเดียวจบ — ขึ้นให้<b>ทุกบัญชีที่ใช้ได้</b>โดยอัตโนมัติ ไม่ต้องติ๊กเลือกเอง มีสรุปให้ยืนยันก่อนเงินออก —</span>
@@ -862,9 +863,10 @@
 
       <div class="card">
         <h2><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>คลังแคปชั่น <span class="h-desc" id="capCount"></span>
-          <button class="btn-primary btn-sm" style="margin-left:auto" onclick="openCapModal()">+ เพิ่มแคปชั่น</button>
+          <button class="btn-light btn-sm" style="margin-left:auto" onclick="aiGenCaptions(this)" title="AI อ่านแคปชั่นในคลัง + สถิติผลงานจริง 7 วัน แล้วเขียนตัวใหม่ในโทนเดียวกัน — ได้เป็นแบบร่าง ต้องกดอนุมัติก่อนถูกใช้จริง">✨ ให้ AI เขียนเพิ่ม</button>
+          <button class="btn-primary btn-sm" onclick="openCapModal()">+ เพิ่มแคปชั่น</button>
         </h2>
-        <div class="hint" style="margin-bottom:10px">เตรียมข้อความไว้ล่วงหน้า แล้วตัวจัดแผนจะหยิบไปใส่แอดให้เอง — ยิ่งมีหลายอันยิ่งไม่ต้องใช้ซ้ำ • คลิกแถวเพื่อดู/แก้ไข</div>
+        <div class="hint" style="margin-bottom:10px">เตรียมข้อความไว้ล่วงหน้า แล้วตัวจัดแผนจะหยิบไปใส่แอดให้เอง — ยิ่งมีหลายอันยิ่งไม่ต้องใช้ซ้ำ • คลิกแถวเพื่อดู/แก้ไข • แบบร่างจาก AI ต้องกดอนุมัติก่อนถึงถูกใช้</div>
         <input id="capSearch" placeholder="ค้นหาแคปชั่น..." style="max-width:300px;margin-bottom:10px" oninput="renderCaptions()">
         <div class="tbl-wrap">
           <table>
@@ -982,6 +984,10 @@
         <label class="switch-row" style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
           <span class="switch"><input type="checkbox" id="apEnabled" onchange="saveAutopilot()"><span class="sl"></span></span>
           <span><b>เปิดระบบอัตโนมัติ</b> — ให้มันลงมือแก้เองโดยไม่ต้องถาม</span>
+        </label>
+        <label class="switch-row" style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+          <span class="switch"><input type="checkbox" id="apAiFull" onchange="aiFullToggled()"><span class="sl"></span></span>
+          <span>🤖 <b>โหมด AI เต็มระบบ</b> — ปุ่มเดียวจบ: เปิดระบบอัตโนมัติ + AI ตรวจนโยบายทุกแอดก่อนเติม (เสี่ยงสูง = ไม่เอาขึ้น) + คลังแคปชั่นใกล้หมด AI เขียนเองแล้วส่งข้อความเต็มให้พิมพ์ "ยืนยัน" ใน Telegram ครั้งเดียว • ต้องใส่ Anthropic key และตั้ง Telegram ก่อน</span>
         </label>
         <label class="switch-row" style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
           <span class="switch"><input type="checkbox" id="apTest" onchange="saveAutopilot()"><span class="sl"></span></span>
@@ -3154,6 +3160,7 @@ async function loadAutopilot() {
   let d;
   try { d = await (await fetch('/api/autopilot')).json(); } catch { return; }
   document.getElementById('apEnabled').checked = d.enabled;
+  document.getElementById('apAiFull').checked = d.aiFull;
   document.getElementById('apKill').checked = d.killSwitch;
   document.getElementById('apTest').checked = d.testMode;
   document.getElementById('apCap').textContent = d.maxPerDay;
@@ -3227,6 +3234,35 @@ function apPushLog(l) {
   while (box.children.length > 60) box.lastChild.remove();
 }
 
+// สวิตช์ AI เต็มระบบ = ปุ่มเดียวจบ — เปิดเมื่อไหร่ต้องพาระบบอัตโนมัติเปิดตามด้วย ไม่งั้นไม่มีอะไรทำงาน
+// แต่ก่อนเปิดต้องเช็คของจริง: ไม่มี Anthropic key = ชั้นตรวจไม่มีอยู่จริง เปิดไปคือ autopilot เปล่าๆ
+// ที่ผู้ใช้"เชื่อว่า"มี AI คุมอยู่ — อันตรายกว่าไม่เปิด
+async function aiFullToggled() {
+  const el = document.getElementById('apAiFull');
+  if (el.checked) {
+    try {
+      const k = await (await fetch('/api/ai-key')).json();
+      if (!k.hasKey) {
+        el.checked = false;
+        return toast('เปิดไม่ได้: ยังไม่ได้ใส่ Anthropic API key (เมนู "บัญชี FB" → ส่วน AI) — ไม่มี key ชั้นตรวจนโยบายจะไม่ทำงานจริง');
+      }
+      const tg = await (await fetch('/api/telegram')).json();
+      if (!tg.hasToken) toast('ยังไม่ตั้ง Telegram — โหมดนี้จะตรวจนโยบายก่อนเติมแอดให้ แต่จะไม่เขียนแคปชั่นอัตโนมัติ (ไม่มีช่องทางให้กดยืนยัน)');
+      const en = document.getElementById('apEnabled');
+      if (!en.checked) {
+        if (!confirm('โหมดนี้จะเปิด "ระบบอัตโนมัติ" ให้ด้วย — ระบบจะเริ่มเติมแอด/ปิดแอดขาดทุน/ขยายงบด้วยเงินจริงตามค่าที่ตั้งไว้\n\nยังไม่แน่ใจ แนะนำเปิด "โหมดทดสอบ" คู่กันก่อน (แอดถูกปิดไว้ ไม่ใช้เงิน)\n\nเปิดเลยไหม?')) {
+          el.checked = false;
+          return;
+        }
+        en.checked = true;
+      }
+    } catch (e) {
+      el.checked = false;
+      return toast('เช็คความพร้อมไม่สำเร็จ: ' + e.message);
+    }
+  }
+  saveAutopilot();
+}
 async function saveAutopilot(extra) {
   // ช่องที่ว่างหรืออ่านไม่ออก = ไม่ส่งไป เพื่อไม่ให้เซิร์ฟเวอร์เขียนค่าตั้งต้นทับค่าที่เข้มกว่า
   const limits = {};
@@ -3242,6 +3278,7 @@ async function saveAutopilot(extra) {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         enabled: document.getElementById('apEnabled').checked,
+        aiFull: document.getElementById('apAiFull').checked,
         killSwitch: document.getElementById('apKill').checked,
         testMode: document.getElementById('apTest').checked,
         minAds: Number(document.getElementById('apMinAds').value) || 0,
@@ -3538,7 +3575,9 @@ function capSortBy(key) {
   renderCaptions();
 }
 function renderCaptions() {
-  document.getElementById('capCount').textContent = capItems.length ? `— ${capItems.length} แคปชั่น` : '';
+  const nDraft = capItems.filter(c => c.draft).length;
+  document.getElementById('capCount').textContent = capItems.length
+    ? `— ${capItems.length} แคปชั่น${nDraft ? ` (แบบร่างรออนุมัติ ${nDraft})` : ''}` : '';
   const q = (document.getElementById('capSearch').value || '').trim().toLowerCase();
   let rows = capItems.filter(c => !q || `${c.message} ${c.headline || ''}`.toLowerCase().includes(q));
   const val = c => (capSortKey === 'len' ? (c.message || '').length : (c.ts || 0));
@@ -3550,11 +3589,12 @@ function renderCaptions() {
   const fmtD = ts => (ts ? new Date(ts).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '—');
   document.getElementById('capRows').innerHTML = rows.map((c, i) => `<tr style="cursor:pointer" onclick="openCapModal(${jsStr(c.id)})" title="คลิกเพื่อดู/แก้ไข">
       <td style="color:var(--muted)">${i + 1}</td>
-      <td><div class="cap-cell">${esc(c.message)}</div></td>
+      <td><div class="cap-cell">${c.draft ? capDraftBadge(c) : ''}${esc(c.message)}</div></td>
       <td>${c.headline ? esc(c.headline) : '<span style="color:var(--muted)">—</span>'}</td>
       <td class="num-cell">${(c.message || '').length}</td>
       <td style="white-space:nowrap;color:var(--muted);font-size:12.5px">${fmtD(c.ts)}</td>
       <td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
+        ${c.draft ? `<button class="btn-primary btn-sm" title="อนุมัติเข้าคลังจริง — ตัวจัดแผน/ระบบอัตโนมัติจะเริ่มหยิบไปใช้ได้" onclick="approveCaption(${jsStr(c.id)})">✓ อนุมัติ</button> ` : ''}
         <button class="icon-btn btn-light" title="แก้ไข" onclick="openCapModal(${jsStr(c.id)})"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
         <button class="btn-danger-light icon-btn" title="ลบแคปชั่นนี้" onclick="deleteCaption(${jsStr(c.id)})"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
       </td>
@@ -3616,6 +3656,44 @@ async function deleteCaption(id) {
   } catch (e) { return toast('ลบไม่สำเร็จ: ' + e.message); }
   capItems = capItems.filter(x => x.id !== id);
   renderCaptions();
+}
+
+// ---------- แบบร่างจาก AI ----------
+function capDraftBadge(c) {
+  const risk = { high: ['เสี่ยงสูง', 'var(--red)'], medium: ['เสี่ยงปานกลาง', '#b7791f'], low: ['ผ่านตรวจนโยบาย', 'var(--brand-dark)'] }[c.risk] || ['ยังไม่ได้ตรวจนโยบาย', 'var(--muted)'];
+  const tip = (c.issues || []).join('\n');
+  return `<span title="${esc(tip)}" style="display:inline-block;margin-right:6px;padding:1px 7px;border-radius:99px;font-size:11px;font-weight:700;background:var(--bg);border:1px solid var(--line);color:${risk[1]}">✨ ร่าง AI • ${risk[0]}</span>`;
+}
+async function aiGenCaptions(btn) {
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ AI กำลังอ่านสถิติ + เขียน...';
+  try {
+    const d = await (await fetch('/api/captions/generate', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ count: 5 }),
+    })).json();
+    if (d.error) return toast('เขียนไม่สำเร็จ: ' + d.error);
+    await loadCaptions();
+    const risky = (d.drafts || []).filter(x => x.risk === 'high').length;
+    toast(`✓ AI เขียนมา ${d.drafts.length} แบบร่าง${risky ? ` (${risky} ตัวเสี่ยงนโยบายสูง — อ่านก่อนอนุมัติ)` : ''} — กด "อนุมัติ" ตัวที่ชอบเพื่อเข้าคลังจริง`, risky ? 'warn' : 'ok');
+  } catch (e) {
+    toast('เขียนไม่สำเร็จ: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
+}
+async function approveCaption(id) {
+  try {
+    const d = await (await fetch('/api/captions/approve', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id }),
+    })).json();
+    if (d.error) throw new Error(d.error);
+  } catch (e) { return toast('อนุมัติไม่สำเร็จ: ' + e.message); }
+  const item = capItems.find(x => x.id === id);
+  if (item) delete item.draft;
+  renderCaptions();
+  toast('✓ อนุมัติแล้ว — เข้าคลังจริง ตัวจัดแผนหยิบใช้ได้ทันที', 'ok');
 }
 
 // ---------- เลือกวิดีโอจากคลังมาใช้ขึ้นแอด ----------
@@ -3992,6 +4070,56 @@ function aggregateBadge(card, selected) {
     setBadge(card, 'ok', selected.length > 1 ? `✓ สำเร็จทั้ง ${okN} บัญชี` : '✓ สำเร็จ');
   } else if (failN) {
     setBadge(card, 'err', `✗ ล้มเหลว ${failN}/${selected.length} บัญชี`);
+  }
+}
+
+// ---------- AI ตรวจนโยบายก่อนขึ้น (pre-flight) ----------
+async function aiPreflightCheck(btn) {
+  const cards = [...document.querySelectorAll('.ad-card')];
+  if (!cards.length) return toast('ยังไม่มีแอดให้ตรวจ — ลากรูป/วิดีโอมาวางก่อนครับ');
+  const items = cards.map(c => ({
+    message: c.querySelector('.f-message').value.trim(),
+    headline: c.querySelector('.f-headline').value.trim(),
+    mediaId: c.dataset.mediaId || undefined,
+  }));
+  const old = btn.innerHTML;
+  btn.disabled = true;
+  btn.textContent = '⏳ AI กำลังตรวจ...';
+  try {
+    const d = await (await fetch('/api/preflight', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items }),
+    })).json();
+    if (d.error) return toast('ตรวจไม่สำเร็จ: ' + d.error);
+    let high = 0, medium = 0;
+    (d.items || []).forEach(r => {
+      const c = cards[r.index];
+      if (!c) return;
+      const box = c.querySelector('.ad-err-msg');
+      if (r.risk === 'low') {
+        box.innerHTML = '<div style="color:var(--brand-dark)">🛡️ AI ตรวจแล้ว — ไม่พบความเสี่ยงนโยบาย</div>';
+      } else {
+        if (r.risk === 'high') high++; else medium++;
+        const col = r.risk === 'high' ? 'var(--red)' : '#b7791f';
+        const label = { text: 'ข้อความหลัก', headline: 'หัวข้อ', image: 'ภาพ' };
+        box.innerHTML = `<div style="color:${col}">🛡️ AI: ความเสี่ยง${r.risk === 'high' ? 'สูง' : 'ปานกลาง'}</div>`
+          + (r.issues || []).map(i => `<div style="color:${col}">• [${esc(label[i.where] || i.where)}] ${esc(i.policy)}: ${esc(i.detail)}</div>`).join('')
+          + (r.advice ? `<div style="color:var(--muted)">→ ${esc(r.advice)}</div>` : '');
+      }
+      box.style.display = 'block';
+    });
+    // truncated = แอดเกินเพดาน 20 ตัว/ครั้งที่ยังไม่ถูกตรวจเลย — ห้ามพูดว่า "ตรวจครบ" เด็ดขาด
+    const cut = d.truncated ? ` • อีก ${d.truncated} แอดเกินเพดาน 20 ตัว/ครั้ง ยังไม่ถูกตรวจ` : '';
+    if ((d.missing || []).length) toast(`AI ตรวจไม่ครบ ${d.missing.length} แอด — กดตรวจซ้ำอีกรอบได้${cut}`);
+    else if (high) toast(`พบความเสี่ยงสูง ${high} แอด${medium ? ` ปานกลาง ${medium} แอด` : ''} — แนะนำแก้ก่อนขึ้น (ดูรายละเอียดใต้การ์ด)${cut}`, 'err');
+    else if (medium) toast(`พบจุดสุ่มเสี่ยง ${medium} แอด — ดูรายละเอียดใต้การ์ดแต่ละใบ${cut}`, 'warn');
+    else if (d.truncated) toast(`20 แอดแรกไม่พบความเสี่ยง แต่อีก ${d.truncated} แอดยังไม่ถูกตรวจ — ตรวจได้ครั้งละไม่เกิน 20`, 'warn');
+    else toast('✓ AI ตรวจครบทุกแอด — ไม่พบความเสี่ยงนโยบาย', 'ok');
+  } catch (e) {
+    toast('ตรวจไม่สำเร็จ: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = old;
   }
 }
 
