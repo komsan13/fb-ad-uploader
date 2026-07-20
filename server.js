@@ -1359,7 +1359,13 @@ app.post('/api/ai-model', async (req, res) => {
 });
 app.post('/api/ai-key', (req, res) => {
   const cfg = loadConfig();
-  cfg.anthropicKey = String(req.body.key || '').trim();
+  const key = String(req.body.key || '').trim();
+  // key จริงของ Anthropic ขึ้นต้น sk-ant- เสมอ — เคยเกิดเหตุจริง: browser autofill ยัดรหัสผ่าน
+  // ลงช่อง (type=password) แล้วถูกเซฟทับ key จริง = ฟีเจอร์ AI ทั้งระบบล้มเงียบพร้อมกัน
+  if (key && !key.startsWith('sk-ant-')) {
+    return res.status(400).json({ error: 'ไม่ใช่รูปแบบ key ของ Anthropic (ต้องขึ้นต้นด้วย sk-ant-) — key เดิมยังอยู่ ไม่ได้ถูกทับ' });
+  }
+  cfg.anthropicKey = key;
   saveConfig(cfg);
   res.json({ ok: true, hasKey: !!cfg.anthropicKey });
 });
