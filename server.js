@@ -1538,6 +1538,14 @@ app.post('/api/launch', upload.any(), async (req, res) => {
   const objInfo = OBJECTIVES[data.campaign.objective];
   if (!objInfo) { send({ type: 'fatal', error: `วัตถุประสงค์ไม่รองรับ: ${data.campaign.objective}` }); return res.end(); }
   if (objInfo.needsPixel && !data.pixelId) { send({ type: 'fatal', error: 'บัญชีนี้ยังไม่มี Pixel (สร้างในเมนูบัญชี FB ก่อน)' }); return res.end(); }
+  // แอดชี้มาหน้า Landing ของเราแต่พิกเซลยังไม่ถูกฝังบนหน้า = คนกดจริงแต่คอนเวอร์ชั่นเป็นศูนย์ตลอด
+  // แล้วกฎหยุดอัตโนมัติ/ตัวขยายงบก็ตัดสินจากตัวเลขผิด — เช็คแล้วฝังให้เองก่อนขึ้น
+  // (ตรรกะเดียวกับตอน autopilot เติมแอด ที่ทำอยู่แล้วใน apRefill)
+  if (objInfo.needsPixel && (data.ads || []).some((ad) => lpIsOurLanding(ad && ad.link))) {
+    if (lpEnsurePixel(data.pixelId)) {
+      send({ type: 'progress', msg: `ฝัง Pixel ${data.pixelId} ลงหน้า Landing ให้แล้ว — แคมเปญนี้ถึงจะนับคอนเวอร์ชั่นได้` });
+    }
+  }
 
   const status = data.active ? 'ACTIVE' : 'PAUSED';
   const acct = `act_${acctId}`;

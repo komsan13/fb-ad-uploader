@@ -276,6 +276,47 @@ describe('การเชื่อม Pixel ตอนขึ้นแอด', () 
   });
 });
 
+// ---------- ขึ้นแอดเอง (/api/launch): พิกเซลต้องถูกฝังบนหน้า Landing ก่อนขึ้น ----------
+describe('ขึ้นแอดเองแล้วลิงก์ชี้มาหน้า Landing', () => {
+  const launch = async (base, link, pixelId) => {
+    const form = new FormData();
+    form.append('data', JSON.stringify({
+      profileId: 'p1', accountId: ACCT, pageId: 'page1',
+      campaign: { name: 'เทสฝังพิกเซล', objective: 'OUTCOME_SALES' },
+      campaignBudget: 300, cta: 'LEARN_MORE', pixelId, conversionEvent: 'SUBSCRIBE', active: false,
+      ads: [{ mediaId: 'v1', name: 'Ad-1', message: 'ทดสอบ', link, ageMin: 20, ageMax: 65, gender: '', countries: ['TH'], interests: [] }],
+    }));
+    const r = await fetch(base + '/api/launch', { method: 'POST', body: form });
+    return r.text();   // สตรีม ndjson — อ่านจนจบถือว่ารอบขึ้นแอดเสร็จ
+  };
+
+  test('พิกเซลยังไม่อยู่บนหน้า ต้องฝังให้เองก่อนขึ้น', async (t) => {
+    const world = freshWorld({ pixels: [{ id: 'px777' }] });
+    const { base } = await boot(t, { world });
+    const out = await launch(base, base + '/lp', 'px777');
+    const lp = await get(base, '/api/landing');
+    assert.ok(lp.pixels.some((p) => p.id === 'px777'),
+      'ลิงก์ชี้มาหน้า /lp ของเรา = ต้องฝัง Pixel ให้เอง ไม่งั้นคอนเวอร์ชั่นเป็นศูนย์ตลอด');
+    assert.ok(out.includes('ฝัง Pixel'), 'ต้องบอกผู้ใช้ในสตรีมด้วยว่าฝังให้แล้ว');
+  });
+
+  test('พิกเซลอยู่บนหน้าแล้ว ต้องไม่เพิ่มซ้ำ', async (t) => {
+    const { base, dir } = await boot(t);
+    const fs2 = require('node:fs'), path2 = require('node:path');
+    fs2.writeFileSync(path2.join(dir, 'landing.json'), JSON.stringify({ pixels: [{ type: 'meta', id: 'px1' }], links: [] }));
+    await launch(base, base + '/lp', 'px1');
+    const lp = await get(base, '/api/landing');
+    assert.strictEqual(lp.pixels.filter((p) => p.id === 'px1').length, 1, 'มีอยู่แล้วต้องไม่ซ้ำ');
+  });
+
+  test('ลิงก์ไปเว็บอื่น ต้องไม่แตะหน้า Landing', async (t) => {
+    const { base } = await boot(t);
+    await launch(base, 'https://example.com/', 'px1');
+    const lp = await get(base, '/api/landing');
+    assert.ok(!(lp.pixels || []).some((p) => p.id === 'px1'), 'ลิงก์ไม่ได้ชี้มาหน้าเรา ห้ามฝังพิกเซลมั่ว');
+  });
+});
+
 describe('การอ่านเหตุผลปฏิเสธ', () => {
   test('เหตุผลอยู่ใน ad_review_feedback ต้องไม่ถูกมองข้าม และหมวดเดิมซ้ำต้องหยุดเติมแอด', async (t) => {
     const reject = (id) => ({
