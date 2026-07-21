@@ -105,6 +105,27 @@ describe('ถามยอดผ่าน Telegram', () => {
     assert.match(tg.state.sent[1].text, /ใช้เงินวันนี้/);
     assert.match(tg.state.sent[1].text, /123\.45/);
   });
+
+  test('อ่านยอดไม่ได้ (FB จำกัด API) ต้องไม่บอกว่า "ไม่มีการใช้จ่าย"', async (t) => {
+    const { tg, srv } = await bootTg(t);   // keyword path (ไม่มี key)
+    srv.fbWorld.route = (m, p) => (p.endsWith('/insights') ? { error: 'throttled' } : null);
+    await until(() => tg.state.polls >= 1);
+    tg.push(CHAT, 'สรุปยอดเมื่อวาน');
+    await until(() => tg.state.sent.length >= 2, 20000);
+    assert.match(tg.state.sent[1].text, /อ่าน.*ไม่ได้/, 'อ่านไม่ได้ต้องบอกตรงๆ');
+    assert.doesNotMatch(tg.state.sent[1].text, /ยังไม่มีการใช้จ่าย/, 'ห้ามโกหกว่าไม่มียอดทั้งที่แค่อ่านไม่ได้');
+  });
+
+  test('บัญชีที่โดนปิดแล้วแต่ยิงเงินไปเมื่อวาน ยอดต้องยังอยู่ในสรุป', async (t) => {
+    const { tg, srv } = await bootTg(t);
+    srv.fbWorld.accounts.push({ name: 'บัญชีโดนปิด', account_id: '222', account_status: 2, currency: 'THB' });
+    srv.fbWorld.insights.push({ acct: '222', spend: '500.00', impressions: '100' });
+    await until(() => tg.state.polls >= 1);
+    tg.push(CHAT, 'สรุปยอดเมื่อวาน');
+    await until(() => tg.state.sent.length >= 2, 20000);
+    assert.match(tg.state.sent[1].text, /บัญชีโดนปิด/, 'บัญชี disabled ที่ใช้เงินจริงต้องไม่หายจากยอด');
+    assert.match(tg.state.sent[1].text, /500/);
+  });
 });
 
 describe('AI สั่งงานระบบ — ต้องยืนยันก่อนเสมอ', () => {

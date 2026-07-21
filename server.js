@@ -3884,29 +3884,36 @@ function startAutopilotTimers() {
 async function spendLines(cfg, datePreset) {
   const lines = [];
   const totals = {};   // รวมแยกต่อสกุลเงิน — ต่างสกุลเอามาบวกกันตรงๆ ไม่ได้
+  let failed = 0;      // บัญชีที่อ่านยอดไม่ได้ (error/ถูก Meta จำกัด) — ต้องแยกจาก "ไม่มีการใช้จ่าย"
   for (const prof of cfg.profiles || []) {
     if (!prof.accessToken) continue;
+    let accts;
     try {
-      const accts = await fbAll('me/adaccounts', { fields: 'name,account_id,account_status,currency', limit: 100 }, prof.accessToken);
-      // ยิงยอดทุกบัญชีขนานกัน (จำกัดครั้งละ 6) แทนไล่ทีละบัญชี — คงลำดับเดิมด้วย pMap
-      const rows = await pMap(accts.filter((x) => x.account_status === 1), 6, async (a) => {
-        try {
-          const ins = await fb(`act_${a.account_id}/insights`, { fields: 'spend,impressions', date_preset: datePreset }, 'GET', prof.accessToken);
-          const row = (ins.data || [])[0];
-          if (row && Number(row.spend) > 0) return { a, spend: Number(row.spend), impressions: Number(row.impressions || 0) };
-        } catch { /* ข้าม */ }
-        return null;
-      });
-      for (const r of rows) {
-        if (!r) continue;
+      accts = await fbAll('me/adaccounts', { fields: 'name,account_id,account_status,currency', limit: 100 }, prof.accessToken);
+    } catch { failed++; continue; }   // อ่านรายชื่อบัญชีไม่ได้ = ทั้งโปรไฟล์อ่านไม่ได้
+    // รวมทุกบัญชี ยกเว้นที่ปิดถาวรแล้ว (100/101 อ่าน insights ไม่ได้อยู่แล้ว) — บัญชีที่ยิงเงินแล้ว
+    // โดนปิด (disabled/ค้างชำระ) ทีหลัง เงินที่ใช้ไปจริงต้องยังอยู่ในยอด ไม่งั้นรายงานต่ำกว่าจริง
+    const relevant = accts.filter((x) => x.account_status !== 100 && x.account_status !== 101);
+    const rows = await pMap(relevant, 6, async (a) => {
+      try {
+        const ins = await fb(`act_${a.account_id}/insights`, { fields: 'spend,impressions', date_preset: datePreset }, 'GET', prof.accessToken);
+        const row = (ins.data || [])[0];
+        return { a, spend: Number((row || {}).spend) || 0, impressions: Number((row || {}).impressions || 0) };
+      } catch {
+        return { a, err: true };   // อ่านไม่ได้ = นับไว้ ไม่ทำเป็น 0 เงียบๆ (0 คือโกหกว่าไม่ใช้เงิน)
+      }
+    });
+    for (const r of rows) {
+      if (r.err) { failed++; continue; }
+      if (r.spend > 0) {
         lines.push(`• ${r.a.name}: ${r.spend.toLocaleString(undefined, { minimumFractionDigits: 2 })} ${r.a.currency} • ${r.impressions.toLocaleString()} อิมเพรสชัน`);
         totals[r.a.currency] = (totals[r.a.currency] || 0) + r.spend;
       }
-    } catch { /* ข้าม */ }
+    }
   }
   const totalLine = Object.entries(totals)
     .map(([cur, v]) => `${v.toLocaleString(undefined, { minimumFractionDigits: 2 })} ${cur}`).join(' + ');
-  return { lines, totalLine };
+  return { lines, totalLine, failed };
 }
 
 // ---------- บทวิเคราะห์เช้าโดย AI — ต่อท้ายตัวเลขดิบ ไม่แทนที่ ----------
@@ -3955,8 +3962,11 @@ async function aiDailyAnalysis(cfg, apiKey) {
 async function dailySummary() {
   const cfg = loadConfig();
   if (!(cfg.telegram || {}).botToken) return;
-  const { lines, totalLine } = await spendLines(cfg, 'yesterday');
-  const base = `🌅 สรุปการใช้จ่ายเมื่อวาน\n\n${lines.length ? `${lines.join('\n')}\n\nรวม: ${totalLine}` : 'ไม่มีการใช้จ่าย'}`;
+  const { lines, totalLine, failed } = await spendLines(cfg, 'yesterday');
+  const body = lines.length
+    ? `${lines.join('\n')}\n\nรวม: ${totalLine}${failed ? `\n⚠️ อ่านไม่ได้ ${failed} บัญชี — ยอดจริงอาจมากกว่านี้` : ''}`
+    : (failed ? 'อ่านยอดไม่ได้ตอนนี้ (Facebook จำกัดการเข้าถึง) — จะลองใหม่รอบหน้า' : 'ไม่มีการใช้จ่าย');
+  const base = `🌅 สรุปการใช้จ่ายเมื่อวาน\n\n${body}`;
   // มี key = แถมบทวิเคราะห์ AI ต่อท้าย — AI ล่ม/ไม่มี key ตัวเลขดิบต้องยังไปถึงเสมอ
   let extra = '';
   const apiKey = cfg.anthropicKey || process.env.ANTHROPIC_API_KEY;
@@ -4304,9 +4314,15 @@ async function tgAnswer(cfg, text) {
   else if (/7|สัปดาห์|week/.test(q)) { preset = 'last_7d'; label = '7 วันล่าสุด'; }
   else if (/สรุป|ใช้เงิน|ใช้จ่าย|spend|วันนี้|today/.test(q)) { preset = 'today'; label = 'วันนี้'; }
   if (!preset) return TG_HELP;
-  const { lines, totalLine } = await spendLines(cfg, preset);
-  if (!lines.length) return `💸 ${label}: ยังไม่มีการใช้จ่าย`;
-  return `💸 ใช้เงิน${label}\n\n${lines.join('\n')}\n\nรวม: ${totalLine}`;
+  const { lines, totalLine, failed } = await spendLines(cfg, preset);
+  // แยก "อ่านไม่ได้" ออกจาก "ไม่มียอด" — ตอบว่าไม่มีทั้งที่อ่านไม่ได้คือให้ตัดสินใจจากข้อมูลผิด
+  if (!lines.length) {
+    return failed
+      ? `⚠️ ตอนนี้อ่านยอด${label}ไม่ได้ (Facebook จำกัดการเข้าถึงชั่วคราว ${failed} บัญชี) — พิมพ์ถามใหม่อีกครั้งสักครู่ครับ`
+      : `💸 ${label}: ยังไม่มีการใช้จ่าย`;
+  }
+  return `💸 ใช้เงิน${label}\n\n${lines.join('\n')}\n\nรวม: ${totalLine}`
+    + (failed ? `\n\n⚠️ อ่านไม่ได้ ${failed} บัญชี — ยอดจริงอาจมากกว่านี้` : '');
 }
 
 // ---------- ข้อมูลครบชุดสำหรับ AI — ต่อบัญชี ต่อแคมเปญ พร้อม id ที่ใช้สั่งงานได้ ----------
@@ -4379,8 +4395,8 @@ async function tgContext(cfg) {
   const lib = loadLib();
   return [
     `รายละเอียดต่อบัญชี (วันนี้):\n${parts.join('\n') || 'ไม่มีบัญชีที่ใช้งานได้'}`,
-    `ยอดเมื่อวาน:\n${yest.lines.join('\n') || 'ไม่มี'}${yest.totalLine ? `\nรวม: ${yest.totalLine}` : ''}`,
-    `ยอด 7 วันล่าสุด:\n${week.lines.join('\n') || 'ไม่มี'}${week.totalLine ? `\nรวม: ${week.totalLine}` : ''}`,
+    `ยอดเมื่อวาน:\n${yest.lines.join('\n') || (yest.failed ? 'อ่านไม่ได้ (Facebook จำกัดการเข้าถึง)' : 'ไม่มี')}${yest.totalLine ? `\nรวม: ${yest.totalLine}` : ''}${yest.failed ? `\n(อ่านไม่ได้ ${yest.failed} บัญชี — ยอดจริงอาจมากกว่านี้)` : ''}`,
+    `ยอด 7 วันล่าสุด:\n${week.lines.join('\n') || (week.failed ? 'อ่านไม่ได้ (Facebook จำกัดการเข้าถึง)' : 'ไม่มี')}${week.totalLine ? `\nรวม: ${week.totalLine}` : ''}${week.failed ? `\n(อ่านไม่ได้ ${week.failed} บัญชี — ยอดจริงอาจมากกว่านี้)` : ''}`,
     `การตั้งค่าขึ้นแอด (launchDefaults): เป้าต้นทุน/ผล (ruleCpr) ${d.ruleCpr || 'ไม่ตั้ง'} • สวิตช์ปิดแอดขาดทุน (ruleOn) ${d.ruleOn ? 'เปิด' : 'ปิด'} • งบตั้งต้น/แคมเปญ ${d.campaignBudget || '-'}`
     + ` • ลิงก์ ${d.link || '-'} • อายุ ${d.ageMin || 18}-${d.ageMax || 65} • เพศ ${d.gender || 'all'} • ประเทศ ${d.countries || 'TH'} • event ${d.conversionEvent || '-'} • cta ${d.cta || '-'} • ruleSpend ${d.ruleSpend || '-'} • perAccount ${d.perAccount || '-'} • เปิดยิงทันที (activeNow) ${d.activeNow ? 'ใช่' : 'ไม่'}`,
     `คลังแคปชั่น ${caps.length} ตัว:\n${caps.map((c) => `  - ${c.draft ? '[แบบร่าง] ' : ''}(caption_id ${c.id}) "${clean(c.message).slice(0, 60)}"`).join('\n') || 'ว่าง'}`,
