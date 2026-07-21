@@ -4386,7 +4386,10 @@ async function tgContext(cfg) {
   });
   const parts = perProfile.flat();
 
-  const [yest, week] = await Promise.all([spendLines(cfg, 'yesterday'), spendLines(cfg, 'last_7d')]);
+  // ยิงทีละอัน (ไม่ Promise.all) — เมื่อวาน+7วัน สแกนทุกบัญชีคนละรอบ ยิงพร้อมกันคือพีค 2 เท่า
+  // เสี่ยง Meta จำกัด API จนยอดเมื่อวานว่าง (เคยเกิดจริง 21 ก.ค. บอทเลยบอก "ไม่มีตัวเลขเมื่อวาน")
+  const yest = await spendLines(cfg, 'yesterday');
+  const week = await spendLines(cfg, 'last_7d');
   const st = loadAp();
   const day = 24 * 3600 * 1000;
   const ap = cfg.autopilot || {};
