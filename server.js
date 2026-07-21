@@ -255,6 +255,21 @@ async function fbAll(pathname, params, token, maxPages = 25) {
   return out;
 }
 
+// map แบบขนานจำกัดจำนวนพร้อมกัน — เร็วกว่า serial มากเมื่อมีหลายบัญชี แต่ไม่ยิงรัวจน Meta จำกัด API
+// (เคยโดนจริง 20 ก.ค.: ยิงหนักเกินแล้วโดนพัก) — คงลำดับผลลัพธ์ตาม index เดิมเสมอ
+async function pMap(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+
 // เพจที่ "ลงโฆษณาได้จริง" = เผยแพร่แล้ว + FB ยืนยัน promotion_eligible
 // (เพจบิน/ถูกจำกัด = promotion_eligible false — พิสูจน์กับบัญชีจริงแล้ว)
 // แหล่งความจริงเดียว: ใช้ทั้งตอนบาลานซ์เพจขึ้นแอด และตอนกรองไม่ให้เพจแตกโผล่ใน dropdown
@@ -3873,15 +3888,19 @@ async function spendLines(cfg, datePreset) {
     if (!prof.accessToken) continue;
     try {
       const accts = await fbAll('me/adaccounts', { fields: 'name,account_id,account_status,currency', limit: 100 }, prof.accessToken);
-      for (const a of accts.filter((x) => x.account_status === 1)) {
+      // ยิงยอดทุกบัญชีขนานกัน (จำกัดครั้งละ 6) แทนไล่ทีละบัญชี — คงลำดับเดิมด้วย pMap
+      const rows = await pMap(accts.filter((x) => x.account_status === 1), 6, async (a) => {
         try {
           const ins = await fb(`act_${a.account_id}/insights`, { fields: 'spend,impressions', date_preset: datePreset }, 'GET', prof.accessToken);
           const row = (ins.data || [])[0];
-          if (row && Number(row.spend) > 0) {
-            lines.push(`• ${a.name}: ${Number(row.spend).toLocaleString(undefined, { minimumFractionDigits: 2 })} ${a.currency} • ${Number(row.impressions || 0).toLocaleString()} อิมเพรสชัน`);
-            totals[a.currency] = (totals[a.currency] || 0) + Number(row.spend);
-          }
+          if (row && Number(row.spend) > 0) return { a, spend: Number(row.spend), impressions: Number(row.impressions || 0) };
         } catch { /* ข้าม */ }
+        return null;
+      });
+      for (const r of rows) {
+        if (!r) continue;
+        lines.push(`• ${r.a.name}: ${r.spend.toLocaleString(undefined, { minimumFractionDigits: 2 })} ${r.a.currency} • ${r.impressions.toLocaleString()} อิมเพรสชัน`);
+        totals[r.a.currency] = (totals[r.a.currency] || 0) + r.spend;
       }
     } catch { /* ข้าม */ }
   }
@@ -4295,59 +4314,61 @@ async function tgContext(cfg) {
   const d = cfg.launchDefaults || {};
   // ชื่อบัญชี/แคมเปญ/ข้อความ log มาจาก FB ซึ่งคนอื่นตั้งได้ — ตัด < > ทิ้งกันปลอมแท็กรั้วข้อมูล
   const clean = (x) => String(x || '').replace(/[<>]/g, '');
-  const parts = [];
   const hiddenAcc = (cfg.hidden || {}).accounts || {};
   const hiddenPg = (cfg.hidden || {}).pages || {};
-  for (const prof of cfg.profiles || []) {
-    if (!prof.accessToken) continue;
+  // ทุกโปรไฟล์ทำขนานกัน และในแต่ละโปรไฟล์ เพจ/ธุรกิจ/บัญชี ก็ยิงขนานกัน (เดิมเรียงกันหมดจนช้ามาก)
+  // pMap คงลำดับผลลัพธ์ตามโปรไฟล์ — เอาต์พุตสำหรับ AI เลยเรียงเหมือนเดิม
+  const perProfile = await pMap(cfg.profiles || [], 4, async (prof) => {
+    if (!prof.accessToken) return [];
     let accts = [];
-    try { accts = await fbAll('me/adaccounts', { fields: 'name,account_id,account_status,currency', limit: 100 }, prof.accessToken); } catch { continue; }
-    // เพจ + ธุรกิจยืนยันแล้วของโปรไฟล์ — ให้ AI มี id จริงไว้สั่ง setHidden/setBeneficiary ได้
-    try {
-      const pgs = await fbPages(prof.accessToken);
-      if (pgs.length) {
-        parts.push(`เพจของโปรไฟล์ "${clean(prof.label)}" (profile_id ${prof.id}):\n`
-          + pgs.map((p) => `  - "${clean(p.name)}" (page_id ${p.id}) ${p.ok ? 'ลงโฆษณาได้' : 'ลงโฆษณาไม่ได้'}${hiddenPg[p.id] ? ' [ซ่อนอยู่]' : ''}`).join('\n'));
-      }
-    } catch { /* อ่านเพจไม่ได้รอบนี้ — ส่วนอื่นยังใช้ได้ */ }
-    try {
-      const vb = await fbAll('me/businesses', { fields: 'name,verification_status', limit: 100 }, prof.accessToken);
-      const ok = vb.filter((b) => b.verification_status === 'verified');
-      if (ok.length) {
-        parts.push(`ธุรกิจยืนยันตัวตนแล้วของโปรไฟล์ "${clean(prof.label)}" (ใช้เป็น "ผู้ลงโฆษณา" ได้):\n`
-          + ok.map((b) => `  - "${clean(b.name)}" (business_id ${b.id})`).join('\n'));
-      }
-    } catch { /* ไม่มีสิทธิ์ก็ข้าม */ }
-    for (const a of accts.filter((x) => x.account_status === 1)) {
-      const acct = `act_${a.account_id}`;
-      const cf = curFactor(a.currency);
-      let ins = {}, camps = [], cins = [], readOk = true;
-      try {
-        [ins, camps, cins] = await Promise.all([
-          fb(`${acct}/insights`, { fields: 'spend,impressions,clicks,actions', date_preset: 'today' }, 'GET', prof.accessToken).then((r) => (r.data || [])[0] || {}),
-          fbAll(`${acct}/campaigns`, { fields: 'id,name,status,daily_budget,objective', limit: 50 }, prof.accessToken),
-          fbAll(`${acct}/insights`, { level: 'campaign', fields: 'campaign_id,spend,actions', date_preset: 'today', limit: 50 }, prof.accessToken),
-        ]);
-      } catch { readOk = false; }   // อ่านไม่ได้ต้องบอกตรงๆ — โชว์ 0 คือโกหกว่าไม่ใช้เงิน
-      const spend = Number(ins.spend) || 0;
-      const results = pickResult(resultSpec(d.objective, d.conversionEvent), ins.actions);
-      const cmap = Object.fromEntries((cins || []).map((r) => [r.campaign_id, r]));
-      const campLines = (camps || []).map((c) => {
-        const ci = cmap[c.id] || {};
-        const cres = pickResult(resultSpec(c.objective, d.conversionEvent), ci.actions);
-        return `  - แคมเปญ "${clean(c.name)}" (campaign_id ${c.id}, ${c.status}) งบ ${c.daily_budget ? (Number(c.daily_budget) / cf).toLocaleString() : '-'}/วัน • ใช้วันนี้ ${Number(ci.spend || 0).toLocaleString()} ${a.currency}${cres != null ? ` • ผลลัพธ์ ${cres}` : ''}`;
-      });
-      const ben = (cfg.beneficiaries || {})[a.account_id];
-      parts.push(
-        `บัญชี "${clean(a.name)}" (account_id ${a.account_id}, profile_id ${prof.id}, สกุลเงิน ${a.currency})`
-        + `${hiddenAcc[a.account_id] ? ' [ซ่อนอยู่ — autopilot ไม่แตะ]' : ''}`
-        + ` • ผู้ลงโฆษณา: ${ben === 'none' ? 'ไม่ระบุ (เจ้าของเลือกเอง)' : (ben || 'ยังไม่ตั้ง')}\n`
-        + `  วันนี้: ${spend.toLocaleString()} ${a.currency} • ${Number(ins.impressions || 0).toLocaleString()} อิมเพรสชัน • ${Number(ins.clicks || 0).toLocaleString()} คลิก`
-        + (results != null ? ` • ${results} ผลลัพธ์ • ต้นทุน/ผล ${results > 0 ? Math.round(spend / results).toLocaleString() : '-'}` : '')
-        + (campLines.length ? `\n${campLines.join('\n')}` : ''),
-      );
-    }
-  }
+    try { accts = await fbAll('me/adaccounts', { fields: 'name,account_id,account_status,currency', limit: 100 }, prof.accessToken); } catch { return []; }
+    const active = accts.filter((x) => x.account_status === 1);
+    const [pageBlock, bizBlock, acctLines] = await Promise.all([
+      // เพจของโปรไฟล์ — ให้ AI มี page_id จริงไว้สั่ง setHidden
+      fbPages(prof.accessToken).then((pgs) => pgs.length
+        ? `เพจของโปรไฟล์ "${clean(prof.label)}" (profile_id ${prof.id}):\n`
+          + pgs.map((p) => `  - "${clean(p.name)}" (page_id ${p.id}) ${p.ok ? 'ลงโฆษณาได้' : 'ลงโฆษณาไม่ได้'}${hiddenPg[p.id] ? ' [ซ่อนอยู่]' : ''}`).join('\n')
+        : null).catch(() => null),
+      // ธุรกิจยืนยันแล้ว — ใช้เป็น "ผู้ลงโฆษณา" (business_id) ได้
+      fbAll('me/businesses', { fields: 'name,verification_status', limit: 100 }, prof.accessToken).then((vb) => {
+        const ok = vb.filter((b) => b.verification_status === 'verified');
+        return ok.length
+          ? `ธุรกิจยืนยันตัวตนแล้วของโปรไฟล์ "${clean(prof.label)}" (ใช้เป็น "ผู้ลงโฆษณา" ได้):\n`
+            + ok.map((b) => `  - "${clean(b.name)}" (business_id ${b.id})`).join('\n')
+          : null;
+      }).catch(() => null),
+      // ข้อมูลทุกบัญชีขนานกัน จำกัดครั้งละ 6 กัน Meta จำกัด API
+      pMap(active, 6, async (a) => {
+        const acct = `act_${a.account_id}`;
+        const cf = curFactor(a.currency);
+        let ins = {}, camps = [], cins = [];
+        try {
+          [ins, camps, cins] = await Promise.all([
+            fb(`${acct}/insights`, { fields: 'spend,impressions,clicks,actions', date_preset: 'today' }, 'GET', prof.accessToken).then((r) => (r.data || [])[0] || {}),
+            fbAll(`${acct}/campaigns`, { fields: 'id,name,status,daily_budget,objective', limit: 50 }, prof.accessToken),
+            fbAll(`${acct}/insights`, { level: 'campaign', fields: 'campaign_id,spend,actions', date_preset: 'today', limit: 50 }, prof.accessToken),
+          ]);
+        } catch { /* อ่านไม่ได้ = โชว์เท่าที่ได้ ไม่ล้มทั้งก้อน */ }
+        const spend = Number(ins.spend) || 0;
+        const results = pickResult(resultSpec(d.objective, d.conversionEvent), ins.actions);
+        const cmap = Object.fromEntries((cins || []).map((r) => [r.campaign_id, r]));
+        const campLines = (camps || []).map((c) => {
+          const ci = cmap[c.id] || {};
+          const cres = pickResult(resultSpec(c.objective, d.conversionEvent), ci.actions);
+          return `  - แคมเปญ "${clean(c.name)}" (campaign_id ${c.id}, ${c.status}) งบ ${c.daily_budget ? (Number(c.daily_budget) / cf).toLocaleString() : '-'}/วัน • ใช้วันนี้ ${Number(ci.spend || 0).toLocaleString()} ${a.currency}${cres != null ? ` • ผลลัพธ์ ${cres}` : ''}`;
+        });
+        const ben = (cfg.beneficiaries || {})[a.account_id];
+        return `บัญชี "${clean(a.name)}" (account_id ${a.account_id}, profile_id ${prof.id}, สกุลเงิน ${a.currency})`
+          + `${hiddenAcc[a.account_id] ? ' [ซ่อนอยู่ — autopilot ไม่แตะ]' : ''}`
+          + ` • ผู้ลงโฆษณา: ${ben === 'none' ? 'ไม่ระบุ (เจ้าของเลือกเอง)' : (ben || 'ยังไม่ตั้ง')}\n`
+          + `  วันนี้: ${spend.toLocaleString()} ${a.currency} • ${Number(ins.impressions || 0).toLocaleString()} อิมเพรสชัน • ${Number(ins.clicks || 0).toLocaleString()} คลิก`
+          + (results != null ? ` • ${results} ผลลัพธ์ • ต้นทุน/ผล ${results > 0 ? Math.round(spend / results).toLocaleString() : '-'}` : '')
+          + (campLines.length ? `\n${campLines.join('\n')}` : '');
+      }),
+    ]);
+    return [pageBlock, bizBlock, ...acctLines].filter(Boolean);
+  });
+  const parts = perProfile.flat();
 
   const [yest, week] = await Promise.all([spendLines(cfg, 'yesterday'), spendLines(cfg, 'last_7d')]);
   const st = loadAp();
