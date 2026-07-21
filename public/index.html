@@ -128,6 +128,8 @@
   .btn-light:hover { background: #e8ebef; }
   .btn-danger-light { background: var(--red-soft); color: var(--red); }
   .btn-danger-light:hover { background: #fbdde6; }
+  .btn-amber { background: var(--amber); color: #fff; }
+  .btn-amber:hover { filter: brightness(.93); }
   .btn-sm { padding: 6px 11px; font-size: 12.5px; border-radius: var(--r-sm); }
   .btn-fblogin { background: #1877f2; color: #fff; white-space: nowrap; }
   .btn-fblogin:hover { background: #1567d3; }
@@ -1941,6 +1943,8 @@ function renderHealthPage(results) {
   const multi = results.length > 1;
   const WARN = { 3: 'ค้างชำระ', 7: 'รอตรวจความเสี่ยง', 8: 'รอชำระ', 9: 'ช่วงผ่อนผัน' };
   const DEAD_TXT = { 2: 'ถูกปิดใช้งาน', 100: 'กำลังปิด', 101: 'ปิดแล้ว' };
+  // สถานะที่มียอดต้องจ่าย (ไม่ใช่ 7 รอตรวจความเสี่ยง ซึ่งไม่เกี่ยวเงิน) — โชว์ปุ่มพาไปจ่ายที่ billing hub
+  const PAY_ISSUE = new Set([3, 8, 9]);
 
   // โชว์ทุกบัญชีของทุก profile — ต้องแก้ขึ้นก่อน แล้วปกติ / ถูกปิด / ที่ซ่อนไว้ท้ายสุด
   const rows = [];
@@ -1974,9 +1978,14 @@ function renderHealthPage(results) {
     const px = a.dead ? '<span style="color:var(--muted)">—</span>' : a.pixels.length
       ? a.pixels.map(x => `<span style="white-space:nowrap"><span class="st-pill on" title="Pixel ID: ${esc(x.id)}">✓ ${esc(x.name)}</span> <button class="btn-light btn-sm" title="คัดลอก Pixel ID ${esc(x.id)}" onclick="copyPixel(${jsStr(x.id)});this.textContent='✓ คัดลอกแล้ว';setTimeout(()=>this.textContent='คัดลอก ID',1200)">คัดลอก ID</button></span>`).join(' ')
       : `<button class="btn-primary btn-sm" onclick="createPixelHealth(${jsStr(a.pid)},${jsStr(a.id)},this)">+ สร้าง Pixel เลย</button>`;
-    const card = a.dead ? '<span style="color:var(--muted)">—</span>' : a.funding
-      ? `<span class="st-pill on">✓ ${esc(a.funding)}</span>`
-      : `<a class="btn-primary btn-sm" style="text-decoration:none;display:inline-block;color:#fff" target="_blank" href="https://business.facebook.com/billing_hub/payment_settings?asset_id=${a.id}">เชื่อมบัตรเลย ↗</a>`;
+    // ค้างชำระ = พาไปหน้าจ่ายยอดค้างที่ billing hub (บัญชีมักผูกบัตรอยู่แล้วแต่มียอดค้าง จึงโชว์บัตรเดิมไว้ใต้ปุ่มด้วย)
+    const payHref = `https://business.facebook.com/billing_hub/payment_settings?asset_id=${a.id}`;
+    const card = a.dead ? '<span style="color:var(--muted)">—</span>'
+      : PAY_ISSUE.has(a.status)
+        ? `<a class="btn-amber btn-sm" style="text-decoration:none;display:inline-block;color:#fff" target="_blank" href="${payHref}">จ่ายยอดค้างเลย ↗</a>${a.funding ? `<div class="res-label" style="margin-top:4px">บัตร: ${esc(a.funding)}</div>` : ''}`
+      : a.funding
+        ? `<span class="st-pill on">✓ ${esc(a.funding)}</span>`
+        : `<a class="btn-primary btn-sm" style="text-decoration:none;display:inline-block;color:#fff" target="_blank" href="${payHref}">เชื่อมบัตรเลย ↗</a>`;
     const rowStyle = a.hidden ? ' style="opacity:.45"' : a.dead ? ' style="opacity:.6"' : a.missing ? ' style="background:#fffbf3"' : '';
     const icon = a.dead ? ic('skull', { color: 'var(--red,#d93025)' }) + ' '
       : a.missing ? ic('wrench', { color: '#b45309' }) + ' '
