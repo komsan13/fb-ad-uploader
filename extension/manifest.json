@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "FB Ad Uploader — สลับบัญชี",
+  "version": "1.0.0",
+  "description": "เชื่อม session Facebook ของแต่ละบัญชีไว้ แล้วกด 'เปิดบัตร/เช็คยอด' ให้เด้งเข้าบัญชีถูกตัวอัตโนมัติ ไม่ต้องสลับล็อกอินเอง",
+  "permissions": ["cookies", "storage"],
+  "host_permissions": [
+    "https://*.facebook.com/",
+    "https://ad.senball.com/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://ad.senball.com/*"],
+      "js": ["content-bridge.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "action": { "default_popup": "popup.html", "default_title": "FB Ad Uploader — สลับบัญชี" }
+}
