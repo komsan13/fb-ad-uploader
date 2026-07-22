@@ -1404,10 +1404,10 @@ app.get('/extension-install.reg', (req, res) => {
     'Windows Registry Editor Version 5.00',
     '',
     '[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Google\\Chrome\\ExtensionInstallForcelist]',
-    `"fbad"="${EXT_ID};${EXT_UPDATE_URL}"`,
+    `"1"="${EXT_ID};${EXT_UPDATE_URL}"`,
     '',
     '[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\Edge\\ExtensionInstallForcelist]',
-    `"fbad"="${EXT_ID};${EXT_UPDATE_URL}"`,
+    `"1"="${EXT_ID};${EXT_UPDATE_URL}"`,
     '',
   ].join('\r\n');
   res.setHeader('Content-Type', 'application/octet-stream');
@@ -1421,10 +1421,10 @@ app.get('/extension-uninstall.reg', (req, res) => {
     'Windows Registry Editor Version 5.00',
     '',
     '[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Google\\Chrome\\ExtensionInstallForcelist]',
-    '"fbad"=-',
+    '"1"=-',
     '',
     '[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\Edge\\ExtensionInstallForcelist]',
-    '"fbad"=-',
+    '"1"=-',
     '',
   ].join('\r\n');
   res.setHeader('Content-Type', 'application/octet-stream');

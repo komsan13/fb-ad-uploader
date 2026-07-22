@@ -198,6 +198,8 @@ describe('ดาวน์โหลดส่วนขยาย', () => {
     const text = buf.slice(2).toString('utf16le'); // ข้าม BOM ก่อนอ่านข้อความ
     assert.ok(text.startsWith('Windows Registry Editor Version 5.00'), 'บรรทัดแรกต้องเป็น header ของ .reg');
     assert.ok(text.includes('ExtensionInstallForcelist'), 'ต้องตั้ง policy force-install');
+    // Chrome อ่าน list policy บน registry เฉพาะค่าที่ชื่อเป็นตัวเลข "1","2"... ชื่ออื่น Chrome ข้าม = ไม่ติดตั้ง
+    assert.match(text, /"1"="[a-p]{32};https?:/, 'ชื่อค่าต้องเป็น "1" (ตัวเลข) ไม่งั้น Chrome ไม่อ่าน policy');
     // ID ใน .reg ต้องตรงกับ appid ใน update.xml ที่เสิร์ฟจริง ไม่งั้นติดตั้งคนละตัว
     const xml = await (await fetch(base + '/ext/update.xml')).text();
     const id = (xml.match(/appid="([a-p]{32})"/) || [])[1];
