@@ -2082,7 +2082,7 @@ function renderHealthPage(results) {
     for (const g of r.pages) {
       if (seen.has(g.id)) continue;
       seen.add(g.id);
-      pages.push({ ...g, plabel: r.p.label, ok: g.published && g.eligible });
+      pages.push({ ...g, plabel: r.p.label, pid: r.p.id, ok: g.published && g.eligible });
     }
   }
   pages.sort((a, b) => (a.hidden ? 1 : 0) - (b.hidden ? 1 : 0) || (b.ok ? 1 : 0) - (a.ok ? 1 : 0));
@@ -2093,7 +2093,7 @@ function renderHealthPage(results) {
       <td>${g.ok
         ? '<span class="st-pill on">✓ ใช้ลงโฆษณาได้</span>'
         : `<span class="st-pill rejected">✕ บิน${!g.published ? ' (ถูกปิดเผยแพร่)' : ''}</span>${g.reason ? `<div class="res-label">${esc(g.reason)}</div>` : ''}`}</td>
-      <td style="white-space:nowrap;text-align:right"><a class="btn-light btn-sm" style="text-decoration:none" target="_blank" href="https://www.facebook.com/${g.id}">เปิดเพจ ↗</a> ${eyeBtn('page', g.id, !!g.hidden)}</td>
+      <td style="white-space:nowrap;text-align:right"><button class="btn-light btn-sm" onclick="openFbAs(${jsStr(g.pid)}, ${jsStr('https://www.facebook.com/' + g.id)})">เปิดเพจ ↗</button> ${eyeBtn('page', g.id, !!g.hidden)}</td>
     </tr>`).join('') || '<tr><td colspan="3" class="tbl-msg">ไม่พบเพจ</td></tr>';
   document.getElementById('healthPageSub').textContent = `— ใช้ได้ ${nPageOk} จาก ${pages.length} เพจ`
     + (nHiddenPage ? ` • ซ่อนไว้ ${nHiddenPage}` : '');
@@ -2456,7 +2456,7 @@ function renderCampaignRows(results, sels) {
       <td class="num-cell">${num(c.reach)}</td>
       <td style="white-space:nowrap">${ends}</td>
       <td style="white-space:nowrap">
-        <a href="${link}" target="_blank" title="เปิดใน Ads Manager" class="btn-light icon-btn" style="text-decoration:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></a>
+        <button title="เปิดใน Ads Manager" class="btn-light icon-btn" onclick="openFbAs(${jsStr(c.pid)}, ${jsStr(link)})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></button>
         <button class="btn-danger-light icon-btn" title="ลบแคมเปญนี้" onclick="deleteCampaign(${jsStr(c.id)}, ${jsStr(c.name)}, ${jsStr(c.pid)})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
       </td>
     </tr>`;
@@ -2470,8 +2470,10 @@ async function openCampaignDetail(pid, id, acct, cur, name) {
   detailCtx = { pid, id, acct, cur };
   document.getElementById('detailModal').style.display = 'flex';
   document.getElementById('detailTitle').textContent = name || 'รายละเอียดแคมเปญ';
-  document.getElementById('detailAmLink').href =
-    `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${acct}&selected_campaign_ids=${id}`;
+  const amUrl = `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${acct}&selected_campaign_ids=${id}`;
+  const amLink = document.getElementById('detailAmLink');
+  amLink.href = amUrl; // คงไว้ให้ hover/คลิกกลางเห็น URL
+  amLink.onclick = (e) => { e.preventDefault(); openFbAs(pid, amUrl); };
   await renderCampaignDetail();
 }
 function detailStatusPill(x) {
@@ -4422,7 +4424,7 @@ async function launch() {
             setProgress();
           }
           if (ev.type === 'done') {
-            doneLinks.push({ label, url: `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${ev.account}&selected_campaign_ids=${ev.campaignId}` });
+            doneLinks.push({ label, pid: t.pid, url: `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${ev.account}&selected_campaign_ids=${ev.campaignId}` });
           }
       };
       // ใช้ XHR แทน fetch เพื่อโชว์ % ตอนส่งไฟล์ขึ้นเซิร์ฟเวอร์ (ไฟล์วิดีโอใหญ่ใช้เวลานาน ไม่ใช่ค้าง)
@@ -4456,7 +4458,7 @@ async function launch() {
 
   allCards.forEach(c => aggregateBadge(c, selected));
 
-  const links = doneLinks.map(d => `<a href="${d.url}" target="_blank">${esc(d.label)} ↗</a>`).join(' • ');
+  const links = doneLinks.map(d => `<a href="${d.url}" target="_blank" onclick="event.preventDefault();openFbAs(${jsStr(d.pid)}, ${jsStr(d.url)})">${esc(d.label)} ↗</a>`).join(' • ');
   const banner = document.getElementById('doneBanner');
   banner.style.display = 'block';
   banner.innerHTML = failCount
