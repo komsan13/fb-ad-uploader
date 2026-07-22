@@ -968,7 +968,8 @@
       <div class="card">
         <h2><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/><path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3"/></svg></span>บัญชี FB ทั้งหมด <span class="h-desc">— เพิ่มได้หลายบัญชี แต่ละบัญชีมี token + บัญชีโฆษณา + เพจของตัวเอง</span></h2>
         <div id="extInstallBar" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 14px;padding:10px 12px;background:var(--bg-soft,#f5f6f7);border:1px solid var(--line,#eee);border-radius:var(--r-md,8px)">
-          <button class="btn-light btn-sm" onclick="installExtension()">⬇ ติดตั้งส่วนขยาย "สลับบัญชี"</button>
+          <button class="btn-primary btn-sm" onclick="installExtensionAuto()">⚡ ติดตั้งอัตโนมัติ (Windows) — ไฟล์เดียวจบ</button>
+          <button class="btn-light btn-sm" onclick="installExtension()">⬇ แบบแมนนวล (.zip)</button>
           <span id="extInstallStatus" class="res-label"></span>
         </div>
         <div id="profList"></div>
@@ -1574,10 +1575,44 @@ function updateExtInstallStatus() {
     ? '<span class="p-status ok">● ติดตั้งส่วนขยายแล้ว — พร้อมสลับบัญชี</span>'
     : 'ยังไม่ได้ติดตั้ง — กดปุ่มซ้ายเพื่อดาวน์โหลด แล้วทำตามขั้นตอน 5 ข้อ';
 }
-function installExtension() {
+function dlFile(url, name) {
   const a = document.createElement('a');
-  a.href = '/extension.zip'; a.download = 'fbad-extension.zip';
+  a.href = url; a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
+}
+function installExtensionAuto() {
+  dlFile('/extension-install.reg', 'fbad-ext-install.reg');
+  showAutoInstallModal();
+}
+function showAutoInstallModal() {
+  const old = document.getElementById('extInstallModal');
+  if (old) old.remove();
+  const ov = document.createElement('div');
+  ov.id = 'extInstallModal';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px';
+  ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = `
+    <div style="background:var(--card,#fff);color:var(--text,#1c1e21);max-width:540px;width:100%;border-radius:12px;padding:22px 24px;max-height:90vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.3)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <h3 style="margin:0;font-size:17px">ติดตั้งอัตโนมัติ (Windows)</h3>
+        <button class="btn-light btn-sm" onclick="document.getElementById('extInstallModal').remove()">ปิด</button>
+      </div>
+      <p style="color:var(--muted,#65676b);font-size:13px;margin:0 0 14px">ไฟล์ <b>fbad-ext-install.reg</b> กำลังดาวน์โหลด — ทำ 3 ขั้นนี้ครั้งเดียว จากนั้นส่วนขยายจะติดตั้งเองและอัปเดตเองตลอด (Chrome / Edge)</p>
+      <ol style="font-size:14px;line-height:1.95;padding-left:20px;margin:0">
+        <li><b>ดับเบิลคลิก</b>ไฟล์ <code>fbad-ext-install.reg</code> ที่ดาวน์โหลดมา</li>
+        <li>Windows จะถามยืนยัน 1-2 ครั้ง (UAC + Registry Editor) → กด <b>ใช่ / Yes</b> ทุกครั้ง</li>
+        <li><b>ปิด Chrome ให้หมดทุกหน้าต่าง แล้วเปิดใหม่</b> — ส่วนขยายจะติดตั้งเองภายในไม่กี่วินาที เสร็จ!</li>
+      </ol>
+      <div style="margin-top:14px;padding:10px 12px;background:var(--bg-soft,#f5f6f7);border-radius:8px;font-size:12.5px;color:var(--muted,#65676b);line-height:1.7">
+        <b>เช็กว่าติดตั้งสำเร็จ:</b> เปิด <code>chrome://extensions</code> ต้องเห็น "สลับบัญชี" (จะขึ้นว่าติดตั้งโดยผู้ดูแลระบบ ถอนเองไม่ได้ = ปกติ) แล้วกลับหน้านี้ <b>Ctrl+F5</b><br>
+        <b>ต้องเป็นเครื่องที่คุณเป็นแอดมิน</b> (ไฟล์ .reg แก้ policy ระดับเครื่อง) — ถ้ากดแล้ว UAC ไม่ขึ้น/ถูกปฏิเสธ แปลว่าไม่มีสิทธิ์แอดมิน
+      </div>
+      <p style="color:var(--muted,#65676b);font-size:12px;margin:12px 0 0">ไฟล์ไม่ดาวน์โหลด? <a href="/extension-install.reg" download="fbad-ext-install.reg">โหลดใหม่</a> • อยากเอาออก: <a href="/extension-uninstall.reg" download="fbad-ext-uninstall.reg">ไฟล์ถอนการติดตั้ง</a></p>
+    </div>`;
+  document.body.appendChild(ov);
+}
+function installExtension() {
+  dlFile('/extension.zip', 'fbad-extension.zip');
   showExtInstallModal();
 }
 function showExtInstallModal() {

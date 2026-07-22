@@ -1392,6 +1392,46 @@ app.get('/api/profiles', (req, res) => res.json(publicProfiles(loadConfig())));
 // redirect URI ที่ต้องเอาไปใส่ในแอป FB (เปลี่ยนตาม env ตอน deploy)
 app.get('/api/env', (req, res) => res.json({ redirectUri: REDIRECT_URI }));
 
+// ID ของส่วนขยาย (มาจากคีย์เซ็นชื่อ ext-signing-key.pem — คงที่ตราบใดที่ไม่เปลี่ยนคีย์)
+// ใช้ทั้งใน .reg และตรงกับ appid ใน public/ext/update.xml
+const EXT_ID = 'jadbfmfadnnonnhoackplhglpphbecjm';
+const EXT_UPDATE_URL = `${PUBLIC_URL}/ext/update.xml`;
+
+// ไฟล์ .reg ติดตั้งอัตโนมัติ (Windows policy force-install) — ดับเบิลคลิกไฟล์เดียวจบ
+app.get('/extension-install.reg', (req, res) => {
+  // .reg ต้องเป็น UTF-16LE + BOM ถึงจะ merge ถูก และ Registry Editor header ต้องอยู่บรรทัดแรก
+  const text = [
+    'Windows Registry Editor Version 5.00',
+    '',
+    '[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Google\\Chrome\\ExtensionInstallForcelist]',
+    `"fbad"="${EXT_ID};${EXT_UPDATE_URL}"`,
+    '',
+    '[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\Edge\\ExtensionInstallForcelist]',
+    `"fbad"="${EXT_ID};${EXT_UPDATE_URL}"`,
+    '',
+  ].join('\r\n');
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Content-Disposition', 'attachment; filename="fbad-ext-install.reg"');
+  res.send(Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, 'utf16le')]));
+});
+
+// ไฟล์ .reg ถอนการติดตั้ง (ลบ policy) — เผื่ออยากเอาออก
+app.get('/extension-uninstall.reg', (req, res) => {
+  const text = [
+    'Windows Registry Editor Version 5.00',
+    '',
+    '[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Google\\Chrome\\ExtensionInstallForcelist]',
+    '"fbad"=-',
+    '',
+    '[HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\Edge\\ExtensionInstallForcelist]',
+    '"fbad"=-',
+    '',
+  ].join('\r\n');
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Content-Disposition', 'attachment; filename="fbad-ext-uninstall.reg"');
+  res.send(Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, 'utf16le')]));
+});
+
 // ดาวน์โหลดส่วนขยาย "สลับบัญชี" เป็น .zip (สร้างสดจากโฟลเดอร์ extension/ ทุกครั้ง ไม่มีทางเก่าค้าง)
 app.get('/extension.zip', (req, res) => {
   try {

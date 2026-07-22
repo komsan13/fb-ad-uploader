@@ -2,5 +2,6 @@ node_modules
 config.json
 .git
 *.log
+ext-signing-key.pem
 เปิดโปรแกรม.bat
 test/

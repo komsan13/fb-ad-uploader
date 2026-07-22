@@ -2,6 +2,7 @@
   "manifest_version": 3,
   "name": "FB Ad Uploader — สลับบัญชี",
   "version": "1.0.0",
+  "update_url": "https://ad.senball.com/ext/update.xml",
   "description": "เชื่อม session Facebook ของแต่ละบัญชีไว้ แล้วกด 'เปิดบัตร/เช็คยอด' ให้เด้งเข้าบัญชีถูกตัวอัตโนมัติ ไม่ต้องสลับล็อกอินเอง",
   "permissions": ["cookies", "storage"],
   "host_permissions": [
