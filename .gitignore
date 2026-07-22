@@ -6,7 +6,6 @@ captions.json
 autopilot-state.json
 watch-state.json
 *.log
-ext-signing-key.pem
 .gstack/
 landing-assets/
 landing.json

@@ -1,3 +1,1 @@
 *.sh text eol=lf
-*.crx binary
-*.zip binary

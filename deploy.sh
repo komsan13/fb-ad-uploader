@@ -42,7 +42,7 @@ docker run -d --name fbad --restart unless-stopped \
   --label "traefik.http.routers.fbad.tls.certresolver=$CERTRESOLVER" \
   --label traefik.http.routers.fbad.middlewares=fbad-auth \
   --label "traefik.http.middlewares.fbad-auth.basicauth.users=$HASH" \
-  --label "traefik.http.routers.fbadpub.rule=Host(\`$DOMAIN\`) && (Path(\`/privacy.html\`) || Path(\`/lp\`) || Path(\`/lp/\`) || PathPrefix(\`/lp-asset/\`) || PathPrefix(\`/ext/\`))" \
+  --label "traefik.http.routers.fbadpub.rule=Host(\`$DOMAIN\`) && (Path(\`/privacy.html\`) || Path(\`/lp\`) || Path(\`/lp/\`) || PathPrefix(\`/lp-asset/\`))" \
   --label traefik.http.routers.fbadpub.entrypoints=websecure \
   --label traefik.http.routers.fbadpub.service=fbad \
   --label "traefik.http.routers.fbadpub.tls.certresolver=$CERTRESOLVER" \

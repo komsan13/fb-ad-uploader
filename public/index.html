@@ -967,12 +967,6 @@
            เรียงตามลำดับที่ผู้ใช้ต้องตั้งจริง และของที่เปิดบ่อยสุด (autopilot) อยู่ใกล้บนสุด -->
       <div class="card">
         <h2><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/><path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3"/></svg></span>บัญชี FB ทั้งหมด <span class="h-desc">— เพิ่มได้หลายบัญชี แต่ละบัญชีมี token + บัญชีโฆษณา + เพจของตัวเอง</span></h2>
-        <div id="extInstallBar" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 14px;padding:10px 12px;background:var(--bg-soft,#f5f6f7);border:1px solid var(--line,#eee);border-radius:var(--r-md,8px)">
-          <button class="btn-primary btn-sm" onclick="installExtensionAuto()">⚡ ติดตั้งอัตโนมัติ (Windows) — ไฟล์เดียวจบ</button>
-          <button class="btn-light btn-sm" onclick="installExtension()">⬇ แบบแมนนวล (.zip)</button>
-          <span id="extInstallStatus" class="res-label"></span>
-          <span class="res-label" style="flex-basis:100%">ปุ่มอัตโนมัติใช้ได้เฉพาะ Google Chrome / Edge — ถ้าใช้ SunBrowser / AdsPower หรือเบราว์เซอร์จัดการหลายบัญชี ให้ใช้ "แบบแมนนวล (.zip)" (เปิดโหมดนักพัฒนา → โหลดส่วนขยายที่แตกไฟล์แล้ว)</span>
-        </div>
         <div id="profList"></div>
         <button class="btn-primary" onclick="addProfile()">+ เพิ่มบัญชี FB</button>
         <details style="margin-top:14px;border:1px solid var(--line);border-radius:var(--r-md);padding:8px 12px">
@@ -1453,10 +1447,6 @@ function profCardHTML(p) {
             <div style="flex:0 0 auto;min-width:auto"><button class="btn-primary btn-sm" onclick="connectProfile(${jsStr(p.id)})" style="padding:8px 14px">${p.hasToken ? '⟳ โหลดบัญชี' : 'เชื่อมต่อ'}</button></div>
           </div>
         </details>
-        <div class="pc-sess-wrap" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line,#eee)">
-          <button class="btn-light btn-sm" onclick="captureSession(${jsStr(p.id)}, this)" title="ล็อกอิน facebook.com บัญชีนี้ก่อน แล้วกดปุ่มนี้ให้ปุ่มเปิดบัตรสลับเข้าบัญชีถูกตัวอัตโนมัติ">🔗 เชื่อมบัญชีนี้ (สลับอัตโนมัติ)</button>
-          <div class="pc-sess" style="margin-top:6px">${extBadgeHTML(p.id)}</div>
-        </div>
       </div>
       <div class="pc-col">
         <div class="pc-step"><span class="pc-step-num">2</span> เลือกบัญชีโฆษณาและเพจ</div>
@@ -1497,153 +1487,6 @@ async function setActiveProfileAndRender(id) {
   renderSettings();
 }
 
-// ---------- ส่วนขยายสลับบัญชี FB (extension bridge) ----------
-// คุยกับส่วนขยายผ่าน window.postMessage — ถ้าไม่ได้ติดตั้ง ทุกอย่าง fallback เปิดลิงก์ปกติ
-const fbExt = { present: false, sessions: {} };
-const _fbExtPending = new Map();
-let _fbExtSeq = 0;
-window.addEventListener('message', (e) => {
-  if (e.source !== window) return;
-  const m = e.data;
-  if (!m || m.__fbtoolExt !== true) return;
-  if (m.type === 'present') { if (!fbExt.present) { fbExt.present = true; fbExtRefresh(); } return; }
-  if (m.type === 'response') {
-    const cb = _fbExtPending.get(m.reqId);
-    if (cb) { _fbExtPending.delete(m.reqId); cb(m.resp); }
-  }
-});
-function fbExtCall(payload, timeout = 8000) {
-  return new Promise((resolve) => {
-    const reqId = ++_fbExtSeq;
-    _fbExtPending.set(reqId, resolve);
-    window.postMessage({ __fbtool: true, reqId, payload }, window.location.origin);
-    setTimeout(() => { if (_fbExtPending.has(reqId)) { _fbExtPending.delete(reqId); resolve({ ok: false, timeout: true }); } }, timeout);
-  });
-}
-async function fbExtRefresh() {
-  const r = await fbExtCall({ action: 'list' });
-  if (r && r.ok) { fbExt.present = true; fbExt.sessions = r.sessions || {}; }
-  applyExtBadges();
-}
-function extBadgeHTML(pid) {
-  if (!fbExt.present) return '<span class="res-label">ติดตั้งส่วนขยายเพื่อให้ปุ่มเปิดบัตรสลับบัญชีอัตโนมัติ (ดู extension/README.md)</span>';
-  const s = fbExt.sessions[pid];
-  return s
-    ? `<span class="p-status ok">● สลับอัตโนมัติพร้อม (id ${esc(s.cUser)})</span>`
-    : '<span class="res-label">ยังไม่ได้เชื่อม session — ล็อกอิน facebook.com บัญชีนี้แล้วกดปุ่มด้านบน</span>';
-}
-function applyExtBadges() {
-  document.querySelectorAll('.prof-card[data-pid]').forEach((card) => {
-    const el = card.querySelector('.pc-sess');
-    if (el) el.innerHTML = extBadgeHTML(card.getAttribute('data-pid'));
-  });
-  updateExtInstallStatus();
-}
-async function captureSession(pid, btn) {
-  if (!fbExt.present) return toast('ยังไม่ได้ติดตั้งส่วนขยาย — ดูวิธีในโฟลเดอร์ extension/ (README.md)');
-  const old = btn.textContent;
-  btn.disabled = true; btn.textContent = 'กำลังจับ session...';
-  const r = await fbExtCall({ action: 'capture', pid });
-  btn.disabled = false; btn.textContent = old;
-  if (!r || !r.ok) return toast(r && r.error ? r.error : 'จับ session ไม่สำเร็จ — ล็อกอิน facebook.com ก่อนครับ');
-  // ยืนยันผูก id ที่ล็อกอินอยู่จริง เข้ากับการ์ดที่ถูกต้อง — กันเผลอเชื่อมผิดบัญชีแล้วไปเปิดบัตรผิดตัว
-  const card = btn.closest('.prof-card');
-  const label = (card && card.querySelector('.pc-name') && card.querySelector('.pc-name').value) || 'บัญชีนี้';
-  if (!confirm('บัญชี Facebook ที่ล็อกอินอยู่ตอนนี้คือ id ' + r.cUser + '\nเชื่อมเข้ากับการ์ด "' + label + '" ใช่ไหม?\n\nถ้าไม่ใช่ กด "ยกเลิก" แล้วสลับไปล็อกอินบัญชีที่ถูกต้องก่อน')) {
-    await fbExtCall({ action: 'clear', pid });
-    return toast('ยกเลิกแล้ว — ล็อกอินบัญชีที่ถูกต้องแล้วกด "เชื่อมบัญชีนี้" ใหม่');
-  }
-  fbExt.sessions[pid] = { cUser: r.cUser, at: Date.now() };
-  applyExtBadges();
-  toast('เชื่อม session แล้ว (id ' + r.cUser + ') — ปุ่มเปิดบัตร/เช็คยอดจะสลับเข้าบัญชีนี้ให้อัตโนมัติ');
-}
-async function openFbAs(pid, url) {
-  if (fbExt.present && fbExt.sessions[pid]) {
-    const r = await fbExtCall({ action: 'open', pid, url });
-    if (r && r.ok) return;
-    // สลับล้มเหลว (คืนสถานะเดิมในส่วนขยายแล้ว) — อย่าเปิดต่อ ไม่งั้นจะเปิดบัตรผิดบัญชี
-    if (r && r.error) return toast(r.error);
-    if (r && r.needCapture) toast('ยังไม่ได้เชื่อม session บัญชีนี้ — เปิดแบบปกติแทน');
-  } else if (fbExt.present) {
-    toast('บัญชีนี้ยังไม่ได้เชื่อม session — กด "เชื่อมบัญชีนี้" ในหน้าบัญชี FB ก่อน (เปิดแบบปกติให้ก่อน)');
-  }
-  window.open(url, '_blank', 'noopener');
-}
-function updateExtInstallStatus() {
-  const el = document.getElementById('extInstallStatus');
-  if (!el) return;
-  el.innerHTML = fbExt.present
-    ? '<span class="p-status ok">● ติดตั้งส่วนขยายแล้ว — พร้อมสลับบัญชี</span>'
-    : 'ยังไม่ได้ติดตั้ง — กดปุ่มซ้ายเพื่อดาวน์โหลด แล้วทำตามขั้นตอน 5 ข้อ';
-}
-function dlFile(url, name) {
-  const a = document.createElement('a');
-  a.href = url; a.download = name;
-  document.body.appendChild(a); a.click(); a.remove();
-}
-function installExtensionAuto() {
-  dlFile('/extension-install.reg', 'fbad-ext-install.reg');
-  showAutoInstallModal();
-}
-function showAutoInstallModal() {
-  const old = document.getElementById('extInstallModal');
-  if (old) old.remove();
-  const ov = document.createElement('div');
-  ov.id = 'extInstallModal';
-  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px';
-  ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
-  ov.innerHTML = `
-    <div style="background:var(--card,#fff);color:var(--text,#1c1e21);max-width:540px;width:100%;border-radius:12px;padding:22px 24px;max-height:90vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.3)">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <h3 style="margin:0;font-size:17px">ติดตั้งอัตโนมัติ (Windows)</h3>
-        <button class="btn-light btn-sm" onclick="document.getElementById('extInstallModal').remove()">ปิด</button>
-      </div>
-      <p style="color:var(--muted,#65676b);font-size:13px;margin:0 0 14px">ไฟล์ <b>fbad-ext-install.reg</b> กำลังดาวน์โหลด — ทำ 3 ขั้นนี้ครั้งเดียว จากนั้นส่วนขยายจะติดตั้งเองและอัปเดตเองตลอด (Chrome / Edge)</p>
-      <ol style="font-size:14px;line-height:1.95;padding-left:20px;margin:0">
-        <li><b>ดับเบิลคลิก</b>ไฟล์ <code>fbad-ext-install.reg</code> ที่ดาวน์โหลดมา</li>
-        <li>Windows จะถามยืนยัน 1-2 ครั้ง (UAC + Registry Editor) → กด <b>ใช่ / Yes</b> ทุกครั้ง</li>
-        <li><b>ปิด Chrome ให้หมดทุกหน้าต่าง แล้วเปิดใหม่</b> — ส่วนขยายจะติดตั้งเองภายในไม่กี่วินาที เสร็จ!</li>
-      </ol>
-      <div style="margin-top:14px;padding:10px 12px;background:var(--bg-soft,#f5f6f7);border-radius:8px;font-size:12.5px;color:var(--muted,#65676b);line-height:1.7">
-        <b>เช็กว่าติดตั้งสำเร็จ:</b> เปิด <code>chrome://extensions</code> ต้องเห็น "สลับบัญชี" (จะขึ้นว่าติดตั้งโดยผู้ดูแลระบบ ถอนเองไม่ได้ = ปกติ) แล้วกลับหน้านี้ <b>Ctrl+F5</b><br>
-        <b>ต้องเป็นเครื่องที่คุณเป็นแอดมิน</b> (ไฟล์ .reg แก้ policy ระดับเครื่อง) — ถ้ากดแล้ว UAC ไม่ขึ้น/ถูกปฏิเสธ แปลว่าไม่มีสิทธิ์แอดมิน
-      </div>
-      <p style="color:var(--muted,#65676b);font-size:12px;margin:12px 0 0">ไฟล์ไม่ดาวน์โหลด? <a href="/extension-install.reg" download="fbad-ext-install.reg">โหลดใหม่</a> • อยากเอาออก: <a href="/extension-uninstall.reg" download="fbad-ext-uninstall.reg">ไฟล์ถอนการติดตั้ง</a></p>
-    </div>`;
-  document.body.appendChild(ov);
-}
-function installExtension() {
-  dlFile('/extension.zip', 'fbad-extension.zip');
-  showExtInstallModal();
-}
-function showExtInstallModal() {
-  const old = document.getElementById('extInstallModal');
-  if (old) old.remove();
-  const ov = document.createElement('div');
-  ov.id = 'extInstallModal';
-  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px';
-  ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
-  ov.innerHTML = `
-    <div style="background:var(--card,#fff);color:var(--text,#1c1e21);max-width:520px;width:100%;border-radius:12px;padding:22px 24px;max-height:90vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.3)">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <h3 style="margin:0;font-size:17px">ติดตั้งส่วนขยาย "สลับบัญชี"</h3>
-        <button class="btn-light btn-sm" onclick="document.getElementById('extInstallModal').remove()">ปิด</button>
-      </div>
-      <p style="color:var(--muted,#65676b);font-size:13px;margin:0 0 14px">เบราว์เซอร์ไม่ยอมให้เว็บติดตั้งส่วนขยายเองอัตโนมัติ (เพื่อความปลอดภัย) — ทำ 5 ขั้นนี้ครั้งเดียวจบ ใช้ได้กับ Chrome / Edge / Brave</p>
-      <ol style="font-size:14px;line-height:1.9;padding-left:20px;margin:0">
-        <li>ไฟล์ <b>fbad-extension.zip</b> กำลังดาวน์โหลด — <b>แตกไฟล์ (unzip)</b> จะได้โฟลเดอร์ <code>fbad-extension</code></li>
-        <li>เปิดแท็บใหม่ วางที่อยู่นี้แล้ว Enter: <code>chrome://extensions</code> <button class="btn-light btn-sm" style="margin-left:6px" onclick="navigator.clipboard.writeText('chrome://extensions').then(()=>toast('คัดลอกแล้ว'))">คัดลอก</button> <span class="res-label">(Edge ใช้ edge://extensions)</span></li>
-        <li>เปิดสวิตช์ <b>โหมดนักพัฒนา / Developer mode</b> (มุมขวาบน)</li>
-        <li>กด <b>โหลดส่วนขยายที่แตกไฟล์แล้ว / Load unpacked</b> → เลือกโฟลเดอร์ <code>fbad-extension</code> (ตัวที่มีไฟล์ <code>manifest.json</code>)</li>
-        <li>กลับมาหน้านี้ กด <b>Ctrl+F5</b> — จะเห็นปุ่ม "เชื่อมบัญชีนี้" ในการ์ดบัญชี</li>
-      </ol>
-      <p style="color:var(--muted,#65676b);font-size:12px;margin:14px 0 0">ถ้าไฟล์ไม่ดาวน์โหลด <a href="/extension.zip" download="fbad-extension.zip">กดที่นี่เพื่อดาวน์โหลดใหม่</a></p>
-    </div>`;
-  document.body.appendChild(ov);
-}
-// ปิงหาส่วนขยายตอนโหลด (เผื่อ present broadcast มาก่อน listener ผูกเสร็จ)
-fbExtCall({ action: 'ping' }, 3000).then((r) => { if (r && r.ok) { fbExt.present = true; fbExtRefresh(); } });
-
 // ---------- Modal ตรวจสภาพบัญชี (บัตร/Pixel) ----------
 let healthCtx = null;
 function closeHealth() { document.getElementById('healthModal').style.display = 'none'; }
@@ -1674,7 +1517,7 @@ async function renderHealth() {
       ${d.hasPayment
         ? `<div style="font-size:13px;color:var(--muted)">${esc(d.paymentText || 'มีวิธีชำระเงินแล้ว')}</div>`
         : `<div style="font-size:13px;color:var(--muted);margin-bottom:10px">บัญชีนี้ยังไม่มีบัตร/วิธีชำระเงิน — ต้องเพิ่มในหน้า Facebook (เพิ่มผ่าน API ไม่ได้ด้วยเหตุผลด้านความปลอดภัย)</div>
-           <button onclick="openFbAs(${jsStr(pid)}, ${jsStr(billUrl)})" class="btn-primary btn-sm" style="display:inline-block">+ เพิ่มบัตร/วิธีชำระเงิน ↗</button>`}
+           <a href="${billUrl}" target="_blank" class="btn-primary btn-sm" style="text-decoration:none;display:inline-block">+ เพิ่มบัตร/วิธีชำระเงิน ↗</a>`}
     </div>
     <div class="health-item">
       <div class="hi-head">${ic('chart', { size: 14 })} Pixel / Dataset
@@ -1710,7 +1553,6 @@ function renderSettings() {
         <div style="font-size:13px">กดปุ่ม "+ เพิ่มบัญชี FB" ด้านล่าง แล้วทำตามขั้นตอน 1-2 ในการ์ด</div>
       </div>`;
   profiles.filter(p => p.hasToken).forEach(p => populateProfileCard(p.id));
-  applyExtBadges();
   loadTelegramUI();
 }
 async function loadTelegramUI() {
@@ -2136,7 +1978,7 @@ function renderHealthPage(results) {
     // สถานะบัตรจริงโชว์เป็นข้อความเล็กใต้ปุ่ม ส่วน "ค้างชำระ" มีป้าย ⚠ ที่ชื่อบัญชีอยู่แล้ว
     const billHref = `https://business.facebook.com/billing_hub/payment_settings?asset_id=${a.id}`;
     const card = a.dead ? '<span style="color:var(--muted)">—</span>'
-      : `<button class="btn-primary btn-sm" style="display:inline-block;color:#fff" onclick="openFbAs(${jsStr(a.pid)}, ${jsStr(billHref)})">เปิดบัตร ↗</button>`
+      : `<a class="btn-primary btn-sm" style="text-decoration:none;display:inline-block;color:#fff" target="_blank" href="${billHref}">เปิดบัตร ↗</a>`
         + `<div class="res-label" style="margin-top:4px">${a.funding ? '✓ ' + esc(a.funding) : 'ยังไม่เชื่อมบัตร'}</div>`;
     const rowStyle = a.hidden ? ' style="opacity:.45"' : a.dead ? ' style="opacity:.6"' : a.missing ? ' style="background:#fffbf3"' : '';
     const icon = a.dead ? ic('skull', { color: 'var(--red,#d93025)' }) + ' '
@@ -2161,7 +2003,7 @@ function renderHealthPage(results) {
     for (const g of r.pages) {
       if (seen.has(g.id)) continue;
       seen.add(g.id);
-      pages.push({ ...g, plabel: r.p.label, pid: r.p.id, ok: g.published && g.eligible });
+      pages.push({ ...g, plabel: r.p.label, ok: g.published && g.eligible });
     }
   }
   pages.sort((a, b) => (a.hidden ? 1 : 0) - (b.hidden ? 1 : 0) || (b.ok ? 1 : 0) - (a.ok ? 1 : 0));
@@ -2172,7 +2014,7 @@ function renderHealthPage(results) {
       <td>${g.ok
         ? '<span class="st-pill on">✓ ใช้ลงโฆษณาได้</span>'
         : `<span class="st-pill rejected">✕ บิน${!g.published ? ' (ถูกปิดเผยแพร่)' : ''}</span>${g.reason ? `<div class="res-label">${esc(g.reason)}</div>` : ''}`}</td>
-      <td style="white-space:nowrap;text-align:right"><button class="btn-light btn-sm" onclick="openFbAs(${jsStr(g.pid)}, ${jsStr('https://www.facebook.com/' + g.id)})">เปิดเพจ ↗</button> ${eyeBtn('page', g.id, !!g.hidden)}</td>
+      <td style="white-space:nowrap;text-align:right"><a class="btn-light btn-sm" style="text-decoration:none" target="_blank" href="https://www.facebook.com/${g.id}">เปิดเพจ ↗</a> ${eyeBtn('page', g.id, !!g.hidden)}</td>
     </tr>`).join('') || '<tr><td colspan="3" class="tbl-msg">ไม่พบเพจ</td></tr>';
   document.getElementById('healthPageSub').textContent = `— ใช้ได้ ${nPageOk} จาก ${pages.length} เพจ`
     + (nHiddenPage ? ` • ซ่อนไว้ ${nHiddenPage}` : '');
@@ -2535,7 +2377,7 @@ function renderCampaignRows(results, sels) {
       <td class="num-cell">${num(c.reach)}</td>
       <td style="white-space:nowrap">${ends}</td>
       <td style="white-space:nowrap">
-        <button title="เปิดใน Ads Manager" class="btn-light icon-btn" onclick="openFbAs(${jsStr(c.pid)}, ${jsStr(link)})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></button>
+        <a href="${link}" target="_blank" title="เปิดใน Ads Manager" class="btn-light icon-btn" style="text-decoration:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></a>
         <button class="btn-danger-light icon-btn" title="ลบแคมเปญนี้" onclick="deleteCampaign(${jsStr(c.id)}, ${jsStr(c.name)}, ${jsStr(c.pid)})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
       </td>
     </tr>`;
@@ -2549,10 +2391,8 @@ async function openCampaignDetail(pid, id, acct, cur, name) {
   detailCtx = { pid, id, acct, cur };
   document.getElementById('detailModal').style.display = 'flex';
   document.getElementById('detailTitle').textContent = name || 'รายละเอียดแคมเปญ';
-  const amUrl = `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${acct}&selected_campaign_ids=${id}`;
-  const amLink = document.getElementById('detailAmLink');
-  amLink.href = amUrl; // คงไว้ให้ hover/คลิกกลางเห็น URL
-  amLink.onclick = (e) => { e.preventDefault(); openFbAs(pid, amUrl); };
+  document.getElementById('detailAmLink').href =
+    `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${acct}&selected_campaign_ids=${id}`;
   await renderCampaignDetail();
 }
 function detailStatusPill(x) {
@@ -4503,7 +4343,7 @@ async function launch() {
             setProgress();
           }
           if (ev.type === 'done') {
-            doneLinks.push({ label, pid: t.pid, url: `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${ev.account}&selected_campaign_ids=${ev.campaignId}` });
+            doneLinks.push({ label, url: `https://adsmanager.facebook.com/adsmanager/manage/ads?act=${ev.account}&selected_campaign_ids=${ev.campaignId}` });
           }
       };
       // ใช้ XHR แทน fetch เพื่อโชว์ % ตอนส่งไฟล์ขึ้นเซิร์ฟเวอร์ (ไฟล์วิดีโอใหญ่ใช้เวลานาน ไม่ใช่ค้าง)
@@ -4537,7 +4377,7 @@ async function launch() {
 
   allCards.forEach(c => aggregateBadge(c, selected));
 
-  const links = doneLinks.map(d => `<a href="${d.url}" target="_blank" onclick="event.preventDefault();openFbAs(${jsStr(d.pid)}, ${jsStr(d.url)})">${esc(d.label)} ↗</a>`).join(' • ');
+  const links = doneLinks.map(d => `<a href="${d.url}" target="_blank">${esc(d.label)} ↗</a>`).join(' • ');
   const banner = document.getElementById('doneBanner');
   banner.style.display = 'block';
   banner.innerHTML = failCount

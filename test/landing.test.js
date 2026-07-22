@@ -173,37 +173,3 @@ describe('หน้า Landing', () => {
     assert.strictEqual(d.links.length, 1, 'แก้เฉพาะชื่อ ปุ่มเดิมต้องไม่หาย');
   });
 });
-
-describe('ดาวน์โหลดส่วนขยาย', () => {
-  test('/extension.zip เป็นไฟล์ zip ที่ใช้ได้ และมีไฟล์ของส่วนขยายจริง', async (t) => {
-    const { base } = await boot(t);
-    const res = await fetch(base + '/extension.zip');
-    assert.strictEqual(res.status, 200);
-    assert.match(res.headers.get('content-disposition') || '', /fbad-extension\.zip/);
-    const buf = Buffer.from(await res.arrayBuffer());
-    assert.strictEqual(buf.slice(0, 2).toString(), 'PK', 'ต้องขึ้นต้นด้วย PK (ไฟล์ zip)');
-    assert.ok(buf.includes(Buffer.from([0x50, 0x4b, 0x05, 0x06])), 'ต้องมี End Of Central Directory = โครงสร้าง zip ครบ');
-    const s = buf.toString('latin1');
-    assert.ok(s.includes('fbad-extension/manifest.json'), 'ใน zip ต้องมี manifest.json ครอบด้วยโฟลเดอร์เดียว');
-    assert.ok(s.includes('fbad-extension/background.js'), 'ใน zip ต้องมี background.js');
-  });
-
-  test('/extension-install.reg เป็นไฟล์ .reg UTF-16 ที่ตั้ง policy ด้วย ID ตรงกับ update.xml', async (t) => {
-    const { base } = await boot(t);
-    const res = await fetch(base + '/extension-install.reg');
-    assert.strictEqual(res.status, 200);
-    assert.match(res.headers.get('content-disposition') || '', /\.reg/);
-    const buf = Buffer.from(await res.arrayBuffer());
-    assert.deepStrictEqual([buf[0], buf[1]], [0xff, 0xfe], 'ต้องมี BOM UTF-16LE ไม่งั้น Windows merge ไม่ได้');
-    const text = buf.slice(2).toString('utf16le'); // ข้าม BOM ก่อนอ่านข้อความ
-    assert.ok(text.startsWith('Windows Registry Editor Version 5.00'), 'บรรทัดแรกต้องเป็น header ของ .reg');
-    assert.ok(text.includes('ExtensionInstallForcelist'), 'ต้องตั้ง policy force-install');
-    // Chrome อ่าน list policy บน registry เฉพาะค่าที่ชื่อเป็นตัวเลข "1","2"... ชื่ออื่น Chrome ข้าม = ไม่ติดตั้ง
-    assert.match(text, /"1"="[a-p]{32};https?:/, 'ชื่อค่าต้องเป็น "1" (ตัวเลข) ไม่งั้น Chrome ไม่อ่าน policy');
-    // ID ใน .reg ต้องตรงกับ appid ใน update.xml ที่เสิร์ฟจริง ไม่งั้นติดตั้งคนละตัว
-    const xml = await (await fetch(base + '/ext/update.xml')).text();
-    const id = (xml.match(/appid="([a-p]{32})"/) || [])[1];
-    assert.ok(id, 'update.xml ต้องมี appid');
-    assert.ok(text.includes(id), '.reg ต้องอ้าง ID เดียวกับ update.xml');
-  });
-});
