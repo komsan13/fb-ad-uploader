@@ -4,6 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const { buildExtensionZip } = require('./ext-zip');
 
 const CONFIG_PATH = process.env.CONFIG_PATH || path.join(__dirname, 'config.json');
 const API = process.env.FB_API_BASE || 'https://graph.facebook.com/v23.0';
@@ -1390,6 +1391,18 @@ app.get('/api/profiles', (req, res) => res.json(publicProfiles(loadConfig())));
 
 // redirect URI ที่ต้องเอาไปใส่ในแอป FB (เปลี่ยนตาม env ตอน deploy)
 app.get('/api/env', (req, res) => res.json({ redirectUri: REDIRECT_URI }));
+
+// ดาวน์โหลดส่วนขยาย "สลับบัญชี" เป็น .zip (สร้างสดจากโฟลเดอร์ extension/ ทุกครั้ง ไม่มีทางเก่าค้าง)
+app.get('/extension.zip', (req, res) => {
+  try {
+    const buf = buildExtensionZip(path.join(__dirname, 'extension'));
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename="fbad-extension.zip"');
+    res.send(buf);
+  } catch (e) {
+    res.status(500).send('สร้างไฟล์ส่วนขยายไม่สำเร็จ: ' + e.message);
+  }
+});
 
 app.post('/api/profiles', (req, res) => {
   const cfg = loadConfig();

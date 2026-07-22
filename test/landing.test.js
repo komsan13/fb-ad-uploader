@@ -173,3 +173,18 @@ describe('หน้า Landing', () => {
     assert.strictEqual(d.links.length, 1, 'แก้เฉพาะชื่อ ปุ่มเดิมต้องไม่หาย');
   });
 });
+
+describe('ดาวน์โหลดส่วนขยาย', () => {
+  test('/extension.zip เป็นไฟล์ zip ที่ใช้ได้ และมีไฟล์ของส่วนขยายจริง', async (t) => {
+    const { base } = await boot(t);
+    const res = await fetch(base + '/extension.zip');
+    assert.strictEqual(res.status, 200);
+    assert.match(res.headers.get('content-disposition') || '', /fbad-extension\.zip/);
+    const buf = Buffer.from(await res.arrayBuffer());
+    assert.strictEqual(buf.slice(0, 2).toString(), 'PK', 'ต้องขึ้นต้นด้วย PK (ไฟล์ zip)');
+    assert.ok(buf.includes(Buffer.from([0x50, 0x4b, 0x05, 0x06])), 'ต้องมี End Of Central Directory = โครงสร้าง zip ครบ');
+    const s = buf.toString('latin1');
+    assert.ok(s.includes('fbad-extension/manifest.json'), 'ใน zip ต้องมี manifest.json ครอบด้วยโฟลเดอร์เดียว');
+    assert.ok(s.includes('fbad-extension/background.js'), 'ใน zip ต้องมี background.js');
+  });
+});

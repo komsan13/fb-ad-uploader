@@ -967,6 +967,10 @@
            เรียงตามลำดับที่ผู้ใช้ต้องตั้งจริง และของที่เปิดบ่อยสุด (autopilot) อยู่ใกล้บนสุด -->
       <div class="card">
         <h2><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/><path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3"/></svg></span>บัญชี FB ทั้งหมด <span class="h-desc">— เพิ่มได้หลายบัญชี แต่ละบัญชีมี token + บัญชีโฆษณา + เพจของตัวเอง</span></h2>
+        <div id="extInstallBar" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 14px;padding:10px 12px;background:var(--bg-soft,#f5f6f7);border:1px solid var(--line,#eee);border-radius:var(--r-md,8px)">
+          <button class="btn-light btn-sm" onclick="installExtension()">⬇ ติดตั้งส่วนขยาย "สลับบัญชี"</button>
+          <span id="extInstallStatus" class="res-label"></span>
+        </div>
         <div id="profList"></div>
         <button class="btn-primary" onclick="addProfile()">+ เพิ่มบัญชี FB</button>
         <details style="margin-top:14px;border:1px solid var(--line);border-radius:var(--r-md);padding:8px 12px">
@@ -1531,6 +1535,7 @@ function applyExtBadges() {
     const el = card.querySelector('.pc-sess');
     if (el) el.innerHTML = extBadgeHTML(card.getAttribute('data-pid'));
   });
+  updateExtInstallStatus();
 }
 async function captureSession(pid, btn) {
   if (!fbExt.present) return toast('ยังไม่ได้ติดตั้งส่วนขยาย — ดูวิธีในโฟลเดอร์ extension/ (README.md)');
@@ -1561,6 +1566,44 @@ async function openFbAs(pid, url) {
     toast('บัญชีนี้ยังไม่ได้เชื่อม session — กด "เชื่อมบัญชีนี้" ในหน้าบัญชี FB ก่อน (เปิดแบบปกติให้ก่อน)');
   }
   window.open(url, '_blank', 'noopener');
+}
+function updateExtInstallStatus() {
+  const el = document.getElementById('extInstallStatus');
+  if (!el) return;
+  el.innerHTML = fbExt.present
+    ? '<span class="p-status ok">● ติดตั้งส่วนขยายแล้ว — พร้อมสลับบัญชี</span>'
+    : 'ยังไม่ได้ติดตั้ง — กดปุ่มซ้ายเพื่อดาวน์โหลด แล้วทำตามขั้นตอน 5 ข้อ';
+}
+function installExtension() {
+  const a = document.createElement('a');
+  a.href = '/extension.zip'; a.download = 'fbad-extension.zip';
+  document.body.appendChild(a); a.click(); a.remove();
+  showExtInstallModal();
+}
+function showExtInstallModal() {
+  const old = document.getElementById('extInstallModal');
+  if (old) old.remove();
+  const ov = document.createElement('div');
+  ov.id = 'extInstallModal';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px';
+  ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = `
+    <div style="background:var(--card,#fff);color:var(--text,#1c1e21);max-width:520px;width:100%;border-radius:12px;padding:22px 24px;max-height:90vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.3)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <h3 style="margin:0;font-size:17px">ติดตั้งส่วนขยาย "สลับบัญชี"</h3>
+        <button class="btn-light btn-sm" onclick="document.getElementById('extInstallModal').remove()">ปิด</button>
+      </div>
+      <p style="color:var(--muted,#65676b);font-size:13px;margin:0 0 14px">เบราว์เซอร์ไม่ยอมให้เว็บติดตั้งส่วนขยายเองอัตโนมัติ (เพื่อความปลอดภัย) — ทำ 5 ขั้นนี้ครั้งเดียวจบ ใช้ได้กับ Chrome / Edge / Brave</p>
+      <ol style="font-size:14px;line-height:1.9;padding-left:20px;margin:0">
+        <li>ไฟล์ <b>fbad-extension.zip</b> กำลังดาวน์โหลด — <b>แตกไฟล์ (unzip)</b> จะได้โฟลเดอร์ <code>fbad-extension</code></li>
+        <li>เปิดแท็บใหม่ วางที่อยู่นี้แล้ว Enter: <code>chrome://extensions</code> <button class="btn-light btn-sm" style="margin-left:6px" onclick="navigator.clipboard.writeText('chrome://extensions').then(()=>toast('คัดลอกแล้ว'))">คัดลอก</button> <span class="res-label">(Edge ใช้ edge://extensions)</span></li>
+        <li>เปิดสวิตช์ <b>โหมดนักพัฒนา / Developer mode</b> (มุมขวาบน)</li>
+        <li>กด <b>โหลดส่วนขยายที่แตกไฟล์แล้ว / Load unpacked</b> → เลือกโฟลเดอร์ <code>fbad-extension</code> (ตัวที่มีไฟล์ <code>manifest.json</code>)</li>
+        <li>กลับมาหน้านี้ กด <b>Ctrl+F5</b> — จะเห็นปุ่ม "เชื่อมบัญชีนี้" ในการ์ดบัญชี</li>
+      </ol>
+      <p style="color:var(--muted,#65676b);font-size:12px;margin:14px 0 0">ถ้าไฟล์ไม่ดาวน์โหลด <a href="/extension.zip" download="fbad-extension.zip">กดที่นี่เพื่อดาวน์โหลดใหม่</a></p>
+    </div>`;
+  document.body.appendChild(ov);
 }
 // ปิงหาส่วนขยายตอนโหลด (เผื่อ present broadcast มาก่อน listener ผูกเสร็จ)
 fbExtCall({ action: 'ping' }, 3000).then((r) => { if (r && r.ok) { fbExt.present = true; fbExtRefresh(); } });
