@@ -4,11 +4,11 @@ const assert = require('node:assert');
 const { makeFakeFb } = require('./fake-fb');
 const { tmpDir, seed, startServer, get, post } = require('./helpers');
 
-async function boot(t) {
+async function boot(t, extraEnv = {}) {
   const fb = await makeFakeFb({});
   const dir = tmpDir();
   seed(dir, { config: {} });
-  const srv = await startServer(dir, fb.port);
+  const srv = await startServer(dir, fb.port, extraEnv);
   t.after(() => { srv.stop(); fb.server.close(); });
   return srv;
 }
@@ -92,11 +92,12 @@ describe('หน้า Landing', () => {
       'ไม่มี scheme = ปฏิเสธ เพราะเบราว์เซอร์จะตีความเป็น path ของเว็บเรา ไม่ใช่ลิงก์ออกไปข้างนอก');
   });
 
-  test('ลิงก์หลังบ้านเดิม /lp/admin ต้องพาไปหน้าหลัก ไม่ใช่ 404', async (t) => {
+  test('ไม่มีหลังบ้านซ้ำที่ /lp/admin — ต้องจัดการผ่านเมนู Landing ในแอดมินหลัก', async (t) => {
     const { base } = await boot(t);
-    const r = await fetch(base + '/lp/admin', { redirect: 'manual' });
-    assert.strictEqual(r.status, 302);
-    assert.match(r.headers.get('location'), /#landing$/);
+    for (const suffix of ['', '/']) {
+      const r = await fetch(base + '/lp/admin' + suffix, { redirect: 'manual' });
+      assert.strictEqual(r.status, 404);
+    }
   });
 
   test('อัปรูปได้ และเสิร์ฟกลับได้', async (t) => {
@@ -107,6 +108,19 @@ describe('หน้า Landing', () => {
     const up = await (await fetch(base + '/api/landing/upload', { method: 'POST', body: fd })).json();
     assert.match(up.url, /^\/lp-asset\/[0-9a-f-]{36}\.png$/, 'ต้องได้ path ของรูปที่อัป');
     assert.strictEqual((await fetch(base + up.url)).status, 200, 'ต้องเสิร์ฟรูปกลับได้');
+  });
+
+  test('เมื่อ tenant อยู่ใต้ path ต้องคืน URL asset ที่มี profile code และยอมบันทึกได้', async (t) => {
+    const code = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
+    const { base } = await boot(t, { PUBLIC_URL_PATH: '/p/' + code });
+    const fd = new FormData();
+    fd.append('file', new Blob([Buffer.alloc(64, 3)], { type: 'image/png' }), 'tenant.png');
+    const up = await (await fetch(base + '/api/landing/upload', { method: 'POST', body: fd })).json();
+    assert.match(up.url, new RegExp(`^/p/${code}/lp-asset/[0-9a-f-]{36}\\.png$`));
+    const saved = await post(base, '/api/landing', { avatar: up.url, bgImage: up.url });
+    assert.strictEqual(saved.landing.avatar, up.url);
+    assert.strictEqual(saved.landing.bgImage, up.url);
+    assert.ok((await html(base)).includes(up.url), 'หน้า Landing ต้องอ้าง asset ผ่าน profile path เดิม');
   });
 
   test('ไฟล์ที่ไม่ใช่รูปต้องอัปไม่ได้', async (t) => {

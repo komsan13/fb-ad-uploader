@@ -372,6 +372,60 @@
   .px-item { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 0; border-top: 1px dashed var(--line); }
   .px-item code { background: #f0f2f5; padding: 1px 7px; border-radius: 6px; font-size: 12px; }
 
+  /* ---------- สมาชิกผู้เช่า (เฉพาะแอดมินใหญ่) ---------- */
+  .member-hero { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(290px,.85fr); gap:34px; align-items:center; margin-bottom:30px; padding:30px 32px; overflow:hidden; border-radius:var(--r-lg); background:#075b46; color:#fff; box-shadow:0 15px 34px rgba(5,80,61,.18); }
+  .member-eyebrow { display:inline-flex; align-items:center; gap:7px; margin-bottom:13px; color:#d9f499; font-size:10.5px; font-weight:800; letter-spacing:.11em; text-transform:uppercase; }
+  .member-eyebrow::before { content:""; width:7px; height:7px; border-radius:50%; background:#d9f499; box-shadow:0 0 0 4px rgba(217,244,153,.16); }
+  .member-hero h2 { margin:0; max-width:620px; color:#fff; font-size:clamp(25px,3vw,34px); line-height:1.13; letter-spacing:-.035em; }
+  .member-hero-copy { max-width:590px; margin:10px 0 0; color:rgba(255,255,255,.78); font-size:14px; line-height:1.62; }
+  .member-hero-proof { display:flex; align-items:center; gap:8px; margin-top:16px; color:#d9f499; font-size:12px; font-weight:700; }
+  .member-hero-proof::before { content:"✓"; display:grid; place-items:center; width:18px; height:18px; border:1px solid rgba(217,244,153,.55); border-radius:50%; font-size:11px; }
+  .member-hero-actions { display:flex; gap:9px; flex-wrap:wrap; margin-top:23px; }
+  .member-hero .btn-primary { background:#fff; color:#075b46; box-shadow:none; }
+  .member-hero .btn-primary:hover { background:#e9f6c4; }
+  .member-hero .btn-light { border:1px solid rgba(255,255,255,.35); background:transparent; color:#fff; }
+  .member-hero .btn-light:hover { border-color:rgba(255,255,255,.7); background:rgba(255,255,255,.1); }
+  .member-stats { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
+  .member-stat { min-height:92px; padding:15px; border:1px solid rgba(255,255,255,.2); border-radius:var(--r-md); background:rgba(255,255,255,.09); }
+  .member-stat b { display:block; color:#fff; font-size:27px; line-height:1; letter-spacing:-.04em; }
+  .member-stat span { display:block; margin-top:8px; color:rgba(255,255,255,.7); font-size:11.5px; font-weight:650; }
+  .member-section-head { display:flex; align-items:end; justify-content:space-between; gap:16px; margin:0 2px 12px; }
+  .member-section-kicker { margin-bottom:4px; color:var(--brand); font-size:10.5px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; }
+  .member-section-head h3 { margin:0; color:var(--text); font-size:18px; letter-spacing:-.02em; }
+  .member-list-meta { padding-bottom:2px; color:var(--muted); font-size:12px; text-align:right; }
+  .member-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(310px,1fr)); gap:12px; }
+  .member-card { display:flex; flex-direction:column; min-height:278px; padding:16px; border:1px solid var(--line); border-radius:var(--r-lg); background:#fff; transition:border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+  .member-card:hover { border-color:#a9cdc1; box-shadow:var(--shadow-card); transform:translateY(-2px); }
+  .member-card-head { display:flex; gap:10px; align-items:flex-start; }
+  .member-avatar { display:flex; flex:0 0 auto; align-items:center; justify-content:center; width:40px; height:40px; border-radius:12px; background:var(--brand-soft); color:var(--brand-dark); font-size:15px; font-weight:850; }
+  .member-name { color:var(--text); font-size:14px; font-weight:780; overflow-wrap:anywhere; }
+  .member-meta { margin-top:3px; color:var(--muted); font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
+  .member-state { margin-left:auto; padding:5px 8px; border-radius:999px; background:#eef0f3; color:var(--muted); font-size:10.5px; font-weight:780; line-height:1; white-space:nowrap; }
+  .member-state.active { background:var(--green-soft); color:var(--green); }
+  .member-state.suspended, .member-state.hold { background:#fff3dc; color:#9a6500; }
+  .member-state.archived, .member-state.failed { background:var(--red-soft); color:var(--red); }
+  .member-details { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:18px 0 13px; }
+  .member-detail { min-width:0; padding:8px 9px; border-radius:8px; background:#f6f8f8; }
+  .member-detail span { display:block; margin-bottom:3px; color:var(--muted); font-size:10px; font-weight:700; }
+  .member-detail b { display:block; overflow:hidden; color:var(--text); font-size:11.5px; text-overflow:ellipsis; white-space:nowrap; }
+  .member-links { display:flex; gap:8px; margin:0 0 13px; }
+  .member-link { display:inline-flex; align-items:center; gap:4px; padding:6px 8px; border:1px solid var(--line); border-radius:7px; color:var(--brand-dark); font-size:11.5px; font-weight:700; text-decoration:none; }
+  .member-link:hover { border-color:#97c9b9; background:var(--brand-soft); }
+  .member-code-wrap { margin-top:auto; }
+  .member-code-label { display:block; margin:0 0 5px 1px; color:var(--muted); font-size:10px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; }
+  .member-code { display:block; overflow:hidden; padding:6px 7px; border-radius:6px; background:#f5f6f8; color:var(--muted); font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:10.5px; text-overflow:ellipsis; white-space:nowrap; }
+  .member-actions { display:flex; flex-wrap:wrap; gap:7px; margin-top:14px; padding-top:13px; border-top:1px solid var(--line); }
+  .member-empty { grid-column:1/-1; padding:38px 22px 26px; border:1px dashed #9ec8bb; border-radius:var(--r-lg); background:#fbfefd; text-align:center; }
+  .member-empty h4 { margin:0; color:var(--text); font-size:17px; letter-spacing:-.02em; }
+  .member-empty p { max-width:470px; margin:8px auto 0; color:var(--muted); font-size:13px; line-height:1.55; }
+  .member-empty .btn-primary { margin-top:18px; }
+  .member-empty-flow { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; max-width:680px; margin:25px auto 0; text-align:left; }
+  .member-empty-step { padding:10px; border:1px solid var(--line); border-radius:9px; background:#fff; }
+  .member-empty-step b { display:block; margin-bottom:4px; color:var(--brand); font-size:10px; letter-spacing:.05em; text-transform:uppercase; }
+  .member-empty-step span { display:block; color:var(--text); font-size:11.5px; font-weight:700; line-height:1.35; }
+  .member-notice { display:flex; gap:10px; margin-top:14px; padding:11px 12px; border:1px solid #f0d9a8; border-left:4px solid #d99a18; border-radius:var(--r-md); background:#fff9ec; color:#76500a; font-size:12px; line-height:1.5; }
+  .member-notice b { color:#654200; }
+
   .page { display: none; }
   .page.active { display: block; }
 
@@ -396,6 +450,20 @@
     main { margin-left: 0; padding: 0 14px 40px; }
     .topstrip { margin: 0 -14px; padding: 0 14px; height: auto; min-height: 52px; }
     .logo { height: auto; min-height: 52px; }
+    .member-hero { grid-template-columns:1fr; gap:24px; padding:25px 21px; border-radius:0 0 var(--r-lg) var(--r-lg); margin:0 -14px 26px; }
+    .member-hero h2 { font-size:27px; }
+    .member-section-head { margin-left:0; margin-right:0; }
+    .member-empty-flow { grid-template-columns:1fr; text-align:left; }
+  }
+  @media (max-width: 480px) {
+    .member-hero-actions { display:grid; grid-template-columns:1fr; }
+    .member-hero-actions button { width:100%; }
+    .member-stats { gap:7px; }
+    .member-stat { min-height:80px; padding:12px; }
+    .member-stat b { font-size:23px; }
+    .member-list { grid-template-columns:1fr; }
+    .member-section-head { align-items:flex-start; flex-direction:column; gap:4px; }
+    .member-list-meta { text-align:left; }
   }
 </style>
 </head>
@@ -414,6 +482,7 @@
       <a data-page="library" onclick="showPage('library')"><span class="num">4</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m10 8 6 4-6 4Z"/><rect width="20" height="14" x="2" y="5" rx="2"/></svg><span class="lbl">คลังสื่อ</span></a>
       <a data-page="landing" onclick="showPage('landing')"><span class="num">5</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 8h10"/><path d="M7 12h10"/><path d="M7 16h6"/></svg><span class="lbl">หน้า Landing</span></a>
       <a data-page="settings" onclick="showPage('settings')"><span class="num">6</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span class="lbl">บัญชี FB</span></a>
+      <a id="membersNav" data-page="members" onclick="showPage('members')" style="display:none"><span class="num">7</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span class="lbl">สมาชิก</span></a>
     </nav>
     <div class="side-foot" id="sideConn"><span class="dot"></span>ยังไม่มีบัญชี</div>
   </aside>
@@ -889,7 +958,7 @@
     <!-- ========== PAGE: หน้า Landing ========== -->
     <section class="page" id="page-landing">
       <div class="card">
-        <h2>ส่วนหัวของหน้า <span class="h-desc">— หน้าจริงอยู่ที่ <a href="/lp" target="_blank" style="color:var(--brand-dark)">/lp</a> เปิดดูได้ตลอด</span></h2>
+        <h2>ส่วนหัวของหน้า <span class="h-desc">— หน้าจริงอยู่ที่ <a href="/lp" data-tenant-path="/lp" target="_blank" style="color:var(--brand-dark)">/lp</a> เปิดดูได้ตลอด</span></h2>
         <div class="fgrid">
           <div class="field"><label>ชื่อร้าน/แบรนด์</label><input id="lpTitle"></div>
           <div class="field"><label>รูปโปรไฟล์</label>
@@ -956,7 +1025,7 @@
 
       <div class="card" style="display:flex;gap:12px;align-items:center;position:sticky;bottom:12px">
         <button class="btn-primary" onclick="lpSave(this)">บันทึก</button>
-        <a class="btn-light btn-sm" href="/lp" target="_blank" style="text-decoration:none">ดูหน้าจริง ↗</a>
+        <a class="btn-light btn-sm" href="/lp" data-tenant-path="/lp" target="_blank" style="text-decoration:none">ดูหน้าจริง ↗</a>
         <span id="lpMsg" style="font-size:13.5px;font-weight:600"></span>
       </div>
     </section>
@@ -979,6 +1048,7 @@
           </ol>
           <div class="hint"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#b8860b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg> บัญชี FB ที่ login ต้องเป็นแอดมิน/ผู้ทดสอบของแอปนั้น (เฟสที่สร้างแอปเองเป็นแอดมินอยู่แล้ว ไม่ต้องส่ง App Review) • ถ้าหลาย ad account อยู่ใต้ FB เดียวกัน login ครั้งเดียวเห็นครบทุกบัญชี</div>
         </details>
+        <div class="hint" style="margin-top:10px"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> URL นโยบายความเป็นส่วนตัว (ใช้กรอกใน Meta / Business Manager): <a id="privacyUrl" href="https://ad.senball.com/privacy.html" target="_blank"><code id="privacyUrlText">https://ad.senball.com/privacy.html</code></a></div>
       </div>
 
       <div class="card">
@@ -1086,7 +1156,71 @@
         <div class="hint" style="margin-top:4px">รุ่น AI (ราคา = ค่าอ่าน/ค่าตอบ ต่อล้านโทเคน): fable = ฉลาดสุดแต่แพงสุด • opus-4-8 = ค่าตั้งต้น • sonnet = สมดุลราคา/ความฉลาด • haiku = เร็วถูกสุดเหมาะงานง่าย • ในลิสต์มีเฉพาะรุ่นที่ยังใช้งานได้จริง รุ่นใหม่ออกเมื่อไหร่พิมพ์ชื่อรุ่นลงช่องได้เลย ระบบยิงทดสอบกับ API ก่อนเซฟ ชื่อผิด/รุ่นตายไม่ถูกเซฟ • ปล่อยว่าง = กลับไปใช้ค่าตั้งต้น</div>
       </div>
     </section>
-  </main>
+
+    <!-- ========== PAGE: สมาชิกผู้เช่า (แอดมินใหญ่เท่านั้น) ========== -->
+    <section class="page" id="page-members">
+      <section class="member-hero" aria-labelledby="membersHeroTitle">
+        <div>
+          <div class="member-eyebrow">Tenant control</div>
+          <h2 id="membersHeroTitle">สมาชิกที่เช่าแพลตฟอร์ม</h2>
+          <p class="member-hero-copy">สร้างโปรไฟล์ ส่งลิงก์หลังบ้าน และคุมสิทธิ์ของแต่ละสมาชิกจากที่เดียว โดยข้อมูลและ Landing ของแต่ละรายยังแยกจากกันครบถ้วน</p>
+          <div class="member-hero-proof">1 สมาชิก = 1 container + data volume แยกกัน</div>
+          <div class="member-hero-actions">
+            <button class="btn-primary" onclick="openMemberModal('create')">+ เพิ่มสมาชิกใหม่</button>
+            <button class="btn-light btn-sm" onclick="loadMembers(true)">รีเฟรชรายการ</button>
+          </div>
+        </div>
+        <div class="member-stats" id="memberStats" aria-live="polite"></div>
+      </section>
+
+      <div class="member-section-head">
+        <div>
+          <div class="member-section-kicker">Profiles</div>
+          <h3>รายชื่อสมาชิก</h3>
+        </div>
+        <div class="member-list-meta" id="memberListMeta" aria-live="polite"></div>
+      </div>
+      <div class="member-list" id="memberList"></div>
+      <aside class="member-notice"><div><b>Archive</b> หยุด instance และเก็บ data ไว้โดยไม่ลบ แต่ไม่ได้ pause แคมเปญที่มีอยู่บน Meta • Restore จะเปิด instance ในโหมดพัก Autopilot ก่อนเสมอ ต้องยืนยันแยกต่างหากเมื่อพร้อมให้ทำงานอีกครั้ง</div></aside>
+    </section>
+</main>
+</div>
+
+<!-- ========== Modal จัดการสมาชิกผู้เช่า ========== -->
+<div id="memberModal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeMemberModal()">
+  <div class="modal-box" style="max-width:620px">
+    <div class="modal-head">
+      <h3 id="memberModalTitle">เพิ่มสมาชิก</h3>
+      <button class="icon-btn btn-light" onclick="closeMemberModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input id="memberModalMode" type="hidden">
+      <input id="memberModalCode" type="hidden">
+      <input id="memberModalRevision" type="hidden">
+      <div id="memberInfoFields">
+        <div class="fgrid">
+          <div class="field"><label>ชื่อร้าน / ชื่อที่แสดง</label><input id="memberDisplayName" maxlength="120" placeholder="เช่น ร้านดาวเหนือ"></div>
+          <div class="field"><label>แพ็กเกจ <span class="h-desc">ไม่บังคับ</span></label><input id="memberPlan" maxlength="80" placeholder="เช่น Pro รายเดือน"></div>
+          <div class="field"><label>ชื่อผู้ดูแล</label><input id="memberOwnerName" maxlength="120" placeholder="ชื่อ-นามสกุล"></div>
+          <div class="field"><label>อีเมลผู้ดูแล</label><input id="memberOwnerEmail" type="email" maxlength="254" placeholder="owner@example.com"></div>
+          <div class="field"><label>วันหมดอายุ <span class="h-desc">บันทึกติดตาม, ไม่ใส่ = ไม่กำหนด</span></label><input id="memberExpiresAt" type="date"></div>
+        </div>
+      </div>
+      <div id="memberCredentialFields" class="fgrid" style="margin-top:12px">
+        <div class="field"><label>Username สำหรับเข้าหลังบ้าน</label><input id="memberUsername" autocomplete="off" placeholder="shop-owner"></div>
+        <div class="field"><label>รหัสผ่านใหม่ <span class="h-desc">อย่างน้อย 12 ตัว</span></label><input id="memberPassword" type="password" minlength="12" autocomplete="new-password"></div>
+      </div>
+      <div id="memberConfirmFields" class="field" style="display:none;margin-top:12px">
+        <label>พิมพ์ <code>ENABLE_AUTOPILOT</code> เพื่อยืนยันการปลดโหมดพัก</label>
+        <input id="memberConfirmText" autocomplete="off">
+      </div>
+      <div id="memberModalHint" class="hint" style="margin-top:12px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">
+        <button class="btn-light" onclick="closeMemberModal()">ยกเลิก</button>
+        <button class="btn-primary" id="memberModalSave" onclick="saveMemberModal(this)">บันทึก</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- ========== Modal รายละเอียดแคมเปญ (ชุดโฆษณา + โฆษณา) ========== -->
@@ -1230,9 +1364,28 @@
 </div>
 
 <script>
+// tenant ที่อยู่ใต้ /p/<รหัส>/ ใช้ instance คนละตัว แต่โค้ดหน้าเว็บเดิมเรียก API แบบ /api/...
+// เติม prefix ที่ browser เห็นก่อนส่ง request เพื่อให้ Traefik ส่งเข้า container ของผู้เช่ารายนั้น
+const TENANT_PATH = (() => {
+  const m = location.pathname.match(/^\/p\/[a-f0-9]{32}(?=\/|$)/i);
+  return m ? m[0] : '';
+})();
+const tenantUrl = (url) => (TENANT_PATH && typeof url === 'string' && url.startsWith('/') && !url.startsWith('//')
+  ? TENANT_PATH + url : url);
+const nativeFetch = window.fetch.bind(window);
+window.fetch = (input, init) => nativeFetch(tenantUrl(input), init);
+const nativeXhrOpen = XMLHttpRequest.prototype.open;
+XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+  return nativeXhrOpen.call(this, method, tenantUrl(url), ...rest);
+};
+document.querySelectorAll('[data-tenant-path]').forEach((el) => { el.href = tenantUrl(el.dataset.tenantPath); });
+
 let adRowSeq = 0;
 let profiles = [];            // [{id, label, adAccountId, pageId, hasToken}]
 let activeProfileId = null;
+let tenantControlEnabled = false;
+let tenantControlCsrf = '';
+let tenants = [];
 const accountCache = {};      // pid -> {name, adAccounts, pages}
 const cardResults = new Map();      // cardId -> {ok:Set<pid>, fail:Map<pid,error>}
 const lastCampaignByAcct = {};   // "pid:acctId" -> {id, name, objective}
@@ -1333,28 +1486,243 @@ const PAGE_META = {
   library: ['คลังสื่อ', 'วิดีโอ + แคปชั่นที่เตรียมไว้ล่วงหน้า — ตัวจัดแผนขึ้นแอดหยิบจากที่นี่'],
   landing: ['หน้า Landing', 'หน้าที่ลูกค้าเห็นเมื่อกดจากโฆษณา — แก้ปุ่ม ลิงก์ และพิกเซล'],
   settings: ['บัญชี FB', 'เพิ่ม/จัดการบัญชี FB, บัญชีโฆษณา และเพจ'],
+  members: ['สมาชิกและโปรไฟล์เช่า', 'สร้างและดูแล instance ที่แยกข้อมูลกันรายสมาชิก'],
 };
 function showPage(name, fromRoute) {
+  if (name === 'members' && !tenantControlEnabled) name = 'dashboard';
   if (!PAGE_META[name]) name = 'dashboard';
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
   document.querySelectorAll('nav a').forEach(a => a.classList.toggle('active', a.dataset.page === name));
   document.getElementById('pageTitle').textContent = PAGE_META[name][0];
   document.getElementById('pageDesc').textContent = PAGE_META[name][1];
-  // route: เก็บหน้าปัจจุบันไว้ใน URL (#ชื่อหน้า) — รีเฟรช/ปุ่ม back-forward กลับมาหน้าเดิมได้
-  if (!fromRoute && location.hash !== '#' + name) history.pushState(null, '', '#' + name);
+  // สมาชิกใช้ path ตรงเพื่อส่งลิงก์/รีเฟรชได้ ส่วนหน้าอื่นคง hash route เดิม
+  const routeUrl = name === 'members' ? '/members' : '/#' + name;
+  if (!fromRoute && location.pathname + location.hash !== routeUrl) history.pushState(null, '', routeUrl);
   if (name === 'settings') { renderSettings(); loadAiKeyState(); loadAutopilot(); }
   if (name === 'campaigns') buildCampFilters().then(() => loadCampaigns());
   if (name === 'dashboard') loadDashboard();
   if (name === 'health') loadHealthPage();
   if (name === 'library') { loadLibrary(); loadCaptions(); }
   if (name === 'landing') loadLanding();
+  if (name === 'members') loadMembers();
 }
 window.addEventListener('hashchange', () => {
   const h = location.hash.replace(/^#/, '');
   // hash ว่าง (เช่นกด back จนสุด) = หน้าแรกตามสภาพบัญชี ไม่ใช่เมิน event
   showPage(PAGE_META[h] ? h : (profiles.length ? 'dashboard' : 'settings'), true);
 });
+
+// ---------- สมาชิกผู้เช่า (เฉพาะ master ที่ตั้ง provisioner แล้ว) ----------
+async function memberFetch(url, init = {}) {
+  const headers = new Headers(init.headers || {});
+  if (!['GET', 'HEAD'].includes((init.method || 'GET').toUpperCase())) headers.set('x-tenant-control-csrf', tenantControlCsrf);
+  const res = await fetch(url, { ...init, headers });
+  let body = {};
+  try { body = await res.json(); } catch { /* ข้อความผิดพลาดจาก reverse proxy ไม่จำเป็นต้องเผย HTML */ }
+  if (!res.ok) throw new Error(body.error || `เซิร์ฟเวอร์ตอบ HTTP ${res.status}`);
+  return body;
+}
+async function loadTenantControl() {
+  try {
+    const data = await memberFetch('/api/tenant-control');
+    tenantControlEnabled = !!data.enabled;
+    tenantControlCsrf = tenantControlEnabled ? String(data.csrfToken || '') : '';
+  } catch {
+    tenantControlEnabled = false;
+  }
+  document.getElementById('membersNav').style.display = tenantControlEnabled ? '' : 'none';
+}
+function memberState(tenant) {
+  const states = {
+    active: ['ใช้งานอยู่', 'active'],
+    access_suspended: ['ระงับการเข้าใช้', 'suspended'],
+    archived: ['เก็บเข้าคลัง', 'archived'],
+    restored_hold: ['กู้แล้ว / พัก Autopilot', 'hold'],
+    provisioning: ['กำลังสร้าง', 'hold'],
+    failed: ['สร้างไม่สำเร็จ', 'failed'],
+    archive_recovery: ['Archive ต้องกู้คืน', 'failed'],
+  };
+  return states[tenant.status] || [tenant.status || 'ไม่ทราบสถานะ', ''];
+}
+function memberDate(value) {
+  if (!value) return 'ไม่กำหนดวันหมดอายุ';
+  const date = new Date(`${value}T00:00:00+07:00`);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+function renderMembers() {
+  const active = tenants.filter((t) => t.status === 'active').length;
+  const paused = tenants.filter((t) => t.status === 'access_suspended' || t.status === 'restored_hold').length;
+  const archived = tenants.filter((t) => t.status === 'archived').length;
+  const listMeta = document.getElementById('memberListMeta');
+  document.getElementById('memberStats').innerHTML = [
+    ['ทั้งหมด', tenants.length], ['ใช้งานอยู่', active], ['ต้องตรวจสอบ', paused], ['Archive', archived],
+  ].map(([label, count]) => `<div class="member-stat"><b>${count}</b><span>${label}</span></div>`).join('');
+  listMeta.textContent = tenants.length
+    ? `${tenants.length} สมาชิก${paused ? ` · ต้องตรวจสอบ ${paused}` : ' · ทุกระบบปกติ'}`
+    : 'ยังไม่มีสมาชิก';
+  const list = document.getElementById('memberList');
+  if (!tenants.length) {
+    list.innerHTML = `<div class="member-empty">
+      <h4>เริ่มสร้างพื้นที่ของสมาชิกคนแรก</h4>
+      <p>สมาชิกแต่ละรายจะได้ Profile code, หลังบ้าน และ Landing ของตัวเอง พร้อมข้อมูลที่แยกออกจากกัน</p>
+      <button class="btn-primary" onclick="openMemberModal('create')">+ เพิ่มสมาชิกใหม่</button>
+      <div class="member-empty-flow">
+        <div class="member-empty-step"><b>01 · สร้าง</b><span>ตั้งชื่อเจ้าของและแพ็กเกจ</span></div>
+        <div class="member-empty-step"><b>02 · ส่งลิงก์</b><span>ให้หลังบ้านเฉพาะของสมาชิก</span></div>
+        <div class="member-empty-step"><b>03 · ควบคุม</b><span>ระงับหรือกู้คืนได้จากหน้านี้</span></div>
+      </div>
+    </div>`;
+    return;
+  }
+  list.innerHTML = tenants.map((tenant) => {
+    const [label, stateClass] = memberState(tenant);
+    const initial = esc((tenant.displayName || '?').slice(0, 1).toUpperCase());
+    const code = jsStr(tenant.code);
+    const buttons = [
+      `<button class="btn-light btn-sm" onclick="openMemberModal('edit', ${code})">แก้ข้อมูล</button>`,
+    ];
+    if (tenant.status === 'active') {
+      buttons.push(`<button class="btn-light btn-sm" onclick="openMemberModal('reset-password', ${code})">เปลี่ยนรหัส</button>`);
+      buttons.push(`<button class="btn-danger-light btn-sm" onclick="memberAction(${code}, 'suspend-access')">ระงับเข้าใช้</button>`);
+      buttons.push(`<button class="btn-danger-light btn-sm" onclick="memberAction(${code}, 'archive')">Archive</button>`);
+    } else if (tenant.status === 'access_suspended') {
+      buttons.push(`<button class="btn-primary btn-sm" onclick="openMemberModal('resume-access', ${code})">ตั้งรหัสและเปิดเข้าใช้</button>`);
+      buttons.push(`<button class="btn-danger-light btn-sm" onclick="memberAction(${code}, 'archive')">Archive</button>`);
+    } else if (tenant.status === 'archived') {
+      buttons.push(`<button class="btn-primary btn-sm" onclick="openMemberModal('restore', ${code})">Restore</button>`);
+    } else if (tenant.status === 'restored_hold') {
+      buttons.push(`<button class="btn-danger-light btn-sm" onclick="openMemberModal('release-hold', ${code})">ปลดพัก Autopilot</button>`);
+    } else if (tenant.status === 'failed') {
+      buttons.push(`<button class="btn-primary btn-sm" onclick="openMemberModal('retry-provision', ${code})">ตั้งรหัสและลองสร้างใหม่</button>`);
+    } else if (tenant.status === 'archive_recovery') {
+      buttons.push(`<button class="btn-primary btn-sm" onclick="memberAction(${code}, 'recover-archive')">ลองเปิด instance เดิม</button>`);
+    }
+    return `<article class="member-card">
+      <div class="member-card-head">
+        <div class="member-avatar">${initial}</div>
+        <div style="min-width:0;flex:1"><div class="member-name">${esc(tenant.displayName)}</div><div class="member-meta">${esc(tenant.ownerName)} · ${esc(tenant.ownerEmail)}</div></div>
+        <span class="member-state ${stateClass}">${label}</span>
+      </div>
+      <div class="member-details">
+        <div class="member-detail"><span>แพ็กเกจ</span><b>${tenant.plan ? esc(tenant.plan) : 'ยังไม่ระบุ'}</b></div>
+        <div class="member-detail"><span>สิทธิ์ใช้งาน</span><b>${memberDate(tenant.expiresAt)}</b></div>
+      </div>
+      <div class="member-links"><a class="member-link" href="${esc(tenant.adminUrl)}" target="_blank" rel="noopener">เปิดหลังบ้าน ↗</a><a class="member-link" href="${esc(tenant.landingUrl)}" target="_blank" rel="noopener">ดู Landing ↗</a></div>
+      <div class="member-code-wrap"><span class="member-code-label">Profile code</span><code class="member-code" title="${esc(tenant.code)}">${esc(tenant.code)}</code></div>
+      <div class="member-actions">${buttons.join('')}</div>
+    </article>`;
+  }).join('');
+}
+async function loadMembers() {
+  if (!tenantControlEnabled) return;
+  const list = document.getElementById('memberList');
+  if (!tenants.length) list.innerHTML = '<div class="member-empty">กำลังโหลดสมาชิก…</div>';
+  try {
+    const data = await memberFetch('/api/tenants');
+    tenants = Array.isArray(data.tenants) ? data.tenants : [];
+    renderMembers();
+  } catch (error) {
+    list.innerHTML = `<div class="member-empty" style="color:var(--red)">โหลดสมาชิกไม่สำเร็จ: ${esc(error.message)}</div>`;
+  }
+}
+function tenantByCode(code) { return tenants.find((tenant) => tenant.code === code); }
+function setMemberVisible(id, show) { document.getElementById(id).style.display = show ? '' : 'none'; }
+function openMemberModal(mode, code) {
+  const tenant = code ? tenantByCode(code) : null;
+  if (code && !tenant) return toast('ไม่พบข้อมูลสมาชิกนี้ กรุณารีเฟรชหน้า', 'err');
+  const modes = {
+    create: ['เพิ่มสมาชิกใหม่', 'สร้าง profile, data volume และ URL แยกให้สมาชิกหนึ่งราย รหัสผ่านนี้จะไม่ถูกบันทึกไว้ในระบบจัดการสมาชิก'],
+    edit: ['แก้ไขข้อมูลสมาชิก', 'แก้เฉพาะข้อมูลสมาชิกและแพ็กเกจ ไม่แตะ container หรือข้อมูลโฆษณา'],
+    'reset-password': ['เปลี่ยนรหัสเข้าหลังบ้าน', 'ผู้ดูแลเดิมจะใช้รหัสเก่าไม่ได้ทันที'],
+    'resume-access': ['ตั้งรหัสและเปิดให้เข้าใช้', 'การระงับก่อนหน้านี้จะถูกยกเลิกหลังตั้งรหัสใหม่'],
+    restore: ['Restore สมาชิก', 'จะกู้ data เดิมและเปิด instance โดยพัก Autopilot ไว้ก่อนเสมอ'],
+    'retry-provision': ['ลองสร้างสมาชิกใหม่', 'ใช้ profile code เดิมและไม่ลบ data ที่ค้างอยู่ หากพบข้อมูลเดิมจะกู้แบบปลอดภัยแทนการทับ'],
+    'release-hold': ['ปลดพัก Autopilot', 'คำสั่งนี้อาจทำให้ Autopilot ที่ตั้งค่าไว้กลับมาทำงานและมีผลกับค่าโฆษณา'],
+  };
+  const [title, hint] = modes[mode] || modes.create;
+  document.getElementById('memberModalMode').value = mode;
+  document.getElementById('memberModalCode').value = code || '';
+  document.getElementById('memberModalRevision').value = tenant ? tenant.revision : '';
+  document.getElementById('memberModalTitle').textContent = title;
+  document.getElementById('memberModalHint').textContent = hint;
+  const isInfo = mode === 'create' || mode === 'edit';
+  const isCredential = ['create', 'reset-password', 'resume-access', 'restore', 'retry-provision'].includes(mode);
+  setMemberVisible('memberInfoFields', isInfo);
+  setMemberVisible('memberCredentialFields', isCredential);
+  setMemberVisible('memberConfirmFields', mode === 'release-hold');
+  document.getElementById('memberDisplayName').value = tenant ? tenant.displayName || '' : '';
+  document.getElementById('memberPlan').value = tenant ? tenant.plan || '' : '';
+  document.getElementById('memberOwnerName').value = tenant ? tenant.ownerName || '' : '';
+  document.getElementById('memberOwnerEmail').value = tenant ? tenant.ownerEmail || '' : '';
+  document.getElementById('memberExpiresAt').value = tenant ? tenant.expiresAt || '' : '';
+  document.getElementById('memberUsername').value = '';
+  document.getElementById('memberPassword').value = '';
+  document.getElementById('memberConfirmText').value = '';
+  document.getElementById('memberModalSave').textContent = mode === 'create' ? 'สร้างสมาชิก' : 'ยืนยัน';
+  document.getElementById('memberModal').style.display = 'flex';
+  const focus = isInfo ? 'memberDisplayName' : (mode === 'release-hold' ? 'memberConfirmText' : 'memberUsername');
+  setTimeout(() => document.getElementById(focus).focus(), 0);
+}
+function closeMemberModal() { document.getElementById('memberModal').style.display = 'none'; }
+function memberFormInfo() {
+  return {
+    displayName: document.getElementById('memberDisplayName').value.trim(),
+    plan: document.getElementById('memberPlan').value.trim(),
+    ownerName: document.getElementById('memberOwnerName').value.trim(),
+    ownerEmail: document.getElementById('memberOwnerEmail').value.trim(),
+    expiresAt: document.getElementById('memberExpiresAt').value,
+  };
+}
+function memberFormCredentials() {
+  return {
+    username: document.getElementById('memberUsername').value.trim(),
+    password: document.getElementById('memberPassword').value,
+  };
+}
+async function saveMemberModal(button) {
+  const mode = document.getElementById('memberModalMode').value;
+  const code = document.getElementById('memberModalCode').value;
+  const revision = Number(document.getElementById('memberModalRevision').value);
+  button.disabled = true;
+  const before = button.textContent; button.textContent = 'กำลังดำเนินการ…';
+  try {
+    if (mode === 'create') {
+      await memberFetch('/api/tenants', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...memberFormInfo(), ...memberFormCredentials() }) });
+      toast('สร้างสมาชิกและ profile ใหม่เรียบร้อย', 'ok');
+    } else if (mode === 'edit') {
+      await memberFetch('/api/tenants/' + encodeURIComponent(code), { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...memberFormInfo(), revision }) });
+      toast('บันทึกข้อมูลสมาชิกแล้ว', 'ok');
+    } else {
+      const action = mode;
+      const body = action === 'release-hold'
+        ? { revision, confirm: document.getElementById('memberConfirmText').value.trim() }
+        : { revision, ...memberFormCredentials() };
+      await memberFetch(`/api/tenants/${encodeURIComponent(code)}/actions/${action}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      toast('ดำเนินการเรียบร้อย', 'ok');
+    }
+    closeMemberModal();
+    await loadMembers(true);
+  } catch (error) {
+    toast(error.message, 'err');
+  } finally {
+    button.disabled = false; button.textContent = before;
+  }
+}
+async function memberAction(code, action) {
+  const tenant = tenantByCode(code);
+  if (!tenant) return toast('ไม่พบข้อมูลสมาชิกนี้ กรุณารีเฟรชหน้า', 'err');
+  if (action === 'suspend-access' && !confirm(`ระงับการเข้าหลังบ้านของ “${tenant.displayName}” ใช่ไหม? Landing สาธารณะและ Autopilot จะยังทำงานตามเดิม`)) return;
+  if (action === 'archive' && !confirm(`Archive “${tenant.displayName}” ใช่ไหม? instance จะหยุด แต่แคมเปญที่เปิดอยู่บน Meta จะไม่ถูก pause อัตโนมัติ`)) return;
+  try {
+    const confirmText = action === 'suspend-access' ? 'SUSPEND_ACCESS' : (action === 'archive' ? 'ARCHIVE_TENANT' : '');
+    await memberFetch(`/api/tenants/${encodeURIComponent(code)}/actions/${action}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ revision: tenant.revision, confirm: confirmText }) });
+    toast(action === 'archive' ? 'เก็บข้อมูลสมาชิกเข้า Archive แล้ว' : (action === 'recover-archive' ? 'เปิด instance เดิมกลับแล้ว' : 'ระงับการเข้าหลังบ้านแล้ว'), 'ok');
+    await loadMembers(true);
+  } catch (error) {
+    toast(error.message, 'err');
+  }
+}
 
 // ---------- modal ขึ้นแอด ----------
 function openUploadModal() {
@@ -1471,7 +1839,7 @@ function fbLogin(pid) {
   if (appSecret) body.appSecret = appSecret;
   fetch('/api/profiles/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(() => {
     const w = 600, h = 720, left = (screen.width - w) / 2, top = (screen.height - h) / 2;
-    const popup = window.open('/auth/login?profile=' + pid, 'fblogin', `width=${w},height=${h},left=${left},top=${top}`);
+    const popup = window.open(tenantUrl('/auth/login?profile=' + pid), 'fblogin', `width=${w},height=${h},left=${left},top=${top}`);
     if (!popup) toast('เบราว์เซอร์บล็อก popup — อนุญาต popup ให้ localhost แล้วลองใหม่ครับ');
   });
 }
@@ -1664,12 +2032,20 @@ setInterval(tickClock, 1000);
   try {
     const env = await (await fetch('/api/env')).json();
     if (env.redirectUri) document.getElementById('redirectUriText').textContent = env.redirectUri;
+    if (env.publicUrl) {
+      const privacyUrl = env.publicUrl.replace(/\/$/, '') + '/privacy.html';
+      document.getElementById('privacyUrl').href = privacyUrl;
+      document.getElementById('privacyUrlText').textContent = privacyUrl;
+    }
   } catch {}
+  await loadTenantControl();
   restoreCaches(); // ดึงข้อมูลที่จำไว้จากรอบก่อน (sessionStorage) — F5 แล้วหน้าโชว์ทันที
-  const route = location.hash.replace(/^#/, '');
+  const directMemberRoute = location.pathname.replace(/\/+$/, '') === '/members';
+  let route = location.hash.replace(/^#/, '') || (directMemberRoute ? 'members' : '');
+  if (route === 'members' && !tenantControlEnabled) route = 'dashboard';
   // ไม่มีบัญชี = บังคับหน้าตั้งค่าเสมอ (hash ค้างจาก session เก่าห้ามชนะ), มีบัญชีค่อยเคารพ hash
   const startPage = profiles.length ? (PAGE_META[route] ? route : 'dashboard') : 'settings';
-  history.replaceState(null, '', '#' + startPage); // เขียน hash ตั้งแต่แรก ให้ back ครั้งแรกทำงานถูก
+  history.replaceState(null, '', startPage === 'members' && directMemberRoute ? '/members' : '/#' + startPage);
   showPage(startPage, true);
   loadLaunchDefaults();
 })();
@@ -2614,7 +2990,7 @@ function renderLibrary() {
   const fmtD = ts => (ts ? new Date(ts).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '—');
   document.getElementById('libRows').innerHTML = rows.map((it, i) => `<tr style="cursor:pointer" onclick="openLibModal(${jsStr(it.id)})" title="คลิกเพื่อดูรายละเอียด/แก้ชื่อ">
       <td style="color:var(--muted)">${i + 1}</td>
-      <td><img src="/api/library/thumb/${encodeURIComponent(it.id)}" alt="" style="width:64px;height:40px;object-fit:cover;border-radius:6px;background:#f2f4f6;display:block" onerror="this.style.visibility='hidden'"></td>
+      <td><img src="${tenantUrl('/api/library/thumb/' + encodeURIComponent(it.id))}" alt="" style="width:64px;height:40px;object-fit:cover;border-radius:6px;background:#f2f4f6;display:block" onerror="this.style.visibility='hidden'"></td>
       <td style="font-weight:600">${esc(it.name)}<div class="res-label">${esc(it.filename || '')}</div>${(it.tags || []).length ? `<div style="margin-top:3px" title="${esc(it.aiNote || '')}">${it.tags.map(tg => `<span style="display:inline-block;margin:1px 3px 0 0;padding:0 7px;border-radius:99px;font-size:10.5px;background:var(--bg);border:1px solid var(--line);color:var(--muted)">${esc(tg)}</span>`).join('')}</div>` : ''}</td>
       <td class="num-cell">${libSize(it.size || 0)}</td>
       <td>${(it.usedOn || []).length ? `${(it.usedOn || []).length} บัญชี` : '<span style="color:var(--muted)">ยังไม่เคยใช้</span>'}</td>
@@ -2634,7 +3010,7 @@ function openLibModal(id) {
   libModalId = id;
   const th = document.getElementById('libModalThumb');
   th.style.display = '';
-  th.src = `/api/library/thumb/${encodeURIComponent(id)}`;
+  th.src = tenantUrl('/api/library/thumb/' + encodeURIComponent(id));
   document.getElementById('libModalName').value = it.name;
   const used = (it.usedOn || []).length;
   document.getElementById('libModalMeta').innerHTML =
@@ -3158,7 +3534,7 @@ document.addEventListener('focusout', (e) => {
   if (t && t.id === 'lpLinkModalUrl') t.value = lpFixUrl(t.value);
   // รูปที่อัปเองขึ้นต้นด้วย /lp-asset/ ห้ามเติม https:// ทับ
   if (t && t.id === 'lpAvatar') {
-    if (!t.value.trim().startsWith('/lp-asset/')) t.value = lpFixUrl(t.value);
+    if (!/(^|\/)lp-asset\//.test(t.value.trim())) t.value = lpFixUrl(t.value);
     lpAvatarPreview();
   }
 });
@@ -3279,7 +3655,7 @@ async function loadAutopilot() {
 let apES = null;
 function apConnectLive() {
   if (apES || !document.getElementById('apLog')) return;
-  apES = new EventSource('/api/autopilot/stream');
+  apES = new EventSource(tenantUrl('/api/autopilot/stream'));
   apES.onmessage = (e) => {
     let ev;
     try { ev = JSON.parse(e.data); } catch { return; }
@@ -3788,7 +4164,7 @@ async function openLibPick(card) {
   }
   grid.innerHTML = libItems.map(it => `
     <div class="lib-item pick" onclick="pickFromLib(${jsStr(it.id)})">
-      <img class="lib-th" src="/api/library/thumb/${encodeURIComponent(it.id)}" alt="" onerror="this.removeAttribute('src')">
+      <img class="lib-th" src="${tenantUrl('/api/library/thumb/' + encodeURIComponent(it.id))}" alt="" onerror="this.removeAttribute('src')">
       <div class="lib-body"><div style="font-size:12.5px;font-weight:600;padding:4px 6px">${esc(it.name)}</div></div>
     </div>`).join('');
 }
@@ -3811,7 +4187,7 @@ function applyLibToCard(card, item) {
   input.value = '';
   const img = card.querySelector('.thumb');
   img.onerror = () => img.removeAttribute('src');
-  img.src = '/api/library/thumb/' + encodeURIComponent(item.id);
+  img.src = tenantUrl('/api/library/thumb/' + encodeURIComponent(item.id));
   card.querySelector('.media-tag').style.display = 'block';
   const nameInput = card.querySelector('.f-name');
   if (!nameInput.value.trim()) nameInput.value = item.name;

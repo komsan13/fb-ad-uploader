@@ -1,0 +1,22 @@
+[Unit]
+Description=FB Ad Uploader tenant provisioner
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/usr/local/lib/fbad-provisioner
+EnvironmentFile=/etc/fbad-provisioner/provisioner.env
+ExecStart=/usr/bin/node /usr/local/lib/fbad-provisioner/tenant-provisioner.js
+Restart=on-failure
+RestartSec=5
+UMask=0077
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/run /opt/fbad-provisioner /opt/fbad-tenants /opt/fbad-tenants-archive
+
+[Install]
+WantedBy=multi-user.target

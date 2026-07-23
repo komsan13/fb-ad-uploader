@@ -4,6 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const http = require('http');
 
 const CONFIG_PATH = process.env.CONFIG_PATH || path.join(__dirname, 'config.json');
 const API = process.env.FB_API_BASE || 'https://graph.facebook.com/v23.0';
@@ -12,6 +13,27 @@ const VIDEO_API = API.includes('graph.facebook.com') ? API.replace('graph.facebo
 const PORT = process.env.PORT || 4000;
 // URL สาธารณะของแอป (ตั้งผ่าน env ตอน deploy) — ใช้สร้าง redirect URI ของ OAuth
 const PUBLIC_URL = (process.env.PUBLIC_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
+// instance เช่าใต้ host เดียวกันใช้ path /p/<รหัส>/... ส่วน server เห็น path หลัง Traefik strip prefix แล้ว
+// จึงต้องคืน URL ของ Landing/asset ที่มี public path เดิมติดไปด้วย มิฉะนั้นรูปจะหลุดไปหา instance หลัก
+const PUBLIC_PATH = new URL(PUBLIC_URL).pathname.replace(/\/+$/, '');
+const PUBLIC_APP_PATH = PUBLIC_PATH ? `${PUBLIC_PATH}/` : '/';
+const PUBLIC_LANDING_PATH = `${PUBLIC_PATH}/lp`;
+const LP_ASSET_URL_PREFIX = `${PUBLIC_PATH}/lp-asset`;
+const lpAssetUrl = (name) => `${LP_ASSET_URL_PREFIX}/${name}`;
+const LP_ASSET_URL_RE = new RegExp('^' + LP_ASSET_URL_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/[0-9a-f-]{36}\\.(jpg|png|webp|gif)$', 'i');
+const lpIsAssetUrl = (url) => LP_ASSET_URL_RE.test(String(url || ''));
+// instance ที่เปิดเช่าให้ลูกค้าหนึ่งรายต้องมีได้เพียง profile เดียว
+// การแยก container + volume ทำให้ข้อมูลของลูกค้าไม่ปนกันระดับโปรเซส/ไฟล์ ส่วนเพดานนี้กันลูกค้า
+// เพิ่ม profile ที่สองแล้วเผลอใช้ token หรือ Landing ของคนละร้านใน instance เดียวกัน
+const MAX_PROFILES = Math.max(0, Math.min(100, Number.parseInt(process.env.MAX_PROFILES || '0', 10) || 0));
+// restore instance ที่ถูก archive ต้องไม่กลับมาสั่งงานโฆษณาเองทันที
+// control plane จะเปิด hold นี้จนผู้ดูแลผู้เช่าตรวจค่าก่อนและปลดด้วยการ redeploy ที่ตั้งใจ
+const AUTOPILOT_HOLD = process.env.AUTOPILOT_HOLD === '1';
+// master เป็นแค่ proxy ไปยัง root-only provisioner ผ่าน Unix socket; ห้าม mount Docker socket/data ผู้เช่ามาที่นี่
+const TENANT_PROVISIONER_SOCKET = process.env.TENANT_PROVISIONER_SOCKET || '';
+const TENANT_PROVISIONER_TOKEN = process.env.TENANT_PROVISIONER_TOKEN || '';
+const TENANT_CONTROL_ENABLED = MAX_PROFILES !== 1 && !!TENANT_PROVISIONER_SOCKET && TENANT_PROVISIONER_TOKEN.length >= 32;
+const TENANT_CONTROL_CSRF_COOKIE = 'fbad_tenant_csrf';
 
 const app = express();
 app.set('etag', false);
@@ -19,6 +41,13 @@ app.use(express.json());
 // API ต้องได้ข้อมูลสดเสมอ — ห้าม browser/proxy cache
 app.use('/api', (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 app.use(express.static(path.join(__dirname, 'public')));
+// ลิงก์ตรงสำหรับหน้าจัดการสมาชิกต้องมีเฉพาะแอดมินหลักเท่านั้น
+// tenant instance ใช้ source เดียวกัน แต่ห้ามมี route นี้แม้จะพิมพ์ URL ตรง
+app.get(['/members', '/members/'], (req, res) => {
+  if (!TENANT_CONTROL_ENABLED) return res.status(404).end();
+  res.set('Cache-Control', 'no-store');
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 512 * 1024 * 1024 } });
 
 const BACKUP_DIR = path.join(path.dirname(CONFIG_PATH), 'config-backups');
@@ -597,7 +626,7 @@ function lpIsOurLanding(link) {
   try {
     const u = new URL(String(link));
     const mine = new URL(PUBLIC_URL);
-    return u.host === mine.host && u.pathname.replace(/\/+$/, '') === '/lp';
+    return u.host === mine.host && u.pathname.replace(/\/+$/, '') === PUBLIC_LANDING_PATH;
   } catch { return false; }
 }
 
@@ -614,7 +643,7 @@ function lpEnsurePixel(pixelId) {
 
 app.post('/api/landing/upload', uploadLpImg.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'ต้องเป็นไฟล์รูป (JPG / PNG / WebP / GIF) ขนาดไม่เกิน 8MB' });
-  res.json({ url: `/lp-asset/${req.file.filename}` });
+  res.json({ url: lpAssetUrl(req.file.filename) });
 });
 
 app.get('/lp-asset/:name', (req, res) => {
@@ -724,9 +753,6 @@ ${ga.map((p) => `<script async src="https://www.googletagmanager.com/gtag/js?id=
 </body></html>`;
 }
 
-// หลังบ้านย้ายไปรวมกับแอดมินหลักแล้ว — คงลิงก์เดิมไว้ให้คนที่บุ๊กมาร์กไว้ ไม่ให้เจอ 404
-app.get(['/lp/admin', '/lp/admin/'], (req, res) => res.redirect('/#landing'));
-
 app.get(['/lp', '/lp/'], (req, res) => {
   res.set('Cache-Control', 'no-store');   // แก้ลิงก์แล้วต้องเห็นผลทันที
   res.type('html').send(lpRender(loadLp()));
@@ -741,12 +767,12 @@ app.post('/api/landing', (req, res) => {
     bio: String(b.bio ?? cur.bio).slice(0, 300),
     avatar: (() => {
       const a = String(b.avatar ?? cur.avatar ?? '');
-      return /^\/lp-asset\/[0-9a-f-]{36}\.(jpg|png|webp|gif)$/i.test(a) ? a : lpSafeUrl(a);
+      return lpIsAssetUrl(a) ? a : lpSafeUrl(a);
     })(),
     theme: b.theme === 'dark' ? 'dark' : 'light',
     bg: Object.prototype.hasOwnProperty.call(LP_BGS, b.bg ?? cur.bg) ? (b.bg ?? cur.bg) : '',
     // รับเฉพาะรูปที่อัปผ่านระบบเรา — ลิงก์รูปจากเว็บนอกทำให้หน้าพังเมื่อเว็บนั้นล่ม
-    bgImage: /^\/lp-asset\/[0-9a-f-]{36}\.(jpg|png|webp|gif)$/i.test(String(b.bgImage ?? cur.bgImage ?? '')) ? String(b.bgImage ?? cur.bgImage) : '',
+    bgImage: lpIsAssetUrl(String(b.bgImage ?? cur.bgImage ?? '')) ? String(b.bgImage ?? cur.bgImage) : '',
     pixels: (Array.isArray(b.pixels) ? b.pixels : cur.pixels).slice(0, 30).map((p) => ({
       type: p.type === 'ga' ? 'ga' : 'meta',
       id: String(p.id || '').replace(/[^A-Za-z0-9-]/g, '').slice(0, 40),
@@ -1389,10 +1415,79 @@ app.post('/api/ai-key', (req, res) => {
 app.get('/api/profiles', (req, res) => res.json(publicProfiles(loadConfig())));
 
 // redirect URI ที่ต้องเอาไปใส่ในแอป FB (เปลี่ยนตาม env ตอน deploy)
-app.get('/api/env', (req, res) => res.json({ redirectUri: REDIRECT_URI }));
+app.get('/api/env', (req, res) => res.json({ redirectUri: REDIRECT_URI, publicUrl: PUBLIC_URL }));
+
+// ---------- จัดการสมาชิกผู้เช่า (master only) ----------
+// provisioner อยู่บน host และรับได้เฉพาะ lifecycle ที่ whitelist ไว้ใน tenant-provisioner.js
+// app นี้จึงไม่มี Docker socket, tenant volume หรือ token ของผู้เช่ารายอื่นอยู่ในมือ
+function tenantControlCsrf(req, res) {
+  const value = crypto.randomBytes(32).toString('hex');
+  res.cookie(TENANT_CONTROL_CSRF_COOKIE, value, {
+    httpOnly: true, sameSite: 'strict', path: '/', secure: new URL(PUBLIC_URL).protocol === 'https:',
+  });
+  return value;
+}
+function tenantControlMutation(req, res, next) {
+  if (!TENANT_CONTROL_ENABLED) return res.status(503).json({ error: 'ระบบจัดการสมาชิกยังไม่ได้ตั้งค่า' });
+  const expectedOrigin = new URL(PUBLIC_URL).origin;
+  if (req.get('origin') !== expectedOrigin) return res.status(403).json({ error: 'คำขอจัดการสมาชิกต้องมาจากแอดมินหลักเท่านั้น' });
+  if (!/^application\/json(?:;|$)/i.test(req.get('content-type') || '')) return res.status(415).json({ error: 'คำขอจัดการสมาชิกต้องเป็น JSON' });
+  const cookie = String(req.headers.cookie || '').match(new RegExp(`(?:^|;\\s*)${TENANT_CONTROL_CSRF_COOKIE}=([a-f0-9]{64})(?:;|$)`, 'i'));
+  const header = Buffer.from(String(req.get('x-tenant-control-csrf') || ''));
+  const expected = cookie ? Buffer.from(cookie[1]) : Buffer.alloc(0);
+  if (!cookie || header.length !== expected.length || !crypto.timingSafeEqual(header, expected)) {
+    return res.status(403).json({ error: 'CSRF token ไม่ถูกต้อง กรุณารีเฟรชหน้าแอดมิน' });
+  }
+  next();
+}
+app.get('/api/tenant-control', (req, res) => res.json({ enabled: TENANT_CONTROL_ENABLED, csrfToken: TENANT_CONTROL_ENABLED ? tenantControlCsrf(req, res) : null }));
+function provisionerCall(method, target, body) {
+  return new Promise((resolve, reject) => {
+    if (!TENANT_CONTROL_ENABLED) return reject(Object.assign(new Error('ระบบจัดการสมาชิกยังไม่ได้ตั้งค่า'), { status: 503 }));
+    const payload = body == null ? '' : JSON.stringify(body);
+    const upstream = http.request({
+      socketPath: TENANT_PROVISIONER_SOCKET,
+      path: target,
+      method,
+      headers: {
+        authorization: `Bearer ${TENANT_PROVISIONER_TOKEN}`,
+        ...(payload ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } : {}),
+      },
+      timeout: 120000,
+    }, (upstreamRes) => {
+      let raw = '';
+      upstreamRes.setEncoding('utf8');
+      upstreamRes.on('data', (part) => {
+        raw += part;
+        if (Buffer.byteLength(raw) > 512 * 1024) upstream.destroy(new Error('provisioner ตอบข้อมูลใหญ่เกินกำหนด'));
+      });
+      upstreamRes.on('end', () => resolve({ status: upstreamRes.statusCode || 502, raw, type: upstreamRes.headers['content-type'] || 'application/json; charset=utf-8' }));
+    });
+    upstream.on('timeout', () => upstream.destroy(Object.assign(new Error('provisioner ใช้เวลานานเกินกำหนด'), { status: 504 })));
+    upstream.on('error', (error) => reject(Object.assign(new Error(`ติดต่อระบบจัดการสมาชิกไม่ได้: ${error.message}`), { status: error.status || 502 })));
+    upstream.end(payload);
+  });
+}
+async function tenantControlProxy(req, res) {
+  try {
+    const target = req.originalUrl.replace(/^\/api\/tenants/, '/v1/tenants');
+    const result = await provisionerCall(req.method, target, ['GET', 'HEAD'].includes(req.method) ? null : (req.body || {}));
+    res.status(result.status).set('content-type', result.type).send(result.raw);
+  } catch (error) {
+    res.status(error.status || 502).json({ error: error.message });
+  }
+}
+app.get('/api/tenants', tenantControlProxy);
+app.post('/api/tenants', tenantControlMutation, tenantControlProxy);
+app.get('/api/tenants/:code', tenantControlProxy);
+app.patch('/api/tenants/:code', tenantControlMutation, tenantControlProxy);
+app.post('/api/tenants/:code/actions/:action', tenantControlMutation, tenantControlProxy);
 
 app.post('/api/profiles', (req, res) => {
   const cfg = loadConfig();
+  if (MAX_PROFILES && cfg.profiles.length >= MAX_PROFILES) {
+    return res.status(403).json({ error: `instance นี้รองรับได้ ${MAX_PROFILES} โปรไฟล์ FB เพื่อคงการแยกข้อมูลของผู้เช่า` });
+  }
   const id = 'p' + Date.now();
   cfg.profiles.push({
     id,
@@ -1460,7 +1555,7 @@ app.get('/auth/callback', async (req, res) => {
     // msg มาจาก query string ได้ (error_description ของ FB) — ไม่ escape คือ reflected XSS
     + `<h2>${ok ? '✅ เชื่อมต่อสำเร็จ' : '❌ ไม่สำเร็จ'}</h2><p style="color:#65676b">${lpEsc(msg)}</p>`
     + `<p style="color:#aaa;font-size:13px">หน้านี้จะปิดเอง…</p>`
-    + `<script>if(window.opener){window.opener.postMessage('fb-auth-done','*');setTimeout(function(){window.close()},1400)}else{setTimeout(function(){location.href='/'},1400)}</script>`
+    + `<script>if(window.opener){window.opener.postMessage('fb-auth-done','*');setTimeout(function(){window.close()},1400)}else{setTimeout(function(){location.href=${JSON.stringify(PUBLIC_APP_PATH)}},1400)}</script>`
     + `</body>`);
 
   if (req.query.error) return done(false, req.query.error_description || req.query.error);
@@ -3717,6 +3812,7 @@ app.get('/api/autopilot', (req, res) => {
   const s = loadAp();
   res.json({
     enabled: !!(cfg.autopilot || {}).enabled,
+    serviceHold: AUTOPILOT_HOLD,
     aiFull: !!(cfg.autopilot || {}).aiFull,
     testMode: !!(cfg.autopilot || {}).testMode,
     minAds: Number((cfg.autopilot || {}).minAds) || 0,
@@ -3738,6 +3834,9 @@ app.get('/api/autopilot', (req, res) => {
   });
 });
 app.post('/api/autopilot', (req, res) => {
+  if (AUTOPILOT_HOLD && req.body && req.body.enabled) {
+    return res.status(423).json({ error: 'instance นี้ถูกพักระบบอัตโนมัติหลังการกู้คืน ต้องให้ผู้ดูแลปลด hold ก่อน' });
+  }
   const cfg = loadConfig();
   const s = loadAp();
   const limBefore = apLimits(cfg);
@@ -3806,6 +3905,7 @@ async function runAutopilot(mode = 'full') {
 
 // สั่งตรวจทันที ไม่ต้องรอครบรอบ
 app.post('/api/autopilot/run', async (req, res) => {
+  if (AUTOPILOT_HOLD) return res.status(423).json({ error: 'instance นี้ถูกพักระบบอัตโนมัติหลังการกู้คืน' });
   if (!(loadConfig().autopilot || {}).enabled) return res.status(400).json({ error: 'ยังไม่ได้เปิดระบบอัตโนมัติ' });
   try {
     const r = await runAutopilot();
@@ -4907,7 +5007,7 @@ function startTgPolling() {
 // เดิม timer พวกนี้เริ่มทำงานทันทีที่ไฟล์ถูกโหลด และบางตัวไม่ได้ unref()
 // ทำให้ process ไม่ยอมจบเอง (เห็นชัดตอนเทส require ไฟล์นี้เข้ามา)
 function startBackgroundJobs() {
-  startAutopilotTimers();
+  if (!AUTOPILOT_HOLD) startAutopilotTimers();
   startTgPolling();
   setTimeout(() => watchTick().catch(() => {}), 30 * 1000).unref();      // รอบแรกหลังบูต 30 วิ
   setInterval(() => watchTick().catch(() => {}), 60 * 60 * 1000).unref(); // แล้วทุก 1 ชม.
