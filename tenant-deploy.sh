@@ -183,6 +183,7 @@ if ! docker run -d --name "$CONTAINER" --restart unless-stopped \
   --label "traefik.http.routers.${ROUTER}.service=${SERVICE}" \
   --label "traefik.http.routers.${ROUTER}.middlewares=${AUTH},${ROUTER}-strip" \
   --label "traefik.http.middlewares.${AUTH}.basicauth.users=${AUTH_HASH}" \
+  --label "traefik.http.middlewares.${AUTH}.basicauth.realm=fbad-tenant-${PROFILE_CODE}" \
   --label "traefik.http.middlewares.${ROUTER}-strip.stripprefix.prefixes=/p/${PROFILE_CODE}" \
   --label "traefik.http.routers.${PUBLIC_ROUTER}.rule=Host(\`${DOMAIN}\`) && (Path(\`/p/${PROFILE_CODE}/privacy.html\`) || Path(\`/p/${PROFILE_CODE}/lp\`) || Path(\`/p/${PROFILE_CODE}/lp/\`) || PathPrefix(\`/p/${PROFILE_CODE}/lp-asset/\`))" \
   --label "traefik.http.routers.${PUBLIC_ROUTER}.entrypoints=websecure" \
