@@ -2043,8 +2043,11 @@ setInterval(tickClock, 1000);
   const directMemberRoute = location.pathname.replace(/\/+$/, '') === '/members';
   let route = location.hash.replace(/^#/, '') || (directMemberRoute ? 'members' : '');
   if (route === 'members' && !tenantControlEnabled) route = 'dashboard';
-  // ไม่มีบัญชี = บังคับหน้าตั้งค่าเสมอ (hash ค้างจาก session เก่าห้ามชนะ), มีบัญชีค่อยเคารพ hash
-  const startPage = profiles.length ? (PAGE_META[route] ? route : 'dashboard') : 'settings';
+  // สมาชิกเป็น control plane ของแอดมินหลัก จึงเปิดได้แม้ยังไม่ได้เชื่อมบัญชี FB
+  // หน้าอื่นยังคงบังคับไปตั้งค่าบัญชีเมื่อไม่มี profile ตามพฤติกรรมเดิม
+  const startPage = route === 'members' && tenantControlEnabled
+    ? 'members'
+    : (profiles.length ? (PAGE_META[route] ? route : 'dashboard') : 'settings');
   history.replaceState(null, '', startPage === 'members' && directMemberRoute ? '/members' : '/#' + startPage);
   showPage(startPage, true);
   loadLaunchDefaults();
