@@ -375,6 +375,38 @@ describe('การเชื่อม Pixel ตอนขึ้นแอด', () 
   });
 });
 
+// ---------- ค่าเริ่มต้นการขึ้นแอด: "แอดต่อบัญชี" ต้องจำเป็นตัวเลขและโชว์กลับได้ ----------
+describe('launch-defaults จำค่าแอดต่อบัญชี', () => {
+  test('เซฟเลขแล้วต้องได้เลขเดิมกลับ ไม่ใช่ true/false (ช่องตัวเลขบนหน้าเว็บจะว่าง)', async (t) => {
+    const cfg = baseConfig();
+    const { base } = await boot(t, { config: cfg });
+    await post(base, '/api/launch-defaults', { ...cfg.launchDefaults, perAccount: '4' });
+    const d = await get(base, '/api/launch-defaults');
+    assert.strictEqual(d.perAccount, 4, 'ต้องเก็บเป็นตัวเลข ไม่ถูกบีบเป็น boolean');
+  });
+
+  test('ค่าเก่าที่เคยถูกบีบเป็น true ต้องถูกแปลงกลับเป็น 3 ตอนเซฟรอบถัดไป', async (t) => {
+    const cfg = baseConfig();
+    cfg.launchDefaults.perAccount = true;   // สภาพ config จริงที่โดนบั๊กรุ่นก่อน
+    const { base } = await boot(t, { config: cfg });
+    await post(base, '/api/launch-defaults', { link: 'https://example.com/' });
+    const d = await get(base, '/api/launch-defaults');
+    assert.strictEqual(d.perAccount, 3, 'boolean เก่าต้องกลายเป็น 3 (ค่าที่มีผลจริงตอนขึ้นแอด)');
+  });
+
+  test('ปล่อยช่องว่างต้องไม่พังการเซฟ และเลขนอกช่วง 1-10 ต้องถูกปฏิเสธ', async (t) => {
+    const cfg = baseConfig();
+    const { base } = await boot(t, { config: cfg });
+    const ok = await post(base, '/api/launch-defaults', { ...cfg.launchDefaults, perAccount: '' });
+    assert.ok(ok.ok, 'ช่องว่าง = ไม่ตั้งค่า ต้องเซฟผ่าน');
+    const bad = await fetch(base + '/api/launch-defaults', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...cfg.launchDefaults, perAccount: 99 }),
+    });
+    assert.strictEqual(bad.status, 400, 'เกินเพดาน 10 ต้องโดนปฏิเสธ');
+  });
+});
+
 // ---------- ขึ้นแอดเอง (/api/launch): พิกเซลต้องถูกฝังบนหน้า Landing ก่อนขึ้น ----------
 describe('ขึ้นแอดเองแล้วลิงก์ชี้มาหน้า Landing', () => {
   const launch = async (base, link, pixelId) => {

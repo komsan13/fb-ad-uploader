@@ -1493,7 +1493,14 @@ function normalizeLaunchDefaults(input, current = {}) {
   for (const [key, label, min, max] of [['ruleCpr', 'เป้า CPA', 0, 100000], ['ruleSpend', 'ยอดใช้จ่ายเริ่มตรวจ', 0, 1000000]]) {
     if (next[key] !== undefined) next[key] = boundedNumber(next[key], label, min, max);
   }
-  for (const key of ['activeNow', 'ruleOn', 'perAccount']) if (next[key] !== undefined) next[key] = !!next[key];
+  for (const key of ['activeNow', 'ruleOn']) if (next[key] !== undefined) next[key] = !!next[key];
+  // แอดต่อบัญชีเป็นจำนวน (หน้าเว็บใช้ช่องตัวเลขวางแผนขึ้นแอด) — รุ่นก่อนเคยบีบเป็น true/false
+  // ทำให้ค่าที่จำไว้กลายเป็น true แล้วช่องตัวเลขแสดงว่างทุกครั้งที่เปิดหน้า
+  // ค่าเก่าแบบ boolean ให้กลับเป็น 3 = ค่าที่มีผลจริงตอนขึ้นแอด (หน้าเว็บ fallback เป็น 3 อยู่แล้ว)
+  if (typeof next.perAccount === 'boolean') next.perAccount = 3;
+  if (next.perAccount !== undefined) {
+    next.perAccount = boundedNumber(next.perAccount, 'แอดต่อบัญชี', 1, 10, { integer: true, optional: true });
+  }
   next.message = String(next.message || '').slice(0, 5000);
   next.headline = String(next.headline || '').slice(0, 255);
   if (Array.isArray(next.interests)) {
