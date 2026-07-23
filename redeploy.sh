@@ -6,6 +6,12 @@ cd "$(dirname "$0")"
 
 docker build -t fbad:latest .
 
+# ผู้เช่าใช้ immutable image ID; หลัง build image หลักต้องหมุน pin และ restart provisioner
+# มิฉะนั้น Docker อาจล้าง ID เก่าจนสร้าง tenant ใหม่ไม่ได้
+if [ -f /etc/fbad-provisioner/provisioner.env ]; then
+  bash "$PWD/install-provisioner.sh"
+fi
+
 # ดึง hash รหัสผ่าน basic auth จาก container เดิม (ถ้ารัน deploy.sh ตัวเก่าจะสุ่มรหัสใหม่ — ตัวนี้ไม่สุ่ม)
 HASH="$(docker inspect fbad --format '{{index .Config.Labels "traefik.http.middlewares.fbad-auth.basicauth.users"}}')"
 [ -n "$HASH" ] || { echo "หา basic auth hash จาก container เดิมไม่เจอ — ถ้าเป็นการติดตั้งครั้งแรกให้ใช้ deploy.sh"; exit 1; }

@@ -4,8 +4,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_DIR="$(realpath -e "${REPO_DIR:-$SCRIPT_DIR}")"
-CONF_DIR=/etc/fbad-provisioner
-RUNTIME_DIR=/usr/local/lib/fbad-provisioner
+CONF_DIR="${CONF_DIR:-/etc/fbad-provisioner}"
+RUNTIME_DIR="${RUNTIME_DIR:-/usr/local/lib/fbad-provisioner}"
 PROVISIONER_ENV="$CONF_DIR/provisioner.env"
 MASTER_ENV="$CONF_DIR/master.env"
 
@@ -41,8 +41,10 @@ EOF
   chmod 600 "$PROVISIONER_ENV"
 else
   CURRENT_PIN="$(sed -n 's/^TENANT_IMAGE=//p' "$PROVISIONER_ENV" | tail -n 1)"
-  if [[ ! "$CURRENT_PIN" =~ ^([A-Za-z0-9._/-]+@)?sha256:[a-f0-9]{64}$ ]]; then
-    cp "$PROVISIONER_ENV" "${PROVISIONER_ENV}.bak-before-image-pin"
+  # image ID เป็น immutable แต่ Docker อาจล้าง ID เก่าทันทีหลัง build fbad:latest รุ่นใหม่
+  # จึงต้องหมุน pin ทุกครั้งที่ ID เปลี่ยน ไม่ใช่ตรวจแค่ว่ารูปแบบ digest ถูกต้องหรือไม่
+  if [[ "$CURRENT_PIN" != "$IMAGE_ID" ]]; then
+    cp "$PROVISIONER_ENV" "${PROVISIONER_ENV}.bak-before-image-pin-$(date +%Y%m%d%H%M%S)"
     if grep -q '^TENANT_IMAGE=' "$PROVISIONER_ENV"; then
       sed -i "s|^TENANT_IMAGE=.*|TENANT_IMAGE=$IMAGE_ID|" "$PROVISIONER_ENV"
     else
@@ -53,5 +55,12 @@ else
 fi
 install -m 644 "$REPO_DIR/systemd/fbad-provisioner.service" /etc/systemd/system/fbad-provisioner.service
 systemctl daemon-reload
-systemctl enable --now fbad-provisioner
+systemctl enable fbad-provisioner
+systemctl restart fbad-provisioner
+systemctl is-active --quiet fbad-provisioner
+for _ in {1..50}; do
+  [ -S /run/fbad-provisioner.sock ] && break
+  sleep 0.1
+done
+[ -S /run/fbad-provisioner.sock ] || { echo "provisioner เปิด socket ไม่สำเร็จ" >&2; exit 1; }
 systemctl --no-pager --full status fbad-provisioner
