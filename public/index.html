@@ -1497,7 +1497,7 @@ function showPage(name, fromRoute) {
   document.getElementById('pageTitle').textContent = PAGE_META[name][0];
   document.getElementById('pageDesc').textContent = PAGE_META[name][1];
   // สมาชิกใช้ path ตรงเพื่อส่งลิงก์/รีเฟรชได้ ส่วนหน้าอื่นคง hash route เดิม
-  const routeUrl = name === 'members' ? '/members' : '/#' + name;
+  const routeUrl = tenantUrl(name === 'members' ? '/members' : '/#' + name);
   if (!fromRoute && location.pathname + location.hash !== routeUrl) history.pushState(null, '', routeUrl);
   if (name === 'settings') { renderSettings(); loadAiKeyState(); loadAutopilot(); }
   if (name === 'campaigns') buildCampFilters().then(() => loadCampaigns());
@@ -2067,7 +2067,7 @@ setInterval(tickClock, 1000);
   const startPage = route === 'members' && tenantControlEnabled
     ? 'members'
     : (profiles.length ? (PAGE_META[route] ? route : 'dashboard') : 'settings');
-  history.replaceState(null, '', startPage === 'members' && directMemberRoute ? '/members' : '/#' + startPage);
+  history.replaceState(null, '', tenantUrl(startPage === 'members' && directMemberRoute ? '/members' : '/#' + startPage));
   showPage(startPage, true);
   loadLaunchDefaults();
 })();
