@@ -168,6 +168,12 @@ function createProvisioner(overrides = {}) {
   };
   const network = (code) => `fbad-tenant-net-${code}`;
   const container = (code) => `fbad-tenant-${code}`;
+  const tenantDataPath = (root, code) => {
+    const base = path.resolve(root);
+    const target = path.resolve(base, code);
+    if (path.dirname(target) !== base) throw Object.assign(new Error('เส้นทางข้อมูลผู้เช่าไม่ปลอดภัย'), { status: 500 });
+    return target;
+  };
   const tenantEnv = (tenant, action, auth, hold = false) => ({
     ...process.env,
     ACTION: action,
@@ -201,6 +207,10 @@ function createProvisioner(overrides = {}) {
   };
   const containerExists = async (tenant) => {
     try { await docker(['container', 'inspect', container(tenant.code)]); return true; }
+    catch { return false; }
+  };
+  const networkExists = async (tenant) => {
+    try { await docker(['network', 'inspect', network(tenant.code)]); return true; }
     catch { return false; }
   };
   const bestEffort = async (args) => { try { await docker(args); } catch { /* cleanup failure must not hide recoverable data */ } };
@@ -249,6 +259,27 @@ function createProvisioner(overrides = {}) {
         if (body.revision != null && Number(body.revision) !== tenant.revision) return json(res, 409, { error: 'ข้อมูลถูกแก้จากที่อื่นแล้ว กรุณารีเฟรช' });
         await mutate(tenant, 'update', async () => Object.assign(tenant, tenantInput({ ...tenant, ...body })));
         return json(res, 200, { tenant: publicTenant(tenant) });
+      }
+      if (req.method === 'DELETE' && parts.length === 3) {
+        const body = await readBody(req);
+        if (body.revision != null && Number(body.revision) !== tenant.revision) return json(res, 409, { error: 'ข้อมูลถูกแก้จากที่อื่นแล้ว กรุณารีเฟรช' });
+        if (tenant.status !== 'failed') return json(res, 409, { error: 'ลบถาวรได้เฉพาะรายการที่สร้างไม่สำเร็จ' });
+        if (String(body.confirm || '') !== tenant.code) return json(res, 400, { error: 'ต้องพิมพ์ Profile code ให้ตรงก่อนลบถาวร' });
+        await mutate(tenant, 'delete-failed', async () => {
+          // ชื่อ container/network และ data path มาจาก profile code ที่ validate แล้วเท่านั้น
+          // ทำ cleanup ให้สำเร็จก่อนค่อยลบ registry เพื่อให้ retry ได้เมื่อ Docker หรือ disk มีปัญหา
+          if (await containerExists(tenant)) await docker(['rm', '-f', container(tenant.code)]);
+          if (await networkExists(tenant)) {
+            try { await docker(['network', 'disconnect', '-f', network(tenant.code), cfg.traefikContainer]); } catch { /* ไม่มี traefik ต่ออยู่ก็ลบ network ต่อได้ */ }
+            await docker(['network', 'rm', network(tenant.code)]);
+          }
+          for (const root of [cfg.dataRoot, cfg.archiveRoot]) {
+            const dataPath = tenantDataPath(root, tenant.code);
+            if (fs.existsSync(dataPath)) fs.rmSync(dataPath, { recursive: true, force: false, maxRetries: 3, retryDelay: 100 });
+          }
+          registry.tenants = registry.tenants.filter((entry) => entry.code !== tenant.code);
+        });
+        return json(res, 200, { deleted: true, code: tenant.code });
       }
       if (req.method !== 'POST' || parts.length !== 5 || parts[3] !== 'actions' || !ACTIONS.has(parts[4])) return json(res, 404, { error: 'ไม่พบ action' });
       const action = parts[4]; const body = await readBody(req);

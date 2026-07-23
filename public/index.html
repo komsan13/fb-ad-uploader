@@ -1595,6 +1595,7 @@ function renderMembers() {
       buttons.push(`<button class="btn-danger-light btn-sm" onclick="openMemberModal('release-hold', ${code})">ปลดพัก Autopilot</button>`);
     } else if (tenant.status === 'failed') {
       buttons.push(`<button class="btn-primary btn-sm" onclick="openMemberModal('retry-provision', ${code})">ตั้งรหัสและลองสร้างใหม่</button>`);
+      buttons.push(`<button class="btn-danger-light btn-sm" onclick="deleteFailedMember(${code})">ลบถาวร</button>`);
     } else if (tenant.status === 'archive_recovery') {
       buttons.push(`<button class="btn-primary btn-sm" onclick="memberAction(${code}, 'recover-archive')">ลองเปิด instance เดิม</button>`);
     }
@@ -1718,6 +1719,24 @@ async function memberAction(code, action) {
     const confirmText = action === 'suspend-access' ? 'SUSPEND_ACCESS' : (action === 'archive' ? 'ARCHIVE_TENANT' : '');
     await memberFetch(`/api/tenants/${encodeURIComponent(code)}/actions/${action}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ revision: tenant.revision, confirm: confirmText }) });
     toast(action === 'archive' ? 'เก็บข้อมูลสมาชิกเข้า Archive แล้ว' : (action === 'recover-archive' ? 'เปิด instance เดิมกลับแล้ว' : 'ระงับการเข้าหลังบ้านแล้ว'), 'ok');
+    await loadMembers(true);
+  } catch (error) {
+    toast(error.message, 'err');
+  }
+}
+async function deleteFailedMember(code) {
+  const tenant = tenantByCode(code);
+  if (!tenant) return toast('ไม่พบข้อมูลสมาชิกนี้ กรุณารีเฟรชหน้า', 'err');
+  if (tenant.status !== 'failed') return toast('ลบถาวรได้เฉพาะรายการที่สร้างไม่สำเร็จ', 'err');
+  const confirmation = prompt(`ลบ “${tenant.displayName}” ถาวร?\n\nจะลบ container, network และ data ที่ค้างอยู่ทั้งหมด และกู้คืนไม่ได้\n\nพิมพ์ Profile code นี้เพื่อยืนยัน:\n${tenant.code}`, '');
+  if (confirmation === null) return;
+  if (confirmation.trim() !== tenant.code) return toast('Profile code ไม่ตรง จึงยังไม่ลบข้อมูล', 'err');
+  try {
+    await memberFetch(`/api/tenants/${encodeURIComponent(code)}`, {
+      method: 'DELETE', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ revision: tenant.revision, confirm: tenant.code }),
+    });
+    toast('ลบรายการที่สร้างไม่สำเร็จและข้อมูลที่ค้างอยู่แล้ว', 'ok');
     await loadMembers(true);
   } catch (error) {
     toast(error.message, 'err');

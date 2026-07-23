@@ -236,6 +236,92 @@ describe('tenant provisioner', () => {
     assert.strictEqual(retried.body.tenant.status, 'active');
     assert.strictEqual(calls.filter((call) => call.command === 'bash').at(-1).options.env.ACTION, 'retry-create');
   });
+
+  test('ลบถาวรได้เฉพาะรายการ failed หลังยืนยัน profile code และเก็บกวาด resource ที่ค้าง', async (t) => {
+    const root = tmpDir(); const deployScript = path.join(root, 'tenant-deploy.sh');
+    fs.writeFileSync(deployScript, '#!/usr/bin/env bash\nexit 0\n', { mode: 0o700 });
+    const calls = []; const networks = new Set(); const containers = new Set();
+    const provisioner = createProvisioner({
+      token, socketPath: unixSocket('delete-failed'), deployScript, image: 'sha256:' + 'd'.repeat(64),
+      registryPath: path.join(root, 'registry.json'), auditPath: path.join(root, 'audit.jsonl'),
+      dataRoot: path.join(root, 'data'), archiveRoot: path.join(root, 'archive'),
+      run: async (command, args, options = {}) => {
+        calls.push({ command, args, options });
+        if (command === 'docker' && args[0] === 'network' && args[1] === 'inspect') {
+          if (!networks.has(args[2])) throw new Error('network not found');
+        }
+        if (command === 'docker' && args[0] === 'network' && args[1] === 'create') networks.add(args[2]);
+        if (command === 'docker' && args[0] === 'network' && args[1] === 'rm') networks.delete(args[2]);
+        if (command === 'docker' && args[0] === 'container' && args[1] === 'inspect') {
+          if (!containers.has(args[2])) throw new Error('container not found');
+        }
+        if (command === 'docker' && args[0] === 'rm') containers.delete(args.at(-1));
+        if (command === 'bash' && options.env.ACTION === 'create') {
+          fs.mkdirSync(path.join(root, 'data', options.env.PROFILE_CODE), { recursive: true });
+          containers.add(`fbad-tenant-${options.env.PROFILE_CODE}`);
+          throw new Error('docker run failed');
+        }
+        return { stdout: '', stderr: '' };
+      },
+    });
+    await listen(provisioner.server, 0);
+    const port = provisioner.server.address().port;
+    const req = async (url, init = {}) => {
+      const response = await fetch(`http://127.0.0.1:${port}${url}`, { ...init, headers: { authorization: `Bearer ${token}`, ...(init.headers || {}) } });
+      return { status: response.status, body: await response.json() };
+    };
+    t.after(async () => { await close(provisioner.server); fs.rmSync(root, { recursive: true, force: true }); });
+
+    const create = await req('/v1/tenants', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+      displayName: 'ร้านลบทดสอบ', ownerName: 'เจ้าของ', ownerEmail: 'delete@example.com', username: 'delete-owner', password: 'delete-password-123',
+    }) });
+    assert.strictEqual(create.status, 500);
+    const listed = await req('/v1/tenants'); const failed = listed.body.tenants[0];
+    assert.strictEqual(failed.status, 'failed');
+    assert.ok(fs.existsSync(path.join(root, 'data', failed.code)));
+    fs.mkdirSync(path.join(root, 'archive', failed.code), { recursive: true });
+    fs.writeFileSync(path.join(root, 'archive', failed.code, 'leftover.txt'), 'leftover');
+
+    const wrongConfirm = await req(`/v1/tenants/${failed.code}`, { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ revision: failed.revision, confirm: 'wrong-code' }) });
+    assert.strictEqual(wrongConfirm.status, 400);
+    assert.ok(fs.existsSync(path.join(root, 'data', failed.code)), 'ยืนยันผิดต้องไม่แตะ data');
+
+    const deleted = await req(`/v1/tenants/${failed.code}`, { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ revision: failed.revision, confirm: failed.code }) });
+    assert.strictEqual(deleted.status, 200);
+    assert.deepStrictEqual(deleted.body, { deleted: true, code: failed.code });
+    assert.ok(!fs.existsSync(path.join(root, 'data', failed.code)), 'ลบสำเร็จต้องล้าง data ที่ค้าง');
+    assert.ok(!fs.existsSync(path.join(root, 'archive', failed.code)), 'ลบสำเร็จต้องล้าง archive data ที่ค้าง');
+    assert.ok(calls.some((call) => call.command === 'docker' && call.args.join(' ') === `rm -f fbad-tenant-${failed.code}`));
+    assert.ok(calls.some((call) => call.command === 'docker' && call.args.join(' ') === `network disconnect -f fbad-tenant-net-${failed.code} traefik-traefik-1`));
+    assert.ok(calls.some((call) => call.command === 'docker' && call.args.join(' ') === `network rm fbad-tenant-net-${failed.code}`));
+    assert.deepStrictEqual((await req('/v1/tenants')).body.tenants, []);
+    assert.match(fs.readFileSync(path.join(root, 'audit.jsonl'), 'utf8'), /"action":"delete-failed"/);
+  });
+
+  test('ปฏิเสธการลบถาวรของสมาชิกที่ไม่ได้อยู่สถานะ failed', async (t) => {
+    const root = tmpDir(); const code = 'e'.repeat(32); const registryPath = path.join(root, 'registry.json');
+    const deployScript = path.join(root, 'tenant-deploy.sh');
+    fs.writeFileSync(deployScript, '#!/usr/bin/env bash\nexit 0\n', { mode: 0o700 });
+    fs.writeFileSync(registryPath, JSON.stringify({ tenants: [{
+      code, displayName: 'ร้านที่ใช้งาน', ownerName: 'เจ้าของ', ownerEmail: 'active@example.com', plan: '', expiresAt: null,
+      status: 'active', adminUrl: 'https://ad.senball.com/p/' + code + '/', landingUrl: 'https://ad.senball.com/p/' + code + '/lp',
+      createdAt: '2026-07-23T00:00:00.000Z', updatedAt: '2026-07-23T00:00:00.000Z', revision: 1,
+    }] }));
+    const provisioner = createProvisioner({
+      token, socketPath: unixSocket('delete-active'), deployScript, image: 'sha256:' + 'e'.repeat(64),
+      registryPath, auditPath: path.join(root, 'audit.jsonl'), dataRoot: path.join(root, 'data'), archiveRoot: path.join(root, 'archive'),
+      run: async () => ({ stdout: '', stderr: '' }),
+    });
+    await listen(provisioner.server, 0);
+    const port = provisioner.server.address().port;
+    t.after(async () => { await close(provisioner.server); fs.rmSync(root, { recursive: true, force: true }); });
+    const response = await fetch(`http://127.0.0.1:${port}/v1/tenants/${code}`, {
+      method: 'DELETE', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ revision: 1, confirm: code }),
+    });
+    assert.strictEqual(response.status, 409);
+    assert.ok(fs.readFileSync(registryPath, 'utf8').includes(code), 'รายการ active ต้องอยู่ครบ');
+  });
 });
 
 describe('master tenant-control API', () => {
@@ -248,6 +334,7 @@ describe('master tenant-control API', () => {
       res.setHeader('content-type', 'application/json');
       if (req.url === '/v1/tenants' && req.method === 'GET') return res.end(JSON.stringify({ tenants: [{ code: 'a'.repeat(32), status: 'active' }] }));
       if (req.url === '/v1/tenants' && req.method === 'POST') return res.statusCode = 201, res.end(JSON.stringify({ tenant: { code: 'b'.repeat(32), status: 'active' } }));
+      if (req.url === `/v1/tenants/${'b'.repeat(32)}` && req.method === 'DELETE') return res.end(JSON.stringify({ deleted: true, code: 'b'.repeat(32) }));
       res.statusCode = 404; res.end(JSON.stringify({ error: 'not found' }));
     });
     await listen(upstream, socket);
@@ -274,7 +361,9 @@ describe('master tenant-control API', () => {
     assert.strictEqual(formPost.status, 415);
     const created = await fetch(master.base + '/api/tenants', { method: 'POST', headers: memberHeaders, body: JSON.stringify({ displayName: 'ร้านใหม่' }) });
     assert.strictEqual(created.status, 201);
-    assert.deepStrictEqual(upstreamCalls.map((call) => [call.method, call.url]), [['GET', '/v1/tenants'], ['POST', '/v1/tenants']]);
+    const deleted = await fetch(master.base + `/api/tenants/${'b'.repeat(32)}`, { method: 'DELETE', headers: memberHeaders, body: JSON.stringify({ revision: 7, confirm: 'b'.repeat(32) }) });
+    assert.strictEqual(deleted.status, 200);
+    assert.deepStrictEqual(upstreamCalls.map((call) => [call.method, call.url]), [['GET', '/v1/tenants'], ['POST', '/v1/tenants'], ['DELETE', `/v1/tenants/${'b'.repeat(32)}`]]);
     assert.ok(upstreamCalls.every((call) => call.auth === `Bearer ${token}`));
     assert.match(upstreamCalls[1].raw, /ร้านใหม่/);
     const tenantControl = await (await fetch(tenant.base + '/api/tenant-control')).json();
@@ -282,7 +371,7 @@ describe('master tenant-control API', () => {
     assert.strictEqual((await fetch(tenant.base + '/members')).status, 404, 'tenant instance ห้ามมี route จัดการสมาชิก');
     const tenantDenied = await fetch(tenant.base + '/api/tenants');
     assert.strictEqual(tenantDenied.status, 503);
-    assert.strictEqual(upstreamCalls.length, 2, 'tenant instance ห้ามส่ง request ไป provisioner แม้มี socket env');
+    assert.strictEqual(upstreamCalls.length, 3, 'tenant instance ห้ามส่ง request ไป provisioner แม้มี socket env');
   });
 });
 

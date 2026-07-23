@@ -1481,6 +1481,7 @@ app.get('/api/tenants', tenantControlProxy);
 app.post('/api/tenants', tenantControlMutation, tenantControlProxy);
 app.get('/api/tenants/:code', tenantControlProxy);
 app.patch('/api/tenants/:code', tenantControlMutation, tenantControlProxy);
+app.delete('/api/tenants/:code', tenantControlMutation, tenantControlProxy);
 app.post('/api/tenants/:code/actions/:action', tenantControlMutation, tenantControlProxy);
 
 app.post('/api/profiles', (req, res) => {
