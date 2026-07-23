@@ -935,7 +935,7 @@
 
       <div class="card">
         <h2><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>คลังแคปชั่น <span class="h-desc" id="capCount"></span>
-          <button class="btn-light btn-sm" style="margin-left:auto" onclick="aiGenCaptions(this)" title="AI อ่านแคปชั่นในคลัง + สถิติผลงานจริง 7 วัน แล้วเขียนตัวใหม่ในโทนเดียวกัน — ได้เป็นแบบร่าง ต้องกดอนุมัติก่อนถูกใช้จริง">✨ ให้ AI เขียนเพิ่ม</button>
+          <button class="btn-light btn-sm" style="margin-left:auto" onclick="aiGenCaptions(this)" title="AI อ่านแคปชั่นเดิมในคลัง + สถิติผลงานจริง 7 วัน แล้วเขียนตัวใหม่เป็นภาษาเวียดนามในโทนเดียวกัน — ได้เป็นแบบร่าง ต้องกดอนุมัติก่อนถูกใช้จริง">✨ ให้ AI เขียนเพิ่ม</button>
           <button class="btn-primary btn-sm" onclick="openCapModal()">+ เพิ่มแคปชั่น</button>
         </h2>
         <div class="hint" style="margin-bottom:10px">เตรียมข้อความไว้ล่วงหน้า แล้วตัวจัดแผนจะหยิบไปใส่แอดให้เอง — ยิ่งมีหลายอันยิ่งไม่ต้องใช้ซ้ำ • คลิกแถวเพื่อดู/แก้ไข • แบบร่างจาก AI ต้องกดอนุมัติก่อนถึงถูกใช้</div>
@@ -4141,7 +4141,7 @@ function capDraftBadge(c) {
 async function aiGenCaptions(btn) {
   const old = btn.textContent;
   btn.disabled = true;
-  btn.textContent = '⏳ AI กำลังอ่านสถิติ + เขียน...';
+  btn.textContent = '⏳ AI กำลังอ่านตัวอย่าง + เขียนเวียดนาม...';
   try {
     const d = await (await fetch('/api/captions/generate', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ count: 5 }),
