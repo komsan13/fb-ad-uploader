@@ -4068,7 +4068,9 @@ function renderCaptions() {
       <td class="num-cell">${(c.message || '').length}</td>
       <td style="white-space:nowrap;color:var(--muted);font-size:12.5px">${fmtD(c.ts)}</td>
       <td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
-        ${c.draft ? `<button class="btn-primary btn-sm" title="อนุมัติเข้าคลังจริง — ตัวจัดแผน/ระบบอัตโนมัติจะเริ่มหยิบไปใช้ได้" onclick="approveCaption(${jsStr(c.id)})">✓ อนุมัติ</button> ` : ''}
+        ${c.draft ? (c.ai && c.risk !== 'low'
+          ? '<span style="font-size:12px;color:#b7791f;font-weight:700">ต้องสร้างใหม่ให้ผ่านนโยบาย</span> '
+          : `<button class="btn-primary btn-sm" title="อนุมัติเข้าคลังจริง — ตัวจัดแผน/ระบบอัตโนมัติจะเริ่มหยิบไปใช้ได้" onclick="approveCaption(${jsStr(c.id)})">✓ อนุมัติ</button> `) : ''}
         <button class="icon-btn btn-light" title="แก้ไข" onclick="openCapModal(${jsStr(c.id)})"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
         <button class="btn-danger-light icon-btn" title="ลบแคปชั่นนี้" onclick="deleteCaption(${jsStr(c.id)})"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
       </td>
@@ -4148,8 +4150,7 @@ async function aiGenCaptions(btn) {
     })).json();
     if (d.error) return toast('เขียนไม่สำเร็จ: ' + d.error);
     await loadCaptions();
-    const risky = (d.drafts || []).filter(x => x.risk === 'high').length;
-    toast(`✓ AI เขียนมา ${d.drafts.length} แบบร่าง${risky ? ` (${risky} ตัวเสี่ยงนโยบายสูง — อ่านก่อนอนุมัติ)` : ''} — กด "อนุมัติ" ตัวที่ชอบเพื่อเข้าคลังจริง`, risky ? 'warn' : 'ok');
+    toast(`✓ AI เขียนมา ${d.drafts.length} แบบร่างที่ผ่านตรวจนโยบายแล้ว — กด "อนุมัติ" ตัวที่ชอบเพื่อเข้าคลังจริง`, 'ok');
   } catch (e) {
     toast('เขียนไม่สำเร็จ: ' + e.message);
   } finally {
