@@ -310,17 +310,32 @@ describe('tenant provisioner', () => {
     const provisioner = createProvisioner({
       token, socketPath: unixSocket('delete-active'), deployScript, image: 'sha256:' + 'e'.repeat(64),
       registryPath, auditPath: path.join(root, 'audit.jsonl'), dataRoot: path.join(root, 'data'), archiveRoot: path.join(root, 'archive'),
+      deployLock: path.join(root, 'deploy.lock'),
       run: async () => ({ stdout: '', stderr: '' }),
     });
     await listen(provisioner.server, 0);
     const port = provisioner.server.address().port;
     t.after(async () => { await close(provisioner.server); fs.rmSync(root, { recursive: true, force: true }); });
+    fs.mkdirSync(provisioner.cfg.deployLock, { mode: 0o700 });
+    const duringDeploy = await fetch(`http://127.0.0.1:${port}/v1/tenants/${code}`, {
+      method: 'DELETE', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ revision: 1, confirm: code }),
+    });
+    assert.strictEqual(duringDeploy.status, 423, 'control plane ต้องไม่ยอม mutation ระหว่าง deploy ทั้งระบบ');
+    fs.rmdirSync(provisioner.cfg.deployLock);
+    const missingRevision = await fetch(`http://127.0.0.1:${port}/v1/tenants/${code}`, {
+      method: 'DELETE', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ confirm: code }),
+    });
+    assert.strictEqual(missingRevision.status, 400, 'คำสั่งเปลี่ยนสมาชิกต้องมี revision เพื่อไม่เขียนทับข้อมูลใหม่กว่า');
     const response = await fetch(`http://127.0.0.1:${port}/v1/tenants/${code}`, {
       method: 'DELETE', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify({ revision: 1, confirm: code }),
     });
     assert.strictEqual(response.status, 409);
     assert.ok(fs.readFileSync(registryPath, 'utf8').includes(code), 'รายการ active ต้องอยู่ครบ');
+    const markers = fs.readdirSync(`${provisioner.cfg.deployLock}.mutations`);
+    assert.deepStrictEqual(markers, [], 'mutation lease ต้องถูกปล่อยทุกเส้นทางรวมถึง validation error');
   });
 });
 

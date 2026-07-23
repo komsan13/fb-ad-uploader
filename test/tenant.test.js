@@ -66,7 +66,7 @@ describe('instance ผู้เช่า', () => {
 { printf 'docker'; printf ' <%s>' "$@"; printf '\\n'; } >> "$TEST_LOG"
 case "\${1:-}:\${2:-}" in
   container:inspect) exit 1 ;;
-  build:*|run:*|exec:*) exit 0 ;;
+  network:inspect|build:*|run:*|exec:*) exit 0 ;;
   *) exit 1 ;;
 esac
 `, { mode: 0o755 });
@@ -74,6 +74,12 @@ esac
 { printf 'htpasswd'; printf ' <%s>' "$@"; printf '\\n'; } >> "$TEST_LOG"
 IFS= read -r password
 printf 'shop-a:fakehash\\n'
+`, { mode: 0o755 });
+    fs.writeFileSync(path.join(bin, 'curl'), `#!/usr/bin/env bash
+case "$*" in
+  *"/lp"*) printf '200' ;;
+  *) printf '401' ;;
+esac
 `, { mode: 0o755 });
     fs.writeFileSync(path.join(bin, 'sleep'), '#!/usr/bin/env bash\nexit 0\n', { mode: 0o755 });
     const run = runTenantDeploy({
@@ -136,5 +142,27 @@ printf 'shop-a:fakehash\\n'
     assert.strictEqual((await get(srv.base, '/api/env')).publicUrl, srv.base + '/p/' + code);
     const page = await (await fetch(srv.base + '/auth/callback?error=cancelled')).text();
     assert.ok(page.includes(`location.href="/p/${code}/"`), 'OAuth ที่เปิดตรงๆ ต้องกลับ instance เดิม ไม่ใช่ root');
+  });
+
+  test('OAuth callback ต้องยอมรับเฉพาะ state ที่สุ่มและ cookie ของ browser เดียวกัน', async (t) => {
+    const fb = await makeFakeFb({});
+    const dir = tmpDir();
+    seed(dir, { config: { profiles: [{ id: 'p1', label: 'ร้าน', appId: 'app-id', appSecret: 'app-secret', accessToken: 'token-old' }] } });
+    const srv = await startServer(dir, fb.port);
+    t.after(() => { srv.stop(); fb.server.close(); });
+
+    const login = await fetch(srv.base + '/auth/login?profile=p1', { redirect: 'manual' });
+    assert.strictEqual(login.status, 302);
+    const loginUrl = new URL(login.headers.get('location'));
+    const state = loginUrl.searchParams.get('state');
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+    assert.match(state, /^[a-f0-9]{64}$/);
+
+    const forged = await (await fetch(srv.base + '/auth/callback?code=fake&state=p1')).text();
+    assert.match(forged, /หมดอายุ|ไม่ตรงกับเบราว์เซอร์/, 'ห้ามใช้ profile id เป็น OAuth state ได้โดยตรง');
+    const cancelled = await (await fetch(srv.base + `/auth/callback?error=cancelled&state=${state}`, { headers: { cookie } })).text();
+    assert.match(cancelled, /cancelled/);
+    const config = JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8'));
+    assert.strictEqual(config.profiles[0].accessToken, 'token-old', 'callback ที่ไม่ผ่าน state ห้ามเขียนทับ token');
   });
 });

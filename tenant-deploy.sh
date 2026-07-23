@@ -11,12 +11,15 @@ umask 077
 ACTION="${ACTION:-create}"
 PROFILE_CODE="${PROFILE_CODE:-}"
 DOMAIN="${DOMAIN:-ad.senball.com}"
-NETWORK="${NETWORK:-web}"
+NETWORK="${NETWORK:-}"
 CERTRESOLVER="${CERTRESOLVER:-le}"
 DATA_ROOT="${DATA_ROOT:-/opt/fbad-tenants}"
 TENANT_IMAGE="${TENANT_IMAGE:-fbad:latest}"
 SKIP_BUILD="${SKIP_BUILD:-0}"
 AUTOPILOT_HOLD="${AUTOPILOT_HOLD:-0}"
+TENANT_MEMORY_LIMIT="${TENANT_MEMORY_LIMIT:-1g}"
+TENANT_CPU_LIMIT="${TENANT_CPU_LIMIT:-1.0}"
+TENANT_PIDS_LIMIT="${TENANT_PIDS_LIMIT:-256}"
 
 if [[ ! "$ACTION" =~ ^(create|retry-create|redeploy|restore|reset-password)$ ]]; then
   echo "ACTION ต้องเป็น create, retry-create, redeploy, restore หรือ reset-password" >&2
@@ -33,6 +36,14 @@ if [ -z "$PROFILE_CODE" ] && [ "$ACTION" = "create" ]; then
 fi
 if [[ ! "$PROFILE_CODE" =~ ^[a-f0-9]{32}$ ]]; then
   echo "PROFILE_CODE ต้องเป็นรหัส hex 32 ตัวอักษร" >&2
+  exit 1
+fi
+
+# ผู้เช่าแต่ละรายต้องอยู่ network ของตัวเองเท่านั้น; ห้าม fallback ไป shared `web`
+# เพราะ container อื่นบน network เดียวกันจะข้าม Traefik/Basic Auth มายิง API ได้โดยตรง
+if [ -z "$NETWORK" ]; then NETWORK="fbad-tenant-net-${PROFILE_CODE}"; fi
+if [[ ! "$TENANT_MEMORY_LIMIT" =~ ^[1-9][0-9]*([kKmMgG])?$ ]] || [[ ! "$TENANT_CPU_LIMIT" =~ ^[0-9]+(\.[0-9]+)?$ ]] || [[ ! "$TENANT_PIDS_LIMIT" =~ ^[1-9][0-9]*$ ]]; then
+  echo "ค่า resource limit ไม่ถูกต้อง" >&2
   exit 1
 fi
 
@@ -147,6 +158,13 @@ else
   fi
 fi
 
+command -v docker >/dev/null || { echo "ไม่พบ docker" >&2; exit 1; }
+command -v curl >/dev/null || { echo "ไม่พบ curl สำหรับตรวจ route หลัง deploy" >&2; exit 1; }
+if ! docker network inspect "$NETWORK" >/dev/null 2>&1; then
+  echo "ไม่พบ network แยกของผู้เช่า ${NETWORK} — สร้างผ่าน provisioner ก่อน" >&2
+  exit 1
+fi
+
 if [ "$SKIP_BUILD" != "1" ]; then
   docker build -t "$TENANT_IMAGE" .
 fi
@@ -167,6 +185,10 @@ fi
 
 if ! docker run -d --name "$CONTAINER" --restart unless-stopped \
   --network "$NETWORK" \
+  --memory "$TENANT_MEMORY_LIMIT" \
+  --memory-swap "$TENANT_MEMORY_LIMIT" \
+  --cpus "$TENANT_CPU_LIMIT" \
+  --pids-limit "$TENANT_PIDS_LIMIT" \
   -e "PUBLIC_URL=https://${DOMAIN}/p/${PROFILE_CODE}" \
   -e PORT=4000 \
   -e CONFIG_PATH=/data/config.json \
@@ -202,6 +224,19 @@ if ! docker exec "$CONTAINER" wget -qO /dev/null http://localhost:4000/; then
   docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
   rollback_previous_container
   echo "container ใหม่ไม่ตอบ — กู้ instance เดิมกลับแล้ว" >&2
+  exit 1
+fi
+LANDING_STATUS=""; ADMIN_STATUS=""
+for _ in {1..5}; do
+  LANDING_STATUS="$(curl -sk --connect-timeout 5 --resolve "${DOMAIN}:443:127.0.0.1" -o /dev/null -w '%{http_code}' "https://${DOMAIN}/p/${PROFILE_CODE}/lp" || true)"
+  ADMIN_STATUS="$(curl -sk --connect-timeout 5 --resolve "${DOMAIN}:443:127.0.0.1" -o /dev/null -w '%{http_code}' "https://${DOMAIN}/p/${PROFILE_CODE}/" || true)"
+  [ "$LANDING_STATUS" = "200" ] && [ "$ADMIN_STATUS" = "401" ] && break
+  sleep 2
+done
+if [ "$LANDING_STATUS" != "200" ] || [ "$ADMIN_STATUS" != "401" ]; then
+  docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+  rollback_previous_container
+  echo "route tenant ใหม่ไม่ผ่าน (lp=${LANDING_STATUS:-none}, admin=${ADMIN_STATUS:-none}) — กู้ instance เดิมกลับแล้ว" >&2
   exit 1
 fi
 if [ -n "$ROLLBACK_CONTAINER" ]; then docker rm -f "$ROLLBACK_CONTAINER" >/dev/null; fi

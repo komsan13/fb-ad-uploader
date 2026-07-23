@@ -31,6 +31,7 @@ PROVISIONER_SOCKET=/run/fbad-provisioner.sock
 PROVISIONER_TOKEN=$TOKEN
 PROVISIONER_REGISTRY=/opt/fbad-provisioner/tenants.json
 PROVISIONER_AUDIT=/opt/fbad-provisioner/audit.jsonl
+PROVISIONER_DEPLOY_LOCK=/run/fbad-provisioner/deploy.lock
 TENANT_DEPLOY_SCRIPT=$RUNTIME_DIR/tenant-deploy.sh
 TENANT_DOMAIN=ad.senball.com
 TENANT_DATA_ROOT=/opt/fbad-tenants

@@ -55,6 +55,26 @@ describe('การกันรอบตรวจซ้อนกัน (P0-1)', 
   });
 });
 
+describe('สวิตช์ฉุกเฉินต้องหยุดคำสั่งที่เปลี่ยนเงินจริงกลางรอบ', () => {
+  test('ปิด Autopilot ระหว่างสร้างชุดแอด ต้องไม่สร้างแอดตัวถัดไปจาก config เก่า', async (t) => {
+    const config = baseConfig({ autopilot: { enabled: true, minAds: 5 } });
+    const { base, world, dir } = await boot(t, { config, videos: 6, captions: 6 });
+    let disabled = false;
+    world.route = (method, endpoint) => {
+      if (!disabled && method === 'POST' && endpoint === `act_${ACCT}/ads`) {
+        disabled = true;
+        const fresh = JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8'));
+        fresh.autopilot.enabled = false;
+        fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify(fresh));
+      }
+      return null;
+    };
+    await runTwice(base);
+    const made = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/ads`);
+    assert.strictEqual(made.length, 1, 'หลัง disable กลางรอบ ต้องไม่สร้างแอดตัวที่สองขึ้นไป');
+  });
+});
+
 describe('การจัดการแคมเปญ (P0-3)', () => {
   test('บัญชีมีแคมเปญของระบบเปิดอยู่แล้ว ต้องรับมาใช้ ไม่สร้างซ้ำ', async (t) => {
     const world = freshWorld({

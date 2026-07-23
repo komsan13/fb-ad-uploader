@@ -5,7 +5,6 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
-const http = require('http');
 const { makeFakeFb } = require('./fake-fb');
 const { makeFakeTg, makeFakeAi } = require('./fake-tg');
 const { tmpDir, seed, readState } = require('./helpers');
@@ -28,12 +27,6 @@ test('งาน AI รายสัปดาห์', async (t) => {
     { items: [{ index: 0, tags: ['รีวิวสินค้า', 'โทนสว่าง'], note: 'คนถือสินค้ารีวิว' }] },
     { report: 'ภาพรวม 30 วันใช้เงินสม่ำเสมอ วิดีโอสไตล์รีวิวสินค้าทำผลได้ดีกว่าค่าเฉลี่ย', actions: ['ถ่ายวิดีโอแนวรีวิวสินค้าเพิ่ม'] },
   ]);
-  // เว็บปลายทางปลอมที่ตอบ 404 — ไว้ทดสอบเช็คลิงก์เสียแบบวัดจริง
-  const dead = await new Promise((resolve) => {
-    const srv = http.createServer((req, res) => { res.writeHead(404); res.end(); });
-    srv.listen(0, '127.0.0.1', () => resolve({ srv, port: srv.address().port }));
-  });
-
   const dir = tmpDir();
   const cfg = {
     profiles: [{ id: 'p1', label: 'เทส', accessToken: 'tok' }],
@@ -47,7 +40,7 @@ test('งาน AI รายสัปดาห์', async (t) => {
   fs.writeFileSync(path.join(dir, 'media-library', 'v1.jpg'), Buffer.from('ภาพหน้าปกปลอม'));
   fs.writeFileSync(path.join(dir, 'landing.json'), JSON.stringify({
     title: 'ร้านเทส', bio: 'ทักไลน์ได้',
-    links: [{ id: 'l1', label: 'สั่งซื้อ', url: `http://127.0.0.1:${dead.port}/order`, icon: '', event: '' }],
+    links: [{ id: 'l1', label: 'สั่งซื้อ', url: 'https://shop.example/order', icon: '', event: '' }],
   }));
 
   process.env.CONFIG_PATH = path.join(dir, 'config.json');
@@ -55,8 +48,8 @@ test('งาน AI รายสัปดาห์', async (t) => {
   process.env.TG_API_BASE = `http://127.0.0.1:${tg.port}`;
   process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${ai.port}`;
   process.env.ANTHROPIC_API_KEY = '';
-  const { aiCprReview, aiLandingCheck, aiWeeklyStrategy, aiTagVideos, apRankCaptions } = require('../server.js');
-  t.after(() => { fb.server.close(); tg.server.close(); ai.server.close(); dead.srv.close(); });
+  const { aiCprReview, aiLandingCheck, landingHttpStatus, publicHttpUrl, aiWeeklyStrategy, aiTagVideos, apRankCaptions } = require('../server.js');
+  t.after(() => { fb.server.close(); tg.server.close(); ai.server.close(); });
 
   await t.test('2.5 ข้อเสนอเป้า CPA ที่กระโดดเกิน ±50% ต้องถูกปัดตกฝั่งเรา ไม่ใช่เชื่อ AI', async () => {
     await aiCprReview(cfg, 'sk-test');
@@ -81,12 +74,31 @@ test('งาน AI รายสัปดาห์', async (t) => {
   });
 
   await t.test('2.6 ตรวจ Landing: ลิงก์ 404 ต้องถูกจับ + ความไม่สอดคล้องจาก AI ต้องถึงแชท', async () => {
+    const status = await landingHttpStatus('https://shop.example/order', {
+      lookup: async () => [{ address: '203.0.113.10', family: 4 }],
+      requester: async (_url, records) => {
+        assert.deepStrictEqual(records, [{ address: '203.0.113.10', family: 4 }], 'request ต้องใช้ address ที่ DNS safety check รับรองแล้ว');
+        return { status: 404, location: '' };
+      },
+    });
+    assert.strictEqual(status, 404, 'ตัวตรวจต้องคืน HTTP status จากปลายทางที่ผ่าน DNS safety check');
     const before = tg.state.sent.length;
-    await aiLandingCheck(cfg, 'sk-test');
+    await aiLandingCheck(cfg, 'sk-test', async (url) => {
+      assert.strictEqual(url, 'https://shop.example/order');
+      return status;
+    });
     const m = tg.state.sent.slice(before).find((x) => x.text.includes('🏠'));
     assert.ok(m, 'ต้องมีรายงาน Landing');
-    assert.ok(m.text.includes('HTTP 404'), 'ลิงก์เสียต้องถูกจับด้วยการยิงจริง ไม่ใช่ให้ AI เดา');
+    assert.ok(m.text.includes('HTTP 404'), 'ลิงก์เสียต้องถูกจับจาก HTTP status ไม่ใช่ให้ AI เดา');
     assert.ok(m.text.includes('ไม่พูดถึงโปรที่แอดสัญญา'), 'ผลวิเคราะห์ความสอดคล้องต้องถึงแชท');
+  });
+
+  await t.test('2.6 ตรวจ Landing: URL ภายในต้องถูกปัดก่อน fetch เพื่อกัน SSRF', async () => {
+    assert.strictEqual(await publicHttpUrl('http://127.0.0.1:4000/api/profiles'), null);
+    assert.strictEqual(await publicHttpUrl('http://localhost/internal'), null);
+    assert.strictEqual(await publicHttpUrl('http://[::1]/internal'), null);
+    assert.strictEqual(await publicHttpUrl('https://attacker.example/redirect', async () => [{ address: '10.1.2.3', family: 4 }]), null,
+      'hostname ที่ DNS ไป private network ก็ต้องถูกปัด ไม่ใช่กันเฉพาะ IP ตรงๆ');
   });
 
   await t.test('3.8 แท็กวิดีโอ: ผลจาก AI ต้องถูกเขียนลงคลังจริง', async () => {

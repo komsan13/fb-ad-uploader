@@ -66,16 +66,50 @@ function readBody(req) {
 }
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { env: options.env || process.env, stdio: ['pipe', 'pipe', 'pipe'] });
-    let stdout = ''; let stderr = '';
-    child.stdout.on('data', (part) => { stdout += part; });
-    child.stderr.on('data', (part) => { stderr += part; });
-    child.on('error', reject);
+    // Linux provisioner ต้องฆ่าทั้ง process group: kill แค่ bash แต่ปล่อย docker ลูกทำงานต่อ
+    // จะปลด lock แล้วคำสั่ง retry เข้ามาชน action เดิมได้
+    const grouped = process.platform !== 'win32';
+    const child = spawn(command, args, { env: options.env || process.env, stdio: ['pipe', 'pipe', 'pipe'], detached: grouped });
+    const outputLimit = Math.max(64 * 1024, Math.min(16 * 1024 * 1024, Number(options.maxOutputBytes) || 1024 * 1024));
+    const timeoutMs = Math.max(10_000, Math.min(30 * 60 * 1000, Number(options.timeoutMs) || 5 * 60 * 1000));
+    let stdout = ''; let stderr = ''; let outputBytes = 0; let settled = false; let timedOut = false; let tooMuchOutput = false;
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    };
+    const terminate = () => {
+      try {
+        if (grouped) process.kill(-child.pid, 'SIGKILL');
+        else child.kill('SIGKILL');
+      } catch { /* child ปิดไปแล้ว */ }
+    };
+    const collect = (target, part) => {
+      outputBytes += part.length;
+      if (outputBytes > outputLimit) {
+        tooMuchOutput = true;
+        terminate();
+        return target;
+      }
+      return target + part.toString();
+    };
+    child.stdout.on('data', (part) => { stdout = collect(stdout, part); });
+    child.stderr.on('data', (part) => { stderr = collect(stderr, part); });
+    const timer = setTimeout(() => { timedOut = true; terminate(); }, timeoutMs);
+    child.on('error', (error) => fail(error));
     child.on('close', (code) => {
-      if (code === 0) return resolve({ stdout, stderr });
+      if (settled) return;
+      clearTimeout(timer);
+      if (timedOut || tooMuchOutput) {
+        const error = new Error(`${command} ใช้เวลาหรือ output เกินขีดจำกัด`);
+        error.status = 504;
+        return fail(error);
+      }
+      if (code === 0) { settled = true; return resolve({ stdout, stderr }); }
       const error = new Error(`${command} ${args[0] || ''} ล้มเหลว${stderr ? `: ${stderr.trim().slice(0, 500)}` : ''}`);
       error.status = 502;
-      reject(error);
+      fail(error);
     });
     if (options.input != null) child.stdin.end(options.input);
     else child.stdin.end();
@@ -113,6 +147,12 @@ function publicTenant(tenant) {
   };
 }
 
+function requireRevision(body, tenant) {
+  const revision = Number(body && body.revision);
+  if (!Number.isSafeInteger(revision)) throw Object.assign(new Error('ต้องส่ง revision ปัจจุบันของสมาชิก'), { status: 400 });
+  if (revision !== tenant.revision) throw Object.assign(new Error('ข้อมูลถูกแก้จากที่อื่นแล้ว กรุณารีเฟรช'), { status: 409 });
+}
+
 function createProvisioner(overrides = {}) {
   const cfg = {
     socketPath: overrides.socketPath || process.env.PROVISIONER_SOCKET || '/run/fbad-provisioner.sock',
@@ -123,8 +163,11 @@ function createProvisioner(overrides = {}) {
     domain: overrides.domain || process.env.TENANT_DOMAIN || 'ad.senball.com',
     dataRoot: overrides.dataRoot || process.env.TENANT_DATA_ROOT || '/opt/fbad-tenants',
     archiveRoot: overrides.archiveRoot || process.env.TENANT_ARCHIVE_ROOT || '/opt/fbad-tenants-archive',
+    deployLock: overrides.deployLock || process.env.PROVISIONER_DEPLOY_LOCK || '/run/fbad-provisioner/deploy.lock',
     image: overrides.image || process.env.TENANT_IMAGE || 'fbad:latest',
     traefikContainer: overrides.traefikContainer || process.env.TRAEFIK_CONTAINER || 'traefik-traefik-1',
+    commandTimeoutMs: overrides.commandTimeoutMs || process.env.PROVISIONER_COMMAND_TIMEOUT_MS || 5 * 60 * 1000,
+    maxCommandOutputBytes: overrides.maxCommandOutputBytes || process.env.PROVISIONER_MAX_OUTPUT_BYTES || 1024 * 1024,
     run: overrides.run || run,
   };
   if (!cfg.token || cfg.token.length < 32) throw new Error('PROVISIONER_TOKEN ต้องมีอย่างน้อย 32 ตัวอักษร');
@@ -188,10 +231,13 @@ function createProvisioner(overrides = {}) {
     TENANT_USER: auth.username,
     TENANT_PASS_STDIN: '1',
   });
-  const deploy = (tenant, action, auth, hold = false) => cfg.run('bash', [cfg.deployScript], {
+  const invoke = (command, args, options = {}) => cfg.run(command, args, {
+    ...options, timeoutMs: cfg.commandTimeoutMs, maxOutputBytes: cfg.maxCommandOutputBytes,
+  });
+  const deploy = (tenant, action, auth, hold = false) => invoke('bash', [cfg.deployScript], {
     env: tenantEnv(tenant, action, auth, hold), input: `${auth.password}\n`,
   });
-  const docker = (args) => cfg.run('docker', args);
+  const docker = (args) => invoke('docker', args);
   const createNetwork = async (tenant) => {
     const net = network(tenant.code);
     try { await docker(['network', 'inspect', net]); }
@@ -214,8 +260,30 @@ function createProvisioner(overrides = {}) {
     catch { return false; }
   };
   const bestEffort = async (args) => { try { await docker(args); } catch { /* cleanup failure must not hide recoverable data */ } };
+  // Mutation และ deploy ใช้ protocol เดียวกัน: deploy สร้าง directory lock แบบ atomic
+  // แล้วรอ marker ของ mutation เก่า ส่วน mutation สร้าง marker ก่อนตรวจ lock ซ้ำ
+  // จึงไม่มีช่วงที่ tenant action เริ่ม docker command หลัง deploy เริ่ม rollout แล้ว
+  const mutationDir = `${cfg.deployLock}.mutations`;
+  const acquireMutationLease = () => {
+    try {
+      fs.mkdirSync(path.dirname(cfg.deployLock), { recursive: true, mode: 0o700 });
+      fs.mkdirSync(mutationDir, { recursive: true, mode: 0o700 });
+    } catch (error) {
+      throw Object.assign(new Error(`เตรียม lock สำหรับจัดการสมาชิกไม่สำเร็จ: ${error.message}`), { status: 500 });
+    }
+    if (fs.existsSync(cfg.deployLock)) return null;
+    const marker = path.join(mutationDir, `${process.pid}-${crypto.randomUUID()}`);
+    try { fs.mkdirSync(marker, { mode: 0o700 }); }
+    catch (error) { throw Object.assign(new Error(`สร้าง lock สำหรับจัดการสมาชิกไม่สำเร็จ: ${error.message}`), { status: 500 }); }
+    if (fs.existsSync(cfg.deployLock)) {
+      try { fs.rmdirSync(marker); } catch { /* marker จะถูก cleanup ภายหลัง */ }
+      return null;
+    }
+    return () => { try { fs.rmdirSync(marker); } catch { /* request จบแล้ว */ } };
+  };
 
   const handler = async (req, res) => {
+    let releaseMutation;
     try {
       const supplied = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
       const a = Buffer.from(supplied); const b = Buffer.from(cfg.token);
@@ -225,6 +293,10 @@ function createProvisioner(overrides = {}) {
       if (req.method === 'GET' && url.pathname === '/v1/health') return json(res, 200, { ok: true });
       if (req.method === 'GET' && url.pathname === '/v1/tenants') {
         return json(res, 200, { tenants: registry.tenants.map(publicTenant).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) });
+      }
+      if (req.method !== 'GET') {
+        releaseMutation = acquireMutationLease();
+        if (!releaseMutation) return json(res, 423, { error: 'กำลัง deploy ทั้งระบบ กรุณารอให้เสร็จก่อนแล้วรีเฟรชข้อมูล' });
       }
       if (parts[0] !== 'v1' || parts[1] !== 'tenants') return json(res, 404, { error: 'ไม่พบ endpoint' });
       if (req.method === 'POST' && parts.length === 2) {
@@ -256,13 +328,13 @@ function createProvisioner(overrides = {}) {
       if (req.method === 'GET' && parts.length === 3) return json(res, 200, { tenant: publicTenant(tenant) });
       if (req.method === 'PATCH' && parts.length === 3) {
         const body = await readBody(req);
-        if (body.revision != null && Number(body.revision) !== tenant.revision) return json(res, 409, { error: 'ข้อมูลถูกแก้จากที่อื่นแล้ว กรุณารีเฟรช' });
+        requireRevision(body, tenant);
         await mutate(tenant, 'update', async () => Object.assign(tenant, tenantInput({ ...tenant, ...body })));
         return json(res, 200, { tenant: publicTenant(tenant) });
       }
       if (req.method === 'DELETE' && parts.length === 3) {
         const body = await readBody(req);
-        if (body.revision != null && Number(body.revision) !== tenant.revision) return json(res, 409, { error: 'ข้อมูลถูกแก้จากที่อื่นแล้ว กรุณารีเฟรช' });
+        requireRevision(body, tenant);
         if (tenant.status !== 'failed') return json(res, 409, { error: 'ลบถาวรได้เฉพาะรายการที่สร้างไม่สำเร็จ' });
         if (String(body.confirm || '') !== tenant.code) return json(res, 400, { error: 'ต้องพิมพ์ Profile code ให้ตรงก่อนลบถาวร' });
         await mutate(tenant, 'delete-failed', async () => {
@@ -283,7 +355,7 @@ function createProvisioner(overrides = {}) {
       }
       if (req.method !== 'POST' || parts.length !== 5 || parts[3] !== 'actions' || !ACTIONS.has(parts[4])) return json(res, 404, { error: 'ไม่พบ action' });
       const action = parts[4]; const body = await readBody(req);
-      if (body.revision != null && Number(body.revision) !== tenant.revision) return json(res, 409, { error: 'ข้อมูลถูกแก้จากที่อื่นแล้ว กรุณารีเฟรช' });
+      requireRevision(body, tenant);
       if (action === 'suspend-access') {
         if (tenant.status !== 'active') throw Object.assign(new Error('ระงับได้เฉพาะสมาชิกที่ active'), { status: 409 });
         if (body.confirm !== 'SUSPEND_ACCESS') throw Object.assign(new Error('ต้องยืนยัน SUSPEND_ACCESS เพื่อระงับการเข้าใช้'), { status: 400 });
@@ -421,6 +493,8 @@ function createProvisioner(overrides = {}) {
       return json(res, 200, { tenant: publicTenant(tenant) });
     } catch (error) {
       return json(res, error.status || 500, { error: String(error.message || 'เกิดข้อผิดพลาด') });
+    } finally {
+      if (releaseMutation) releaseMutation();
     }
   };
   const server = http.createServer(handler);
