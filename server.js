@@ -1839,7 +1839,11 @@ app.get('/api/accounts', async (req, res) => {
     const adAccounts = await fbAll('me/adaccounts', { fields: acctFields, limit: 100 }, prof.accessToken);
     // เพจแตก (บิน/ถูกจำกัด) ไม่โผล่ใน dropdown เลือกเพจ — เอาแค่เพจที่ลงโฆษณาได้จริง
     // (เพจแตกยังดูได้ในหน้า "สุขภาพบัญชี" ซึ่งใช้ /api/health-overview คนละเส้น)
-    const pages = (await fbPages(prof.accessToken)).filter((p) => p.ok);
+    const allPages = await fbPages(prof.accessToken);
+    const pages = allPages.filter((p) => p.ok);
+    // ส่งจำนวนที่ถูกกรองทิ้งไปด้วย — dropdown ว่างเฉยๆ อ่านได้ว่า "โหลดเพจไม่ขึ้น" (เข้าใจว่าระบบพัง)
+    // ทั้งที่ความจริงคือเพจมีอยู่แต่ถูก Meta ตัดสิทธิ์ลงโฆษณาหมด ต้องบอกให้ชัดว่าเกิดอะไร
+    const pagesBlocked = allPages.length - pages.length;
     // ธุรกิจที่ยืนยันตัวตนแล้ว = ตัวเลือก "ผู้ลงโฆษณา" (ส่งเป็น id ใน regional_regulation_identities)
     let verifiedBiz = [];
     if (full) {
@@ -1870,6 +1874,7 @@ app.get('/api/accounts', async (req, res) => {
     res.json({
       name: me.name, adAccounts: visible,
       pages: pages.filter((p) => !(hidden.pages || {})[p.id]),
+      pagesBlocked,
       hiddenAccounts: accounts.length - visible.length,   // ให้หน้าอื่นบอกได้ว่า "ซ่อนอยู่ N — เงินไม่ได้หาย"
     });
   } catch (e) {

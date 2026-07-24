@@ -2021,7 +2021,9 @@ async function populateProfileCard(pid, force) {
   const pageSel = card.querySelector('.p-page');
   pageSel.innerHTML = data.pages.length
     ? data.pages.map(pg => `<option value="${pg.id}">${esc(pg.name)}</option>`).join('')
-    : '<option value="">— ไม่มีเพจที่ลงโฆษณาได้ (เพจบิน/ถูกจำกัด หรือ token ขาดสิทธิ์เพจ) —</option>';
+    : `<option value="">— ${data.pagesBlocked
+        ? `มี ${data.pagesBlocked} เพจในโปรไฟล์ แต่ถูก Meta จำกัดการลงโฆษณาทั้งหมด (ดูรายเพจที่หน้า "สุขภาพบัญชี")`
+        : 'ไม่มีเพจที่ลงโฆษณาได้ (token ขาดสิทธิ์เพจ หรือโปรไฟล์ไม่มีเพจ)'} —</option>`;
   if (p.pageId) pageSel.value = p.pageId;
   // บันทึกค่าที่ dropdown เลือกอัตโนมัติ (ตัวแรก) ถ้ายังไม่เคยตั้ง
   if (!p.adAccountId && accSel.value) saveProfileField(pid, { adAccountId: accSel.value });
