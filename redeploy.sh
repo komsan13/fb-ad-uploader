@@ -176,7 +176,7 @@ if ! docker run -d --name fbad --restart unless-stopped \
   --label traefik.http.routers.fbad.middlewares=fbad-auth \
   --label "traefik.http.middlewares.fbad-auth.basicauth.users=$HASH" \
   --label 'traefik.http.middlewares.fbad-auth.basicauth.realm=fbad-master' \
-  --label 'traefik.http.routers.fbadpub.rule=Host(`ad.senball.com`) && (Path(`/privacy.html`) || Path(`/terms.html`) || Path(`/meta-app-icon.png`) || Path(`/oauth/facebook/callback`) || Path(`/oauth/review`) || PathPrefix(`/oauth/review/`) || Path(`/lp`) || Path(`/lp/`) || PathPrefix(`/lp-asset/`))' \
+  --label 'traefik.http.routers.fbadpub.rule=Host(`ad.senball.com`) && (Path(`/`) || Path(`/privacy.html`) || Path(`/terms.html`) || Path(`/meta-app-icon.png`) || Path(`/oauth/facebook/callback`) || Path(`/oauth/review`) || PathPrefix(`/oauth/review/`) || Path(`/lp`) || Path(`/lp/`) || PathPrefix(`/lp-asset/`))' \
   --label traefik.http.routers.fbadpub.entrypoints=websecure \
   --label traefik.http.routers.fbadpub.service=fbad \
   --label traefik.http.routers.fbadpub.tls.certresolver=le \

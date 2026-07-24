@@ -141,7 +141,7 @@ esac
 
     assert.strictEqual((await get(srv.base, '/api/env')).publicUrl, srv.base + '/p/' + code);
     const page = await (await fetch(srv.base + '/auth/callback?error=cancelled')).text();
-    assert.ok(page.includes(`location.href="/p/${code}/"`), 'OAuth ที่เปิดตรงๆ ต้องกลับ instance เดิม ไม่ใช่ root');
+    assert.ok(page.includes(`location.href="/p/${code}/app"`), 'OAuth ที่เปิดตรงๆ ต้องกลับ dashboard ของ instance เดิม ไม่ใช่หน้า login root');
   });
 
   test('tenant OAuth สร้าง state ผูก Profile code โดยไม่ต้องมี App ID หรือ Secret ใน config', async (t) => {
