@@ -75,31 +75,68 @@ describe('สวิตช์ฉุกเฉินต้องหยุดคำ�
   });
 });
 
-describe('การจัดการแคมเปญ (P0-3)', () => {
-  test('บัญชีมีแคมเปญของระบบเปิดอยู่แล้ว ต้องรับมาใช้ ไม่สร้างซ้ำ', async (t) => {
+describe('การจัดการแคมเปญ (P0-3): 1 แคมเปญต่อ 1 แอด', () => {
+  test('ทุกแอดได้แคมเปญของตัวเองพร้อมงบเต็ม และไม่ยุ่งแคมเปญเดิมในบัญชี', async (t) => {
     const world = freshWorld({
       campaigns: [{ id: 'C_EXIST', acct: ACCT, name: 'Autopilot 2026-07-01', status: 'ACTIVE', daily_budget: '333300' }],
     });
     const { base } = await boot(t, { world });
     await runTwice(base);
-    const made = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/campaigns`);
-    assert.strictEqual(made.length, 0, 'ต้องไม่สร้างแคมเปญใหม่ทับของเดิม');
+    const madeCamps = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/campaigns`);
+    const madeAds = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/ads`);
+    assert.strictEqual(madeAds.length, 2, 'minAds 2 ต้องได้แอด 2 ตัว');
+    assert.strictEqual(madeCamps.length, madeAds.length, 'ทุกแอดต้องมีแคมเปญของตัวเอง (1:1)');
+    for (const c of madeCamps) {
+      assert.strictEqual(c.params.daily_budget, '333300', 'แต่ละแคมเปญต้องได้งบเต็มตามที่ตั้ง ไม่ใช่หารกัน');
+    }
+    assert.ok(!world.calls.some((c) => c.method === 'POST' && c.path === 'C_EXIST'),
+      'แคมเปญเดิมในบัญชี (ระบบไม่ได้สร้าง) ต้องไม่ถูกแตะ');
   });
 
-  test('ไม่มีแคมเปญของระบบเลย ต้องสร้างให้', async (t) => {
-    const { base, world } = await boot(t);
-    await runTwice(base);
-    const made = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/campaigns`);
-    assert.strictEqual(made.length, 1, 'ต้องสร้างแคมเปญ 1 ตัว');
-  });
-
-  test('กวาดหาแคมเปญไม่ได้ (FB สะดุด) ต้องไม่สร้างมั่ว', async (t) => {
+  test('สร้างแอดข้างในพลาด ต้องลบแคมเปญเปล่าทิ้ง ไม่ทิ้งกล่องงบค้างไว้', async (t) => {
     const world = freshWorld();
-    world.route = (m, p) => (m === 'GET' && p === `act_${ACCT}/campaigns` ? { error: 'ล่มชั่วคราว' } : null);
+    world.route = (m, p) => (m === 'POST' && p === `act_${ACCT}/adsets` ? { error: 'สร้างชุดโฆษณาไม่ได้' } : null);
     const { base } = await boot(t, { world });
     await runTwice(base);
     const made = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/campaigns`);
-    assert.strictEqual(made.length, 0, 'อ่านไม่ได้ต้องรอรอบหน้า ไม่ใช่เดาแล้วสร้างงบเพิ่มอีกก้อน');
+    assert.ok(made.length >= 1, 'ต้องมีการสร้างแคมเปญก่อนถึงขั้นชุดโฆษณา');
+    for (const camp of (world.campaigns || []).filter((c) => String(c.name || '').startsWith('Autopilot 20'))) {
+      const del = world.calls.find((c) => c.method === 'POST' && c.path === camp.id && c.params.status === 'DELETED');
+      assert.ok(del, `แคมเปญ ${camp.id} ไม่มีแอดข้างใน ต้องถูกลบทิ้ง ไม่ปล่อยงบค้าง`);
+    }
+  });
+
+  test('เช็คว่าแคมเปญว่างไม่ได้ (อ่านพัง) ต้องไม่ลบ — แอดอาจเกิดจริงแต่คำตอบหายกลางทาง', async (t) => {
+    const world = freshWorld();
+    world.route = (m, p) => {
+      if (m === 'POST' && p === `act_${ACCT}/adsets`) return { error: 'พัง' };
+      if (m === 'GET' && /^\d+\/ads$/.test(p)) return { error: 'อ่านไม่ได้' };
+      return null;
+    };
+    const { base } = await boot(t, { world });
+    await runTwice(base);
+    assert.ok(!world.calls.some((c) => c.method === 'POST' && c.params.status === 'DELETED'),
+      'พิสูจน์ไม่ได้ว่าว่างจริง = ห้ามลบ เดี๋ยวฆ่าแอดที่กำลังจะยิง');
+  });
+
+  test('สร้างพังซ้ำๆ ต้องหยุดเองหลัง 5 ครั้งใน 24 ชม. ไม่วนสร้าง+ลบไม่รู้จบ', async (t) => {
+    const world = freshWorld();
+    world.route = (m, p) => (m === 'POST' && p === `act_${ACCT}/adsets` ? { error: 'พังถาวร' } : null);
+    const { base } = await boot(t, { world });
+    for (let i = 0; i < 9; i++) await post(base, '/api/autopilot/run');
+    const made = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/campaigns`);
+    assert.strictEqual(made.length, 5, 'พยายามครบ 5 ครั้งใน 24 ชม. แล้วต้องพักบัญชีนี้ ไม่พยายามต่อ');
+  });
+
+  test('แอดยืนเกินเป้า (เช่นถูกคืนสถานะหลัง appeal) ต้องพักส่วนเกิน กันงบเกินที่ตั้ง', async (t) => {
+    const { base, world } = await boot(t);
+    await runTwice(base);   // minAds 2 → แอด 2 ตัว แคมเปญละ 1
+    const myAds = world.ads.map((x) => x.id);
+    assert.strictEqual(myAds.length, 2);
+    await post(base, '/api/autopilot', { enabled: true, minAds: 1 });   // ลดเป้า = ตอนนี้ยืนเกิน 1 ตัว
+    await post(base, '/api/autopilot/run');
+    const paused = world.calls.filter((c) => c.method === 'POST' && myAds.includes(c.path) && c.params.status === 'PAUSED');
+    assert.strictEqual(paused.length, 1, 'เกินเป้า 1 ตัว ต้องพัก 1 ตัว — ทุกตัวที่เกินคืองบเต็มอีกก้อน');
   });
 });
 
@@ -692,7 +729,7 @@ describe('เกราะ rate limit ของ Meta', () => {
     const { base } = await boot(t, { world });
     await runTwice(base);
     const made = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/campaigns`);
-    assert.strictEqual(made.length, 1, 'โควตาปกติ รอบเต็มต้องเดินงานตามเดิม (สร้างแคมเปญได้)');
+    assert.strictEqual(made.length, 2, 'โควตาปกติ รอบเต็มต้องเดินงานตามเดิม (สร้างแคมเปญได้ 1 ตัวต่อแอด)');
   });
 });
 
@@ -814,7 +851,7 @@ describe('ซ่อนบัญชี/เพจจากหน้าสุขภ
     await post(base, '/api/hidden', { kind: 'account', id: ACCT, hidden: false });
     await runTwice(base);   // ตอนซ่อนอยู่บัญชีไม่เคยถูก baseline — ปลดแล้วรอบแรก baseline รอบสองเติมจริง
     const after = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/campaigns`);
-    assert.strictEqual(after.length, 1, 'กดโชว์กลับแล้ว autopilot ต้องกลับมาดูแลต่อ');
+    assert.strictEqual(after.length, 2, 'กดโชว์กลับแล้ว autopilot ต้องกลับมาดูแลต่อ (1 แคมเปญต่อแอด, minAds 2)');
   });
 
   test('ซ่อนเพจ = autopilot ไม่เอาเพจนั้นขึ้นแอด (ตัดออกจากพูล round-robin)', async (t) => {
@@ -852,7 +889,7 @@ describe('autopilot เช็คบัตรก่อนเติมแอด', 
     const noCard = w.calls.filter((c) => c.method === 'POST' && c.path === 'act_901/campaigns');
     const withCard = w.calls.filter((c) => c.method === 'POST' && c.path === 'act_902/campaigns');
     assert.strictEqual(noCard.length, 0, 'บัญชีไม่มีบัตรต้องถูกข้าม — สร้างไปก็โดนปฏิเสธ เสีย API เปล่า');
-    assert.strictEqual(withCard.length, 1, 'บัญชีมีบัตรต้องเติมตามปกติ ไม่โดนลากพัง');
+    assert.strictEqual(withCard.length, 2, 'บัญชีมีบัตรต้องเติมตามปกติ ไม่โดนลากพัง (1 แคมเปญต่อแอด, minAds 2)');
   });
 
   test('ผูกบัตรแล้ว รอบถัดไปต้องกลับมาเติมให้เอง', async (t) => {
@@ -864,8 +901,8 @@ describe('autopilot เช็คบัตรก่อนเติมแอด', 
     assert.strictEqual(w.calls.filter((c) => c.method === 'POST' && c.path === 'act_903/campaigns').length, 0, 'ยังไม่มีบัตรต้องไม่เติม');
     w.accounts[0].funding_source_details = { id: 'f_new', display_string: 'VISA 1234' };   // ผู้ใช้ผูกบัตรแล้ว
     await runTwice(base);
-    assert.strictEqual(w.calls.filter((c) => c.method === 'POST' && c.path === 'act_903/campaigns').length, 1,
-      'ผูกบัตรแล้วระบบต้องกลับมาเติมเอง ไม่ต้องกดอะไรเพิ่ม');
+    assert.strictEqual(w.calls.filter((c) => c.method === 'POST' && c.path === 'act_903/campaigns').length, 2,
+      'ผูกบัตรแล้วระบบต้องกลับมาเติมเอง ไม่ต้องกดอะไรเพิ่ม (1 แคมเปญต่อแอด, minAds 2)');
   });
 });
 

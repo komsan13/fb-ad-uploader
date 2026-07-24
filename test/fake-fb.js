@@ -64,6 +64,13 @@ function makeFakeFb(world) {
           return send({ data: [{ uri: 'http://thumb.test/x.jpg', is_preferred: true }] });
         }
 
+        // แอดใต้แคมเปญ — server ใช้พิสูจน์ว่าแคมเปญว่างจริงก่อนลบทิ้ง
+        const campAds = path.match(/^(\d+)\/ads$/);
+        if (campAds) {
+          const setIds = new Set((world.adsets || []).filter((x) => String(x.campaign_id) === campAds[1]).map((x) => String(x.id)));
+          return send({ data: (world.ads || []).filter((ad) => setIds.has(String(ad.adset_id))) });
+        }
+
         // อ่าน node ตรงๆ ด้วย id (แคมเปญ/แอด)
         const node = (world.campaigns || []).concat(world.ads || []).find((x) => x.id === path);
         if (node) return send(node);

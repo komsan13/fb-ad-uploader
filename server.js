@@ -2704,7 +2704,7 @@ const AP_LIMIT_SPEC = {
   maxNewAdsPerDay: {
     def: 6, min: 1, max: 100, int: true, group: 'money',
     label: 'เติมแอดใหม่ได้วันละ (ตัว/บัญชี)',
-    hint: 'กันระบบไล่สร้างรัวเพราะอ่านสถานะผิด — งบเป็น CBO ระดับแคมเปญ เพิ่มแอดไม่ทำให้ใช้เงินเกิน ความเสี่ยงจริงคือแอดหมุนถี่จนบัญชีเข้าตา FB ตั้งสูงต้องมีคลังวิดีโอ/แคปชั่นใหญ่พอไม่ให้วนซ้ำ',
+    hint: 'โครงสร้างคือ 1 แคมเปญต่อแอด: แอดใหม่ทุกตัว = งบเต็มอีกก้อนต่อวัน (เพดานนี้ × งบต่อแคมเปญ = เงินสูงสุดที่ระบบผูกเพิ่มได้ต่อวันต่อบัญชี) ตั้งสูงต้องมีคลังวิดีโอ/แคปชั่นใหญ่พอไม่ให้วนซ้ำ',
   },
   maxPausePerDay: {
     def: 10, min: 1, max: 50, int: true, group: 'money',
@@ -2761,7 +2761,7 @@ const AP_LOG_MAX = 1000;
 
 const AP_DEFAULTS = () => ({
   frozen: {}, handled: {}, retryOf: {}, rejections: {}, fixes: [], log: [],
-  baselined: {}, created: {}, warned: {}, campaign: {}, scaled: {}, retries: {}, counted: {},
+  baselined: {}, created: {}, warned: {}, scaled: {}, retries: {}, counted: {},
   owned: [], paused: {}, pausedLog: [], reasons: {}, noRotate: {}, reasonCounted: {},
 });
 function loadAp() {
@@ -2993,46 +2993,14 @@ async function apResubmit(acct, token, origCreative, adsetId, adName, newMessage
 // สถานะที่ถือว่า "มีอยู่แล้ว ไม่ต้องเติมเพิ่ม" — รวมตัวที่ FB ยังรีวิวไม่เสร็จด้วย
 const AP_COUNTS_AS_LIVE = new Set(['ACTIVE', 'PENDING_REVIEW', 'IN_PROCESS']);
 
-// หาแคมเปญของ autopilot ในบัญชีนี้ — สร้างใหม่ต่อเมื่อมั่นใจว่าไม่มีของเดิมเหลืออยู่จริง
-// งบอยู่ที่ระดับแคมเปญ (CBO) → เพิ่มแอดกี่ตัวก็ไม่ทำให้ใช้จ่ายเกินงบก้อนนี้
-// ทุกแคมเปญที่สร้างเกินมาคือค่าโฆษณาอีกก้อนต่อวัน ที่ไม่มีใครไปเก็บกวาดให้
 const AP_CAMPAIGN_PREFIX = 'Autopilot ';
 
-async function apGetCampaign(acct, token, s, acctId, d, objInfo, cf) {
-  const known = (s.campaign || {})[acctId];
-  if (known) {
-    try {
-      const c = await fb(known, { fields: 'id,status,effective_status' }, 'GET', token);
-      if (c && c.status === 'ACTIVE') return known;
-    } catch { /* อ่านไม่ได้ ไปหาตามชื่อต่อ */ }
-    // ไม่ ACTIVE หรืออ่านไม่ได้ = ยังสรุปไม่ได้ว่าต้องสร้างใหม่
-    // FB รวม "ถูกลบ" กับ "ไม่มีสิทธิ์/สะดุดชั่วคราว" ไว้ในข้อความเดียวกัน แยกไม่ออก
-    // จึงต้องกวาดดูในบัญชีก่อน ดีกว่าเดาแล้วสร้างซ้ำกินงบอีกก้อนต่อวัน
-  }
-
-  // ตามหาแคมเปญของระบบที่มีอยู่แล้ว — กันการสร้างซ้ำเมื่อ state หายหรืออ่าน id เดิมไม่ได้
-  let mine = [];
-  try {
-    const all = await fbAll(`${acct}/campaigns`, { fields: 'id,name,status,objective', limit: 200 }, token);
-    mine = all.filter((c) => String(c.name || '').startsWith(AP_CAMPAIGN_PREFIX));
-  } catch {
-    return null;   // กวาดไม่ได้ก็ยังไม่ตัดสิน รอรอบหน้า ปลอดภัยกว่าสร้างมั่ว
-  }
-  // วัตถุประสงค์ต้องตรงกับที่ตั้งไว้ ไม่งั้น adset ที่สร้างจะยิงไม่ผ่านทุกตัวและวนเตือนทุกรอบ
-  const want = d.objective || 'OUTCOME_SALES';
-  const live = mine.find((c) => c.status === 'ACTIVE' && (!c.objective || c.objective === want));
-  if (live) {
-    s.campaign = s.campaign || {};
-    s.campaign[acctId] = live.id;
-    // ตั้งใจไม่ใส่ลง s.owned — ชื่อขึ้นต้นตรงกันไม่ใช่หลักฐานว่าเราสร้าง
-    // แคมเปญที่ผู้ใช้ตั้งชื่อเองว่า "Autopilot อะไรสักอย่าง" จะได้ไม่โดนขยายงบหรือโดนปิดแอดข้างใน
-    // ใช้เป็นที่เติมแอดได้ แต่ไม่ได้สิทธิ์ไปยุ่งกับงบของมัน
-    return live.id;
-  }
-  // ไม่มีของระบบที่ยังเปิดอยู่เลย → สร้างใหม่ (เจ้าของเลือกให้ระบบดูแลเองเต็มที่)
-
+// โครงสร้าง 1 แคมเปญ : 1 ชุดโฆษณา : 1 แอด — แต่ละแอดได้กล่องงบของตัวเอง (งบเต็มตามค่าที่ตั้ง)
+// แยกกันขาด: ตัวไหนโดนปฏิเสธ/โดนปิดไม่กระทบตัวอื่น และ apScale ขยายงบตัวชนะได้เป็นรายแอดตรงๆ
+// ชื่อใส่วันที่+ชื่อวิดีโอ ให้ตามหาใน Ads Manager ง่าย (แคมเปญเก่าแบบแชร์งบที่มีอยู่ ระบบไม่แตะ)
+async function apCreateCampaign(acct, token, s, d, label, cf) {
   const params = {
-    name: `${AP_CAMPAIGN_PREFIX}${new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10)}`,
+    name: `${AP_CAMPAIGN_PREFIX}${new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10)} • ${String(label || '').slice(0, 80)}`,
     objective: d.objective || 'OUTCOME_SALES',
     status: 'ACTIVE',
     special_ad_categories: [],
@@ -3040,11 +3008,16 @@ async function apGetCampaign(acct, token, s, acctId, d, objInfo, cf) {
   const budget = Number(d.campaignBudget) || 0;
   if (budget > 0) { params.daily_budget = Math.round(budget * cf); params.bid_strategy = 'LOWEST_COST_WITHOUT_CAP'; }
   const c = await fb(`${acct}/campaigns`, params, 'POST', token);
-  s.campaign = s.campaign || {};
-  s.campaign[acctId] = c.id;
-  // จดไว้ว่าแคมเปญนี้ระบบเป็นคนสร้าง — apScale จะขึ้นงบได้เฉพาะของตัวเองเท่านั้น
+  // จดไว้ว่าแคมเปญนี้ระบบเป็นคนสร้าง — apScale/ตัวปิดแอดขาดทุนแตะได้เฉพาะของตัวเองเท่านั้น
   s.owned = s.owned || [];
   if (!s.owned.includes(c.id)) s.owned.push(c.id);
+  // เขียน owned ลงดิสก์ทันที ไม่รอจบรอบ — ปกติ state เซฟตอนจบ tick เท่านั้น ถ้าโปรเซสถูก kill
+  // กลางรอบ (redeploy/OOM) แอดที่เพิ่งเกิดจะยิงเงินจริงโดยแคมเปญไม่อยู่ใน owned
+  // = เกราะปิดขาดทุน/ขยายงบไม่มีสิทธิ์แตะมันตลอดไป และไม่มีตรรกะกวาดหากลับมาแล้ว
+  try {
+    const disk = loadAp();
+    if (!(disk.owned || []).includes(c.id)) { disk.owned = (disk.owned || []).concat(c.id); saveAp(disk); }
+  } catch { /* เขียนไม่ได้ก็ยังอยู่ใน s — saveApMerged ตอนจบรอบเซฟให้ */ }
   return c.id;
 }
 
@@ -3280,6 +3253,26 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages) {
   // แอดที่เพิ่งสร้างจะค้างสถานะรอรีวิวเป็นชั่วโมง ถ้านับแค่ ACTIVE รอบถัดไปจะเห็นว่ายังขาดอยู่เท่าเดิม
   // แล้วเติมซ้ำไปเรื่อยๆ จนชนเพดานรายวัน — ตั้งเป้า 3 ตัวแต่ได้จริง 6 ตัว
   const activeCount = ads.filter((x) => AP_COUNTS_AS_LIVE.has(x.effective_status)).length;
+  // เกินเป้าเกิดได้จริง: แอดที่โดนปฏิเสธ (และระบบเติมตัวแทนไปแล้ว) ถูก FB คืนสถานะภายหลังจาก appeal/รีวิวซ้ำ
+  // โครงสร้าง 1 แคมเปญ/แอด ทำให้ทุกตัวที่เกินคืองบเต็มอีกก้อนที่ยิงเงินจริง — ต้องพักส่วนเกิน
+  // เลือกพักตัวใหม่สุดก่อน (พิสูจน์ตัวเองน้อยสุด) และแตะเฉพาะแอดที่ระบบสร้างเอง (มีใน adMeta)
+  if (!testMode && activeCount > target) {
+    const excess = ads
+      .filter((x) => AP_COUNTS_AS_LIVE.has(x.effective_status) && (s.adMeta || {})[x.id])
+      .sort((x, y) => (((s.adMeta[y.id] || {}).ts || 0) - ((s.adMeta[x.id] || {}).ts || 0)))
+      .slice(0, activeCount - target);
+    for (const ad of excess) {
+      if (!apRunStillAllowed(false)) break;
+      try {
+        await fb(ad.id, { status: 'PAUSED' }, 'POST', prof.accessToken);
+        const m = `⏸️ ${a.name}: แอดยืนเกินเป้า (${activeCount}/${target}) — พัก "${ad.name || ad.id}" (ตัวใหม่สุด) กันใช้เงินเกินที่ตั้งไว้`;
+        alerts.push(m); apLog(s, 'info', m, acctId);
+      } catch (e) {
+        apLog(s, 'warn', `${a.name}: พักแอดส่วนเกิน ${ad.id} ไม่สำเร็จ (${e.message})`, acctId);
+      }
+    }
+    return;
+  }
   if (activeCount >= target) return;
 
   // โหมดทดสอบ: แอดที่สร้างจะถูกปิดไว้ จึงไม่ถูกนับเป็น "ยิงอยู่" ตลอดไป
@@ -3330,6 +3323,19 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages) {
     if (s.warned['blocked:' + acctId] !== apToday()) {
       const m = `🚧 ${a.name}: ไม่เติมแอดให้ — ติดเหตุผลเดิม "${nr.cat}" ซ้ำ ${nr.hits} ครั้ง ต้องแก้ต้นเหตุแล้วปลดล็อกเอง`;
       alerts.push(m); apLog(s, 'blocked', m, acctId); s.warned['blocked:' + acctId] = apToday();
+    }
+    return;
+  }
+
+  // ความล้มเหลวตอน "สร้าง" (แคมเปญ/อัปวิดีโอ/ชุดโฆษณา) ไม่ถูกนับใน maxNewAdsPerDay ซึ่งนับเฉพาะตัวที่สำเร็จ
+  // พังถาวร (เช่นไฟล์เสีย/พารามิเตอร์โดน FB ปัดตก) จะกลายเป็นสร้าง+ลบแคมเปญวนทุกรอบไม่มีวันหยุด
+  // — ลายแบบนั้นในสายตา Meta อันตรายกว่าการหยุดรอคนมาแก้
+  s.createFail = s.createFail || {};
+  s.createFail[acctId] = apRecent(s.createFail[acctId], 24 * 3600 * 1000);
+  if (s.createFail[acctId].length >= 5) {
+    if (s.warned['createfail:' + acctId] !== apToday()) {
+      const m = `🛑 ${a.name}: เติมแอดล้มเหลวซ้ำ ${s.createFail[acctId].length} ครั้งใน 24 ชม. — พักการเติมของบัญชีนี้จนกว่าจะแก้ต้นเหตุ (ดูรายละเอียดใน log)`;
+      alerts.push(m); apLog(s, 'blocked', m, acctId); s.warned['createfail:' + acctId] = apToday();
     }
     return;
   }
@@ -3458,19 +3464,6 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages) {
   const want = testMode ? 1 : Math.min(target - activeCount, room);
   const ranked = videos.slice().sort((x, y) =>
     ((x.usedOn || []).includes(acctId) ? 1 : 0) - ((y.usedOn || []).includes(acctId) ? 1 : 0) || y.ts - x.ts);
-  let campaignId;
-  if (!apRunStillAllowed(testMode)) return;
-  try { campaignId = await apGetCampaign(acct, prof.accessToken, s, acctId, d, objInfo, cf); }
-  catch (e) {
-    const m = `⚠️ ${a.name}: สร้างแคมเปญให้ไม่สำเร็จ (${e.message})`;
-    alerts.push(m); apLog(s, 'warn', m, acctId);
-    return;
-  }
-  if (!campaignId) {
-    apLog(s, 'sleep', `${a.name}: ยังยืนยันแคมเปญของระบบไม่ได้รอบนี้ — ข้ามการเติมแอดไว้ก่อน`, acctId);
-    return;
-  }
-
   // cursor แยกต่อโปรไฟล์ — แต่ละล็อกอิน FB หมุนเพจของตัวเองอิสระ ไม่ให้ offset ปนกันข้ามล็อกอิน
   // migration: ของเดิมบนดิสก์เป็นตัวเลข (cursor รวม) — ไม่ใช่ object เมื่อไหร่รีเซ็ตเป็น {} ก่อนใช้
   if (!s.pageCursor || typeof s.pageCursor !== 'object') s.pageCursor = {};
@@ -3510,13 +3503,36 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages) {
     const pageId = pagePool[(s.pageCursor[prof.id] = (s.pageCursor[prof.id] || 0) + 1) % pagePool.length];
     try {
       if (!apRunStillAllowed(testMode)) break;
-      const adId = await apCreateOneAd(acct, prof.accessToken, campaignId, pageId, pixelId, d, objInfo, item, testMode,
-        (cfg.beneficiaries || {})[acctId], () => {
-          if (s.warned['dsabad:' + acctId] !== apToday()) {
-            const m = `⚠️ ${a.name}: FB ไม่ยอมรับ "ผู้ลงโฆษณา" ที่ตั้งไว้ — แอดขึ้นต่อโดยไม่ระบุ ไปเลือกตัวใหม่ที่เมนู "บัญชี FB"`;
-            alerts.push(m); apLog(s, 'warn', m, acctId); s.warned['dsabad:' + acctId] = apToday();
+      // 1 แคมเปญต่อ 1 แอด — สร้างกล่องงบของตัวเองก่อน แล้วค่อยสร้างชุดโฆษณา+แอดข้างใน
+      const campaignId = await apCreateCampaign(acct, prof.accessToken, s, d, v.name, cf);
+      let adId;
+      try {
+        adId = await apCreateOneAd(acct, prof.accessToken, campaignId, pageId, pixelId, d, objInfo, item, testMode,
+          (cfg.beneficiaries || {})[acctId], () => {
+            if (s.warned['dsabad:' + acctId] !== apToday()) {
+              const m = `⚠️ ${a.name}: FB ไม่ยอมรับ "ผู้ลงโฆษณา" ที่ตั้งไว้ — แอดขึ้นต่อโดยไม่ระบุ ไปเลือกตัวใหม่ที่เมนู "บัญชี FB"`;
+              alerts.push(m); apLog(s, 'warn', m, acctId); s.warned['dsabad:' + acctId] = apToday();
+            }
+          });
+      } catch (e) {
+        // แอดข้างในสร้างไม่สำเร็จ — แต่ "พัง" ไม่ได้แปลว่าไม่มีแอดเสมอไป: POST ที่ FB รับแล้ว
+        // แต่สายหลุดตอนอ่านคำตอบ = แอดเกิดจริง (เหตุผลเดียวกับที่ fb() ไม่ retry POST)
+        // ลบแคมเปญตอนนั้นคือฆ่าแอดที่กำลังจะยิงทิ้งเงียบๆ — ต้องพิสูจน์ว่าว่างจริงถึงลบ อ่านไม่ได้ = ไม่ลบ
+        try {
+          const inside = await fb(`${campaignId}/ads`, { fields: 'id', limit: 1 }, 'GET', prof.accessToken);
+          if (!(inside.data || []).length) {
+            await fb(campaignId, { status: 'DELETED' }, 'POST', prof.accessToken);
+            s.owned = (s.owned || []).filter((x) => x !== campaignId);
+            // ตัดออกจาก owned บนดิสก์ด้วย — apCreateCampaign เพิ่งเขียนลงไปตอนสร้าง
+            try {
+              const disk = loadAp();
+              disk.owned = (disk.owned || []).filter((x) => x !== campaignId);
+              saveAp(disk);
+            } catch { /* saveApMerged ตอนจบรอบจัดให้ตรงเอง */ }
           }
-        });
+        } catch { /* อ่าน/ลบไม่ได้ = คงไว้ใน owned — แคมเปญว่างไม่กินเงิน ส่วนแอดที่อาจเกิดจริงยังอยู่ใต้เกราะ */ }
+        throw e;
+      }
       // จดที่มาของแอด (วิดีโอไหน+แคปชั่นไหน+สกุลเงิน) — ฐานข้อมูลของตัวจัดอันดับแคปชั่น
       if (adId) {
         s.adMeta = s.adMeta || {};
@@ -3529,22 +3545,23 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages) {
     } catch (e) {
       const m = `⚠️ ${a.name}: เติมแอด "${v.name}" ไม่สำเร็จ (${e.message})`;
       alerts.push(m); apLog(s, 'warn', m, acctId);
+      (s.createFail[acctId] = s.createFail[acctId] || []).push(Date.now());
       break; // พลาดแล้วหยุดรอบนี้ ไม่รัวต่อ
     }
   }
   if (ok) {
+    s.createFail[acctId] = [];  // สำเร็จ = ต้นเหตุหายแล้ว ล้างตัวนับ ไม่ให้เหตุชั่วคราวสะสมจนหยุดผิดจังหวะ
     const m = testMode
       ? `🧪 ${a.name}: สร้างแอดทดสอบ ${ok} ตัว — ปิดไว้ ยังไม่ใช้เงินสักบาท เข้า Ads Manager ดูได้เลย ชื่อขึ้นต้นด้วย [ทดสอบ]`
-      : `➕ ${a.name}: แอดยิงอยู่ ${activeCount}/${target} ตัว — เติมให้อีก ${ok} ตัว (เปิดยิงแล้ว งบรวมยังคุมที่ ${Number(d.campaignBudget).toLocaleString()} บาท/วัน)`;
+      : `➕ ${a.name}: แอดยิงอยู่ ${activeCount}/${target} ตัว — เติมให้อีก ${ok} ตัว (เปิดยิงแล้ว แคมเปญละ ${Number(d.campaignBudget).toLocaleString()} บาท/วัน)`;
     alerts.push(m); apLog(s, testMode ? 'test' : 'refill', m, acctId);
   }
 }
 
 // ---------- หยุดแอดที่ขาดทุน ----------
 // หยุดที่ระดับ "แอด" ไม่ใช่ "แคมเปญ" โดยตั้งใจ:
-// แคมเปญคือกล่องงบ (CBO) ที่ระบบดูแล ถ้าไปปิดแคมเปญ กฎ "ไม่มีแคมเปญ ACTIVE → สร้างใหม่"
-// จะสร้างขึ้นมาแทนในรอบถัดไปทันที กลายเป็นวนลูปปิด-สร้างที่เผาเงินไม่หยุด
-// ปิดแอดที่ไม่เวิร์กแล้วให้ apRefill เติมครีเอทีฟใหม่เข้าไปแทน คือวงจรที่ปิดได้จริง
+// โครงสร้างปัจจุบัน 1 แคมเปญ/แอด — ปิดแอดตัวเดียวก็หยุดเงินของกล่องนั้นทั้งก้อนอยู่แล้ว
+// ส่วนแคมเปญแชร์งบรุ่นเก่าที่ยังวิ่งอยู่ การปิดที่แอดคือทางเดียวที่ไม่กระทบตัวอื่นในกล่องเดียวกัน
 async function apPauseLosers(cfg, prof, a, ads, s, alerts) {
   if (!apRunStillAllowed(false)) return;
   if ((cfg.autopilot || {}).testMode) return;   // โหมดทดสอบห้ามแตะของจริงที่ยิงอยู่
@@ -3569,8 +3586,7 @@ async function apPauseLosers(cfg, prof, a, ads, s, alerts) {
   if (room <= 0) return;
 
   // ดูเฉพาะแอดที่ยิงอยู่จริงและอยู่ในแคมเปญที่ระบบ "สร้างเอง" (s.owned) เท่านั้น
-  // ห้ามรวม s.campaign — ตัวนั้นมีแคมเปญที่ "รับมาใช้" จากชื่อขึ้นต้น Autopilot ปนอยู่
-  // ซึ่ง apGetCampaign จงใจไม่ใส่ owned เพื่อไม่แตะของที่เจ้าของตั้งไว้เอง (ดูคอมเมนต์ที่นั่น)
+  // แคมเปญที่เจ้าของสร้าง/ตั้งชื่อเองว่า Autopilot ไม่อยู่ใน owned — ระบบไม่มีสิทธิ์ปิดแอดข้างใน
   const owned = new Set(s.owned || []);
   const live = ads.filter((x) => x.effective_status === 'ACTIVE' && !s.paused[x.id]);
   if (!live.length) return;
@@ -3669,8 +3685,7 @@ async function apScale(cfg, prof, a, s, alerts) {
   s.scaled = s.scaled || {};
   // ขึ้นงบได้เฉพาะแคมเปญที่ระบบสร้างเอง (s.owned) — เดิมไล่ทุกแคมเปญในบัญชี
   // แปลว่าแคมเปญที่เจ้าของทำเองและตั้งงบไว้ตั้งใจแล้ว โดนระบบขยับงบให้วันละ 20% โดยไม่ได้ขอ
-  // และห้ามรวม s.campaign ด้วย — แคมเปญ "รับมาใช้" (ชื่อขึ้นต้น Autopilot แต่ไม่ได้สร้างเอง)
-  // อยู่ในนั้น ซึ่งสัญญาไว้ที่ apGetCampaign ว่าจะไม่ขยับงบ/ไม่ปิดแอดข้างใน
+  // แคมเปญที่แค่ชื่อขึ้นต้น Autopilot แต่ระบบไม่ได้สร้าง ก็ไม่อยู่ใน owned — ห้ามขยับงบเช่นกัน
   const owned = new Set(s.owned || []);
   for (const c of camps) {
     if (!apRunStillAllowed(false)) break;
