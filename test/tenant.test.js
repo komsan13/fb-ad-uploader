@@ -77,7 +77,8 @@ printf 'shop-a:fakehash\\n'
 `, { mode: 0o755 });
     fs.writeFileSync(path.join(bin, 'curl'), `#!/usr/bin/env bash
 case "$*" in
-  *"/app"*|*"/login"*) printf '401' ;;
+  *"/api/"*) printf '401' ;;
+  *"/app"*) printf '303' ;;
   *"/lp"*) printf '200' ;;
   *) printf '200' ;;
 esac

@@ -1,5 +1,6 @@
 const express = require('express');
 const multer = require('multer');
+const bcrypt = require('bcryptjs');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -25,6 +26,12 @@ const PUBLIC_PATH = new URL(PUBLIC_URL).pathname.replace(/\/+$/, '');
 // แม้ผู้ใช้เคยปิด 401 ของ dashboard มาก่อน
 const LOGIN_PATH = PUBLIC_PATH ? `${PUBLIC_PATH}/login` : '/login';
 const PROTECTED_APP_PATH = PUBLIC_PATH ? `${PUBLIC_PATH}/app` : '/app';
+const APP_AUTH_HASH = String(process.env.APP_AUTH_HASH || '');
+const APP_AUTH_ENTRY = /^([A-Za-z0-9._-]{3,64}):(\$2[aby]\$\d\d\$[./A-Za-z0-9]{53})$/.exec(APP_AUTH_HASH);
+const FORM_LOGIN_ENABLED = !!APP_AUTH_ENTRY;
+const WEB_SESSION_COOKIE = `fbad_session_${crypto.createHash('sha256').update(PUBLIC_PATH || 'master').digest('hex').slice(0, 16)}`;
+const WEB_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const webSessions = new Map();
 const PUBLIC_LANDING_PATH = `${PUBLIC_PATH}/lp`;
 const LP_ASSET_URL_PREFIX = `${PUBLIC_PATH}/lp-asset`;
 const lpAssetUrl = (name) => `${LP_ASSET_URL_PREFIX}/${name}`;
@@ -70,6 +77,35 @@ const MAX_LIBRARY_BYTES = Math.max(256 * 1024 * 1024, Math.min(50 * 1024 * 1024 
 const app = express();
 app.set('etag', false);
 app.use(express.json());
+function cookieValue(req, name) {
+  for (const part of String(req.get('cookie') || '').split(';')) {
+    const at = part.indexOf('=');
+    if (at < 0 || part.slice(0, at).trim() !== name) continue;
+    try { return decodeURIComponent(part.slice(at + 1).trim()); } catch { return ''; }
+  }
+  return '';
+}
+function activeWebSession(req) {
+  const token = cookieValue(req, WEB_SESSION_COOKIE);
+  const expiresAt = webSessions.get(token);
+  if (!expiresAt || expiresAt <= Date.now()) {
+    if (token) webSessions.delete(token);
+    return false;
+  }
+  return true;
+}
+// Header นี้ Traefik ใส่เฉพาะ route ที่ยอมให้ใช้ form login; direct localhost ยังใช้ได้สำหรับงานภายใน/test
+function isFormSessionRoute(req) {
+  return req.get('x-fbad-session-route') === '1';
+}
+function requireApiSession(req, res, next) {
+  if (!FORM_LOGIN_ENABLED || !isFormSessionRoute(req) || activeWebSession(req)) return next();
+  return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบก่อน' });
+}
+function requireDashboardSession(req, res, next) {
+  if (!FORM_LOGIN_ENABLED || !isFormSessionRoute(req) || activeWebSession(req)) return next();
+  return res.redirect(303, PUBLIC_PATH || '/');
+}
 // ทุกหน้า private ต้องกัน clickjacking แม้ Traefik ถูกตั้งผิดในอนาคต
 app.use((req, res, next) => {
   res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
@@ -90,11 +126,11 @@ function apiMutationGuard(req, res, next) {
   return next();
 }
 // API ต้องได้ข้อมูลสดเสมอ — ห้าม browser/proxy cache
-app.use('/api', (req, res, next) => { res.set('Cache-Control', 'no-store'); apiMutationGuard(req, res, next); });
+app.use('/api', requireApiSession, (req, res, next) => { res.set('Cache-Control', 'no-store'); apiMutationGuard(req, res, next); });
 function accessEntryPage() {
   // favicon ฝังในเอกสาร เพราะ request /favicon.ico จะโดน Basic Auth และทำให้ browser โผล่ prompt โดยไม่ตั้งใจ
   const icon = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"%3E%3Crect width="64" height="64" rx="14" fill="%23059669"/%3E%3Cpath d="M20 32h24M32 20v24" stroke="white" stroke-width="7" stroke-linecap="round"/%3E%3C/svg%3E';
-  return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><link rel="icon" href="${icon}"><title>เข้าสู่ระบบ | FB Ad Uploader</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f5f7f7;color:#182230;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}.card{box-sizing:border-box;width:min(440px,calc(100% - 32px));padding:36px;border:1px solid #dce5e2;border-radius:18px;background:white;box-shadow:0 16px 42px #053d2b16}.mark{display:grid;place-items:center;width:48px;height:48px;border-radius:14px;background:#059669;color:#fff;font-size:27px;font-weight:800}.eyebrow{margin:20px 0 7px;color:#047857;font-size:12px;font-weight:800;letter-spacing:.08em}h1{margin:0;font-size:27px;line-height:1.25}p{color:#64748b;line-height:1.65}a{display:block;margin-top:24px;padding:13px 16px;border-radius:10px;background:#059669;color:#fff;text-align:center;text-decoration:none;font-weight:750}a:hover{background:#047857}.help{margin:17px 0 0;font-size:13px;color:#7b8794}</style></head><body><main class="card"><div class="mark">+</div><div class="eyebrow">FB AD UPLOADER</div><h1>เข้าสู่พื้นที่ทำงาน</h1><p>กดปุ่มเพื่อใส่ชื่อผู้ใช้และรหัสผ่านในกล่องเข้าสู่ระบบของเบราว์เซอร์</p><a href="${LOGIN_PATH}">เข้าสู่ระบบ</a><p class="help">หลังเข้าสู่พื้นที่ทำงานแล้ว จึงเชื่อมต่อบัญชี Facebook ได้จากเมนูบัญชี FB</p></main></body></html>`;
+  return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><link rel="icon" href="${icon}"><title>เข้าสู่ระบบ | FB Ad Uploader</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f5f7f7;color:#182230;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}.card{box-sizing:border-box;width:min(440px,calc(100% - 32px));padding:36px;border:1px solid #dce5e2;border-radius:18px;background:white;box-shadow:0 16px 42px #053d2b16}.mark{display:grid;place-items:center;width:48px;height:48px;border-radius:14px;background:#059669;color:#fff;font-size:27px;font-weight:800}.eyebrow{margin:20px 0 7px;color:#047857;font-size:12px;font-weight:800;letter-spacing:.08em}h1{margin:0;font-size:27px;line-height:1.25}p{color:#64748b;line-height:1.65}.field{display:grid;gap:6px;margin-top:15px;font-size:13px;font-weight:700}.field input{box-sizing:border-box;width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:10px;font:inherit}.field input:focus{outline:3px solid #05966924;border-color:#059669}button{width:100%;margin-top:22px;padding:13px 16px;border:0;border-radius:10px;background:#059669;color:#fff;font:750 15px inherit;cursor:pointer}button:hover{background:#047857}button:disabled{opacity:.65;cursor:wait}.error{min-height:20px;margin:14px 0 0;color:#be123c;font-size:13px}.help{margin:17px 0 0;font-size:13px;color:#7b8794}</style></head><body><main class="card"><div class="mark">+</div><div class="eyebrow">FB AD UPLOADER</div><h1>เข้าสู่พื้นที่ทำงาน</h1><p>กรอกชื่อผู้ใช้และรหัสผ่านของพื้นที่นี้</p><form id="loginForm"><label class="field">ชื่อผู้ใช้<input name="username" autocomplete="username" required maxlength="64"></label><label class="field">รหัสผ่าน<input name="password" type="password" autocomplete="current-password" required></label><button type="submit">เข้าสู่ระบบ</button><div class="error" id="loginError" role="alert"></div></form><p class="help">รหัสผ่านจะส่งผ่าน HTTPS เพื่อยืนยันตัวตนเท่านั้น และไม่ถูกใส่ไว้ใน URL</p></main><script>(()=>{const form=document.getElementById('loginForm');const error=document.getElementById('loginError');const loginUrl=${JSON.stringify(LOGIN_PATH)};const next=${JSON.stringify(PROTECTED_APP_PATH)};form.addEventListener('submit',async(e)=>{e.preventDefault();error.textContent='';const button=form.querySelector('button');button.disabled=true;try{const r=await fetch(loginUrl,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({username:form.username.value,password:form.password.value})});const body=await r.json().catch(()=>({}));if(!r.ok)throw new Error(body.error||'เข้าสู่ระบบไม่สำเร็จ');location.assign(body.next||next)}catch(err){error.textContent=err.message||'เข้าสู่ระบบไม่สำเร็จ';form.password.value='';button.disabled=false}})})()</script></body></html>`;
 }
 // Disable only Express's automatic index. Static assets remain available as before.
 // Traefik permits this path without Basic Auth; /app still passes the existing Basic Auth middleware.
@@ -103,14 +139,32 @@ app.get('/', (req, res) => {
   res.set('Cache-Control', 'no-store');
   res.type('html').send(accessEntryPage());
 });
-app.get(['/login', '/login/'], (req, res) => res.redirect(303, PROTECTED_APP_PATH));
-app.get(['/app', '/app/'], (req, res) => {
+app.get(['/login', '/login/'], (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.type('html').send(accessEntryPage());
+});
+app.post(['/login', '/login/'], async (req, res) => {
+  const origin = req.get('origin');
+  if (origin && origin !== PUBLIC_ORIGIN) return res.status(403).json({ error: 'คำขอเข้าสู่ระบบต้องมาจากหน้าเว็บระบบเดียวกัน' });
+  const username = String(req.body?.username || '').trim();
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  if (!FORM_LOGIN_ENABLED) return res.status(503).json({ error: 'ระบบเข้าสู่ระบบยังตั้งค่าไม่ครบ' });
+  let valid = false;
+  try { valid = username === APP_AUTH_ENTRY[1] && password.length <= 1024 && await bcrypt.compare(password, APP_AUTH_ENTRY[2]); } catch { valid = false; }
+  if (!valid) return res.status(401).json({ error: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' });
+  const token = crypto.randomBytes(32).toString('base64url');
+  webSessions.set(token, Date.now() + WEB_SESSION_TTL_MS);
+  const cookiePath = PUBLIC_PATH ? `${PUBLIC_PATH}/` : '/';
+  res.cookie(WEB_SESSION_COOKIE, token, { httpOnly: true, secure: PUBLIC_ORIGIN.startsWith('https://'), sameSite: 'strict', path: cookiePath, maxAge: WEB_SESSION_TTL_MS });
+  return res.json({ ok: true, next: PROTECTED_APP_PATH });
+});
+app.get(['/app', '/app/'], requireDashboardSession, (req, res) => {
   res.set('Cache-Control', 'no-store');
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 // ลิงก์ตรงสำหรับหน้าจัดการสมาชิกต้องมีเฉพาะแอดมินหลักเท่านั้น
 // tenant instance ใช้ source เดียวกัน แต่ห้ามมี route นี้แม้จะพิมพ์ URL ตรง
-app.get(['/members', '/members/'], (req, res) => {
+app.get(['/members', '/members/'], requireDashboardSession, (req, res) => {
   if (!TENANT_CONTROL_ENABLED) return res.status(404).end();
   res.set('Cache-Control', 'no-store');
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -1900,7 +1954,7 @@ function oauthStartGuard(req, res, next) {
   }
   return next();
 }
-app.get('/auth/login', oauthStartGuard, (req, res) => {
+app.get('/auth/login', requireDashboardSession, oauthStartGuard, (req, res) => {
   const cfg = loadConfig();
   const prof = cfg.profiles.find((p) => p.id === req.query.profile);
   if (!prof) return res.status(404).send('ไม่พบบัญชี');

@@ -165,6 +165,7 @@ if ! docker run -d --name fbad --restart unless-stopped \
   -e PUBLIC_URL="https://ad.senball.com" \
   -e PORT=4000 \
   -e CONFIG_PATH=/data/config.json \
+  -e "APP_AUTH_HASH=$HASH" \
   -v /opt/fbad-data:/data \
   "${PROVISIONER_ARGS[@]}" \
   "${CENTRAL_OAUTH_ARGS[@]}" \
@@ -176,9 +177,11 @@ if ! docker run -d --name fbad --restart unless-stopped \
   --label traefik.http.routers.fbad.middlewares=fbad-auth \
   --label "traefik.http.middlewares.fbad-auth.basicauth.users=$HASH" \
   --label 'traefik.http.middlewares.fbad-auth.basicauth.realm=fbad-master-login-v2' \
-  --label 'traefik.http.routers.fbadpub.rule=Host(`ad.senball.com`) && (Path(`/`) || Path(`/privacy.html`) || Path(`/terms.html`) || Path(`/meta-app-icon.png`) || Path(`/oauth/facebook/callback`) || Path(`/oauth/review`) || PathPrefix(`/oauth/review/`) || Path(`/lp`) || Path(`/lp/`) || PathPrefix(`/lp-asset/`))' \
+  --label 'traefik.http.routers.fbadpub.rule=Host(`ad.senball.com`) && (Path(`/`) || Path(`/login`) || Path(`/login/`) || Path(`/app`) || Path(`/app/`) || Path(`/members`) || Path(`/members/`) || Path(`/auth/login`) || Path(`/api`) || PathPrefix(`/api/`) || Path(`/privacy.html`) || Path(`/terms.html`) || Path(`/meta-app-icon.png`) || Path(`/oauth/facebook/callback`) || Path(`/oauth/review`) || PathPrefix(`/oauth/review/`) || Path(`/lp`) || Path(`/lp/`) || PathPrefix(`/lp-asset/`))' \
   --label traefik.http.routers.fbadpub.entrypoints=websecure \
   --label traefik.http.routers.fbadpub.service=fbad \
+  --label traefik.http.routers.fbadpub.middlewares=fbad-session-route \
+  --label 'traefik.http.middlewares.fbad-session-route.headers.customrequestheaders.X-Fbad-Session-Route=1' \
   --label traefik.http.routers.fbadpub.tls.certresolver=le \
   --label traefik.http.services.fbad.loadbalancer.server.port=4000 \
   fbad:latest >/dev/null; then
@@ -187,20 +190,21 @@ if ! docker run -d --name fbad --restart unless-stopped \
 fi
 
 sleep 2
-MASTER_LP_STATUS=""; MASTER_ENTRY_STATUS=""; MASTER_LOGIN_STATUS=""; MASTER_APP_STATUS=""; MASTER_OAUTH_STATUS=""; MASTER_REVIEW_STATUS=""; MASTER_TERMS_STATUS=""
+MASTER_LP_STATUS=""; MASTER_ENTRY_STATUS=""; MASTER_LOGIN_STATUS=""; MASTER_APP_STATUS=""; MASTER_API_STATUS=""; MASTER_OAUTH_STATUS=""; MASTER_REVIEW_STATUS=""; MASTER_TERMS_STATUS=""
 for _ in {1..5}; do
   MASTER_LP_STATUS="$(curl -sk --connect-timeout 5 --resolve ad.senball.com:443:127.0.0.1 -o /dev/null -w '%{http_code}' https://ad.senball.com/lp || true)"
   MASTER_ENTRY_STATUS="$(curl -sk --connect-timeout 5 --resolve ad.senball.com:443:127.0.0.1 -o /dev/null -w '%{http_code}' https://ad.senball.com/ || true)"
   MASTER_LOGIN_STATUS="$(curl -sk --connect-timeout 5 --resolve ad.senball.com:443:127.0.0.1 -o /dev/null -w '%{http_code}' https://ad.senball.com/login || true)"
   MASTER_APP_STATUS="$(curl -sk --connect-timeout 5 --resolve ad.senball.com:443:127.0.0.1 -o /dev/null -w '%{http_code}' https://ad.senball.com/app || true)"
+  MASTER_API_STATUS="$(curl -sk --connect-timeout 5 --resolve ad.senball.com:443:127.0.0.1 -o /dev/null -w '%{http_code}' https://ad.senball.com/api/env || true)"
   MASTER_OAUTH_STATUS="$(curl -sk --connect-timeout 5 --resolve ad.senball.com:443:127.0.0.1 -o /dev/null -w '%{http_code}' https://ad.senball.com/oauth/facebook/callback || true)"
   MASTER_REVIEW_STATUS="$(curl -sk --connect-timeout 5 --resolve ad.senball.com:443:127.0.0.1 -o /dev/null -w '%{http_code}' https://ad.senball.com/oauth/review || true)"
   MASTER_TERMS_STATUS="$(curl -sk --connect-timeout 5 --resolve ad.senball.com:443:127.0.0.1 -o /dev/null -w '%{http_code}' https://ad.senball.com/terms.html || true)"
-  [ "$MASTER_LP_STATUS" = "200" ] && [ "$MASTER_ENTRY_STATUS" = "200" ] && [ "$MASTER_LOGIN_STATUS" = "401" ] && [ "$MASTER_APP_STATUS" = "401" ] && [ "$MASTER_OAUTH_STATUS" = "200" ] && [ "$MASTER_REVIEW_STATUS" = "200" ] && [ "$MASTER_TERMS_STATUS" = "200" ] && break
+  [ "$MASTER_LP_STATUS" = "200" ] && [ "$MASTER_ENTRY_STATUS" = "200" ] && [ "$MASTER_LOGIN_STATUS" = "200" ] && [ "$MASTER_APP_STATUS" = "303" ] && [ "$MASTER_API_STATUS" = "401" ] && [ "$MASTER_OAUTH_STATUS" = "200" ] && [ "$MASTER_REVIEW_STATUS" = "200" ] && [ "$MASTER_TERMS_STATUS" = "200" ] && break
   sleep 2
 done
-if ! docker exec fbad wget -qO /dev/null http://localhost:4000/ || [ "$MASTER_LP_STATUS" != "200" ] || [ "$MASTER_ENTRY_STATUS" != "200" ] || [ "$MASTER_LOGIN_STATUS" != "401" ] || [ "$MASTER_APP_STATUS" != "401" ] || [ "$MASTER_OAUTH_STATUS" != "200" ] || [ "$MASTER_REVIEW_STATUS" != "200" ] || [ "$MASTER_TERMS_STATUS" != "200" ]; then
-  echo "❌ master health/routing ไม่ผ่าน (lp=${MASTER_LP_STATUS:-none}, entry=${MASTER_ENTRY_STATUS:-none}, login=${MASTER_LOGIN_STATUS:-none}, app=${MASTER_APP_STATUS:-none}, oauth=${MASTER_OAUTH_STATUS:-none}, review=${MASTER_REVIEW_STATUS:-none}, terms=${MASTER_TERMS_STATUS:-none}) — จะกู้ตัวเดิมกลับแล้ว" >&2
+if ! docker exec fbad wget -qO /dev/null http://localhost:4000/ || [ "$MASTER_LP_STATUS" != "200" ] || [ "$MASTER_ENTRY_STATUS" != "200" ] || [ "$MASTER_LOGIN_STATUS" != "200" ] || [ "$MASTER_APP_STATUS" != "303" ] || [ "$MASTER_API_STATUS" != "401" ] || [ "$MASTER_OAUTH_STATUS" != "200" ] || [ "$MASTER_REVIEW_STATUS" != "200" ] || [ "$MASTER_TERMS_STATUS" != "200" ]; then
+  echo "❌ master health/routing ไม่ผ่าน (lp=${MASTER_LP_STATUS:-none}, entry=${MASTER_ENTRY_STATUS:-none}, login=${MASTER_LOGIN_STATUS:-none}, app=${MASTER_APP_STATUS:-none}, api=${MASTER_API_STATUS:-none}, oauth=${MASTER_OAUTH_STATUS:-none}, review=${MASTER_REVIEW_STATUS:-none}, terms=${MASTER_TERMS_STATUS:-none}) — จะกู้ตัวเดิมกลับแล้ว" >&2
   exit 1
 fi
 

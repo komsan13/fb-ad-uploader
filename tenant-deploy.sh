@@ -205,6 +205,7 @@ if ! docker run -d --name "$CONTAINER" --restart unless-stopped \
   --cpus "$TENANT_CPU_LIMIT" \
   --pids-limit "$TENANT_PIDS_LIMIT" \
   -e "PUBLIC_URL=https://${DOMAIN}/p/${PROFILE_CODE}" \
+  -e "APP_AUTH_HASH=${AUTH_HASH}" \
   -e PORT=4000 \
   -e CONFIG_PATH=/data/config.json \
   -e MAX_PROFILES=1 \
@@ -223,10 +224,11 @@ if ! docker run -d --name "$CONTAINER" --restart unless-stopped \
   --label "traefik.http.middlewares.${AUTH}.basicauth.users=${AUTH_HASH}" \
   --label "traefik.http.middlewares.${AUTH}.basicauth.realm=fbad-tenant-${PROFILE_CODE}-login-v2" \
   --label "traefik.http.middlewares.${ROUTER}-strip.stripprefix.prefixes=/p/${PROFILE_CODE}" \
-  --label "traefik.http.routers.${PUBLIC_ROUTER}.rule=Host(\`${DOMAIN}\`) && (Path(\`/p/${PROFILE_CODE}\`) || Path(\`/p/${PROFILE_CODE}/\`) || Path(\`/p/${PROFILE_CODE}/privacy.html\`) || Path(\`/p/${PROFILE_CODE}/lp\`) || Path(\`/p/${PROFILE_CODE}/lp/\`) || PathPrefix(\`/p/${PROFILE_CODE}/lp-asset/\`))" \
+  --label "traefik.http.routers.${PUBLIC_ROUTER}.rule=Host(\`${DOMAIN}\`) && (Path(\`/p/${PROFILE_CODE}\`) || Path(\`/p/${PROFILE_CODE}/\`) || Path(\`/p/${PROFILE_CODE}/login\`) || Path(\`/p/${PROFILE_CODE}/login/\`) || Path(\`/p/${PROFILE_CODE}/app\`) || Path(\`/p/${PROFILE_CODE}/app/\`) || Path(\`/p/${PROFILE_CODE}/auth/login\`) || Path(\`/p/${PROFILE_CODE}/api\`) || PathPrefix(\`/p/${PROFILE_CODE}/api/\`) || Path(\`/p/${PROFILE_CODE}/privacy.html\`) || Path(\`/p/${PROFILE_CODE}/lp\`) || Path(\`/p/${PROFILE_CODE}/lp/\`) || PathPrefix(\`/p/${PROFILE_CODE}/lp-asset/\`))" \
   --label "traefik.http.routers.${PUBLIC_ROUTER}.entrypoints=websecure" \
   --label "traefik.http.routers.${PUBLIC_ROUTER}.service=${SERVICE}" \
-  --label "traefik.http.routers.${PUBLIC_ROUTER}.middlewares=${ROUTER}-strip" \
+  --label "traefik.http.routers.${PUBLIC_ROUTER}.middlewares=${ROUTER}-strip,${PUBLIC_ROUTER}-session-route" \
+  --label "traefik.http.middlewares.${PUBLIC_ROUTER}-session-route.headers.customrequestheaders.X-Fbad-Session-Route=1" \
   --label "traefik.http.routers.${PUBLIC_ROUTER}.tls.certresolver=${CERTRESOLVER}" \
   --label "traefik.http.services.${SERVICE}.loadbalancer.server.port=4000" \
   "$TENANT_IMAGE" >/dev/null; then
@@ -242,19 +244,20 @@ if ! docker exec "$CONTAINER" wget -qO /dev/null http://localhost:4000/; then
   echo "container ใหม่ไม่ตอบ — กู้ instance เดิมกลับแล้ว" >&2
   exit 1
 fi
-LANDING_STATUS=""; ENTRY_STATUS=""; LOGIN_STATUS=""; APP_STATUS=""
+LANDING_STATUS=""; ENTRY_STATUS=""; LOGIN_STATUS=""; APP_STATUS=""; API_STATUS=""
 for _ in {1..5}; do
   LANDING_STATUS="$(curl -sk --connect-timeout 5 --resolve "${DOMAIN}:443:127.0.0.1" -o /dev/null -w '%{http_code}' "https://${DOMAIN}/p/${PROFILE_CODE}/lp" || true)"
   ENTRY_STATUS="$(curl -sk --connect-timeout 5 --resolve "${DOMAIN}:443:127.0.0.1" -o /dev/null -w '%{http_code}' "https://${DOMAIN}/p/${PROFILE_CODE}/" || true)"
   LOGIN_STATUS="$(curl -sk --connect-timeout 5 --resolve "${DOMAIN}:443:127.0.0.1" -o /dev/null -w '%{http_code}' "https://${DOMAIN}/p/${PROFILE_CODE}/login" || true)"
   APP_STATUS="$(curl -sk --connect-timeout 5 --resolve "${DOMAIN}:443:127.0.0.1" -o /dev/null -w '%{http_code}' "https://${DOMAIN}/p/${PROFILE_CODE}/app" || true)"
-  [ "$LANDING_STATUS" = "200" ] && [ "$ENTRY_STATUS" = "200" ] && [ "$LOGIN_STATUS" = "401" ] && [ "$APP_STATUS" = "401" ] && break
+  API_STATUS="$(curl -sk --connect-timeout 5 --resolve "${DOMAIN}:443:127.0.0.1" -o /dev/null -w '%{http_code}' "https://${DOMAIN}/p/${PROFILE_CODE}/api/env" || true)"
+  [ "$LANDING_STATUS" = "200" ] && [ "$ENTRY_STATUS" = "200" ] && [ "$LOGIN_STATUS" = "200" ] && [ "$APP_STATUS" = "303" ] && [ "$API_STATUS" = "401" ] && break
   sleep 2
 done
-if [ "$LANDING_STATUS" != "200" ] || [ "$ENTRY_STATUS" != "200" ] || [ "$LOGIN_STATUS" != "401" ] || [ "$APP_STATUS" != "401" ]; then
+if [ "$LANDING_STATUS" != "200" ] || [ "$ENTRY_STATUS" != "200" ] || [ "$LOGIN_STATUS" != "200" ] || [ "$APP_STATUS" != "303" ] || [ "$API_STATUS" != "401" ]; then
   docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
   rollback_previous_container
-  echo "route tenant ใหม่ไม่ผ่าน (lp=${LANDING_STATUS:-none}, entry=${ENTRY_STATUS:-none}, login=${LOGIN_STATUS:-none}, app=${APP_STATUS:-none}) — กู้ instance เดิมกลับแล้ว" >&2
+  echo "route tenant ใหม่ไม่ผ่าน (lp=${LANDING_STATUS:-none}, entry=${ENTRY_STATUS:-none}, login=${LOGIN_STATUS:-none}, app=${APP_STATUS:-none}, api=${API_STATUS:-none}) — กู้ instance เดิมกลับแล้ว" >&2
   exit 1
 fi
 if [ -n "$ROLLBACK_CONTAINER" ]; then docker rm -f "$ROLLBACK_CONTAINER" >/dev/null; fi
