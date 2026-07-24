@@ -46,4 +46,12 @@ test('Traefik เปิดเฉพาะ root entry ของ master และ 
     'tenant root ต้องถึงหน้า login โดยไม่เปิด /app หรือ API เป็น public');
   assert.doesNotMatch(master, /Path\(`\/app`\)/, '/app ของ master ต้องยังอยู่หลัง Basic Auth');
   assert.doesNotMatch(tenant, /Path\(\\`\/p\/\$\{PROFILE_CODE\}\/app\\`\)/, '/app ของ tenant ต้องยังอยู่หลัง Basic Auth');
+  assert.match(master, /MASTER_ENTRY_STATUS.*MASTER_APP_STATUS/s,
+    'master deploy ต้องแยกตรวจหน้า entry public ออกจาก dashboard private');
+  assert.match(master, /MASTER_ENTRY_STATUS" = "200".*MASTER_APP_STATUS" = "401"/s,
+    'master deploy ต้องยอมให้ root เป็น 200 และบังคับ /app เป็น 401');
+  assert.match(tenant, /ENTRY_STATUS.*APP_STATUS/s,
+    'tenant deploy ต้องแยกตรวจหน้า entry public ออกจาก dashboard private');
+  assert.match(tenant, /ENTRY_STATUS" = "200".*APP_STATUS" = "401"/s,
+    'tenant deploy ต้องยอมให้ root เป็น 200 และบังคับ /app เป็น 401');
 });

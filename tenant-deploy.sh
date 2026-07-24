@@ -242,17 +242,18 @@ if ! docker exec "$CONTAINER" wget -qO /dev/null http://localhost:4000/; then
   echo "container ใหม่ไม่ตอบ — กู้ instance เดิมกลับแล้ว" >&2
   exit 1
 fi
-LANDING_STATUS=""; ADMIN_STATUS=""
+LANDING_STATUS=""; ENTRY_STATUS=""; APP_STATUS=""
 for _ in {1..5}; do
   LANDING_STATUS="$(curl -sk --connect-timeout 5 --resolve "${DOMAIN}:443:127.0.0.1" -o /dev/null -w '%{http_code}' "https://${DOMAIN}/p/${PROFILE_CODE}/lp" || true)"
-  ADMIN_STATUS="$(curl -sk --connect-timeout 5 --resolve "${DOMAIN}:443:127.0.0.1" -o /dev/null -w '%{http_code}' "https://${DOMAIN}/p/${PROFILE_CODE}/" || true)"
-  [ "$LANDING_STATUS" = "200" ] && [ "$ADMIN_STATUS" = "401" ] && break
+  ENTRY_STATUS="$(curl -sk --connect-timeout 5 --resolve "${DOMAIN}:443:127.0.0.1" -o /dev/null -w '%{http_code}' "https://${DOMAIN}/p/${PROFILE_CODE}/" || true)"
+  APP_STATUS="$(curl -sk --connect-timeout 5 --resolve "${DOMAIN}:443:127.0.0.1" -o /dev/null -w '%{http_code}' "https://${DOMAIN}/p/${PROFILE_CODE}/app" || true)"
+  [ "$LANDING_STATUS" = "200" ] && [ "$ENTRY_STATUS" = "200" ] && [ "$APP_STATUS" = "401" ] && break
   sleep 2
 done
-if [ "$LANDING_STATUS" != "200" ] || [ "$ADMIN_STATUS" != "401" ]; then
+if [ "$LANDING_STATUS" != "200" ] || [ "$ENTRY_STATUS" != "200" ] || [ "$APP_STATUS" != "401" ]; then
   docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
   rollback_previous_container
-  echo "route tenant ใหม่ไม่ผ่าน (lp=${LANDING_STATUS:-none}, admin=${ADMIN_STATUS:-none}) — กู้ instance เดิมกลับแล้ว" >&2
+  echo "route tenant ใหม่ไม่ผ่าน (lp=${LANDING_STATUS:-none}, entry=${ENTRY_STATUS:-none}, app=${APP_STATUS:-none}) — กู้ instance เดิมกลับแล้ว" >&2
   exit 1
 fi
 if [ -n "$ROLLBACK_CONTAINER" ]; then docker rm -f "$ROLLBACK_CONTAINER" >/dev/null; fi

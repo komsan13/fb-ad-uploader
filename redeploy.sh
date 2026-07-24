@@ -187,18 +187,19 @@ if ! docker run -d --name fbad --restart unless-stopped \
 fi
 
 sleep 2
-MASTER_LP_STATUS=""; MASTER_ADMIN_STATUS=""; MASTER_OAUTH_STATUS=""; MASTER_REVIEW_STATUS=""; MASTER_TERMS_STATUS=""
+MASTER_LP_STATUS=""; MASTER_ENTRY_STATUS=""; MASTER_APP_STATUS=""; MASTER_OAUTH_STATUS=""; MASTER_REVIEW_STATUS=""; MASTER_TERMS_STATUS=""
 for _ in {1..5}; do
   MASTER_LP_STATUS="$(curl -sk --connect-timeout 5 --resolve ad.senball.com:443:127.0.0.1 -o /dev/null -w '%{http_code}' https://ad.senball.com/lp || true)"
-  MASTER_ADMIN_STATUS="$(curl -sk --connect-timeout 5 --resolve ad.senball.com:443:127.0.0.1 -o /dev/null -w '%{http_code}' https://ad.senball.com/ || true)"
+  MASTER_ENTRY_STATUS="$(curl -sk --connect-timeout 5 --resolve ad.senball.com:443:127.0.0.1 -o /dev/null -w '%{http_code}' https://ad.senball.com/ || true)"
+  MASTER_APP_STATUS="$(curl -sk --connect-timeout 5 --resolve ad.senball.com:443:127.0.0.1 -o /dev/null -w '%{http_code}' https://ad.senball.com/app || true)"
   MASTER_OAUTH_STATUS="$(curl -sk --connect-timeout 5 --resolve ad.senball.com:443:127.0.0.1 -o /dev/null -w '%{http_code}' https://ad.senball.com/oauth/facebook/callback || true)"
   MASTER_REVIEW_STATUS="$(curl -sk --connect-timeout 5 --resolve ad.senball.com:443:127.0.0.1 -o /dev/null -w '%{http_code}' https://ad.senball.com/oauth/review || true)"
   MASTER_TERMS_STATUS="$(curl -sk --connect-timeout 5 --resolve ad.senball.com:443:127.0.0.1 -o /dev/null -w '%{http_code}' https://ad.senball.com/terms.html || true)"
-  [ "$MASTER_LP_STATUS" = "200" ] && [ "$MASTER_ADMIN_STATUS" = "401" ] && [ "$MASTER_OAUTH_STATUS" = "200" ] && [ "$MASTER_REVIEW_STATUS" = "200" ] && [ "$MASTER_TERMS_STATUS" = "200" ] && break
+  [ "$MASTER_LP_STATUS" = "200" ] && [ "$MASTER_ENTRY_STATUS" = "200" ] && [ "$MASTER_APP_STATUS" = "401" ] && [ "$MASTER_OAUTH_STATUS" = "200" ] && [ "$MASTER_REVIEW_STATUS" = "200" ] && [ "$MASTER_TERMS_STATUS" = "200" ] && break
   sleep 2
 done
-if ! docker exec fbad wget -qO /dev/null http://localhost:4000/ || [ "$MASTER_LP_STATUS" != "200" ] || [ "$MASTER_ADMIN_STATUS" != "401" ] || [ "$MASTER_OAUTH_STATUS" != "200" ] || [ "$MASTER_REVIEW_STATUS" != "200" ] || [ "$MASTER_TERMS_STATUS" != "200" ]; then
-  echo "❌ master health/routing ไม่ผ่าน (lp=${MASTER_LP_STATUS:-none}, admin=${MASTER_ADMIN_STATUS:-none}, oauth=${MASTER_OAUTH_STATUS:-none}, review=${MASTER_REVIEW_STATUS:-none}, terms=${MASTER_TERMS_STATUS:-none}) — จะกู้ตัวเดิมกลับแล้ว" >&2
+if ! docker exec fbad wget -qO /dev/null http://localhost:4000/ || [ "$MASTER_LP_STATUS" != "200" ] || [ "$MASTER_ENTRY_STATUS" != "200" ] || [ "$MASTER_APP_STATUS" != "401" ] || [ "$MASTER_OAUTH_STATUS" != "200" ] || [ "$MASTER_REVIEW_STATUS" != "200" ] || [ "$MASTER_TERMS_STATUS" != "200" ]; then
+  echo "❌ master health/routing ไม่ผ่าน (lp=${MASTER_LP_STATUS:-none}, entry=${MASTER_ENTRY_STATUS:-none}, app=${MASTER_APP_STATUS:-none}, oauth=${MASTER_OAUTH_STATUS:-none}, review=${MASTER_REVIEW_STATUS:-none}, terms=${MASTER_TERMS_STATUS:-none}) — จะกู้ตัวเดิมกลับแล้ว" >&2
   exit 1
 fi
 
