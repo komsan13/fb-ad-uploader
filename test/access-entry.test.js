@@ -14,14 +14,18 @@ async function boot(t, extraEnv = {}) {
   return srv;
 }
 
-test('รากต้องเป็นหน้าเข้าสู่ระบบ และ dashboard อยู่ที่ /app', async (t) => {
+test('รากต้องเป็นหน้าเข้าสู่ระบบ และใช้ /login เป็นจุดเริ่มก่อน dashboard', async (t) => {
   const { base } = await boot(t);
   const root = await fetch(base + '/');
   const rootHtml = await root.text();
   assert.strictEqual(root.status, 200);
   assert.match(rootHtml, /เข้าสู่พื้นที่ทำงาน/);
-  assert.match(rootHtml, /href="\/app"/);
+  assert.match(rootHtml, /href="\/login"/);
   assert.match(rootHtml, /data:image\/svg\+xml/, 'หน้า login ต้องฝัง favicon เพื่อไม่ให้ browser ขอ favicon ที่ถูกป้องกัน');
+
+  const login = await fetch(base + '/login', { redirect: 'manual' });
+  assert.strictEqual(login.status, 303);
+  assert.strictEqual(login.headers.get('location'), '/app');
 
   const app = await fetch(base + '/app');
   const appHtml = await app.text();
@@ -29,11 +33,11 @@ test('รากต้องเป็นหน้าเข้าสู่ระ�
   assert.match(appHtml, /FB Ad Uploader/, 'dashboard ต้องยังเปิดจากเส้นทางหลัง Basic Auth ได้');
 });
 
-test('หน้าเข้าสู่ระบบของ tenant ต้องพาไปยัง /p/<code>/app ไม่หลุดไป master', async (t) => {
+test('หน้าเข้าสู่ระบบของ tenant ต้องพาไปยัง /p/<code>/login ไม่หลุดไป master', async (t) => {
   const code = 'a'.repeat(32);
   const { base } = await boot(t, { PUBLIC_URL_PATH: `/p/${code}` });
   const page = await (await fetch(base + '/')).text();
-  assert.match(page, new RegExp(`href="/p/${code}/app"`));
+  assert.match(page, new RegExp(`href="/p/${code}/login"`));
 });
 
 test('Traefik เปิดเฉพาะ root entry ของ master และ tenant โดยให้ /app ยังอยู่หลัง Basic Auth', () => {
@@ -54,4 +58,8 @@ test('Traefik เปิดเฉพาะ root entry ของ master และ 
     'tenant deploy ต้องแยกตรวจหน้า entry public ออกจาก dashboard private');
   assert.match(tenant, /ENTRY_STATUS" = "200".*APP_STATUS" = "401"/s,
     'tenant deploy ต้องยอมให้ root เป็น 200 และบังคับ /app เป็น 401');
+  assert.match(master, /realm=fbad-master-login-v2/,
+    'ต้องเปลี่ยน Basic Auth realm เพื่อให้ browser ที่เคยยกเลิก challenge แสดงกล่อง login ใหม่');
+  assert.match(tenant, /realm=fbad-tenant-\$\{PROFILE_CODE\}-login-v2/,
+    'tenant ต้องมี realm ใหม่ของตัวเองเพื่อไม่แชร์ session กับ master');
 });
