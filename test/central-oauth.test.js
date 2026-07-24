@@ -34,12 +34,46 @@ test('deploy เปิดเฉพาะ callback กลาง และไม�
   const masterDeploy = fs.readFileSync(path.join(projectRoot, 'redeploy.sh'), 'utf8');
   const tenantDeploy = fs.readFileSync(path.join(projectRoot, 'tenant-deploy.sh'), 'utf8');
   assert.match(masterDeploy, /Path\(`\/oauth\/facebook\/callback`\)/, 'callback ต้องข้าม Basic Auth ได้เฉพาะ path ที่เจาะจง');
+  assert.match(masterDeploy, /Path\(`\/oauth\/review`\)/, 'หน้าทดสอบ App Review ต้องข้าม Basic Auth แบบจำกัด path');
   assert.match(masterDeploy, /--env-file "\$CENTRAL_OAUTH_ENV"/, 'App Secret ต้องเข้าฝั่ง master ผ่านไฟล์ secret ไม่ใช่ command argument');
   assert.match(tenantDeploy, /TENANT_OAUTH_ARGS\+=\(-e "FB_APP_ID=\$FB_APP_ID"/, 'tenant ต้องได้เพียง App ID');
   const tenantDockerRun = tenantDeploy.slice(tenantDeploy.indexOf('if ! docker run'));
   assert.doesNotMatch(tenantDockerRun, /FB_APP_SECRET/, 'tenant docker run ห้ามได้รับ App Secret');
   assert.match(fs.readFileSync(path.join(projectRoot, 'systemd', 'fbad-provisioner.service'), 'utf8'), /EnvironmentFile=-\/etc\/fbad-oauth\/central\.env/, 'root provisioner ต้องถือ secret เพื่อหมุน token แทน tenant');
   assert.match(fs.readFileSync(path.join(projectRoot, 'public', 'index.html'), 'utf8'), /e\.origin !== location\.origin/, 'popup ต้องยอมรับข้อความเสร็จสิ้นเฉพาะ origin เดียวกัน');
+});
+
+test('หน้า App Review ขอเฉพาะ ads_read และไม่บันทึก token หรือเปิด tenant', async (t) => {
+  const masterDir = tmpDir();
+  seed(masterDir, { config: {} });
+  const fb = await makeFakeFb({ route: (method, requestPath, params) => {
+    if (method === 'GET' && requestPath === 'oauth/access_token') {
+      return params.grant_type === 'fb_exchange_token'
+        ? { access_token: 'review-long-token-0123456789' }
+        : { access_token: 'review-short-token-0123456789' };
+    }
+    return null;
+  } });
+  const master = await startServer(masterDir, fb.port, {
+    // review flow ไม่เรียก provisioner แต่ master ต้องมองว่า central OAuth ถูกเปิดครบ
+    TENANT_PROVISIONER_SOCKET: 'review-test-provisioner.sock', TENANT_PROVISIONER_TOKEN: controlToken,
+    FB_APP_ID: '12345678', FB_APP_SECRET: 'b'.repeat(32), CENTRAL_OAUTH_ENABLED: '1',
+  });
+  t.after(async () => {
+    master.stop(); fb.server.close(); fs.rmSync(masterDir, { recursive: true, force: true });
+  });
+
+  assert.match(await (await fetch(master.base + '/oauth/review')).text(), /Facebook Login สำหรับการตรวจสอบ Meta/);
+  const start = await fetch(master.base + '/oauth/review/login', { redirect: 'manual' });
+  assert.strictEqual(start.status, 302);
+  const loginUrl = new URL(start.headers.get('location'));
+  assert.strictEqual(loginUrl.searchParams.get('scope'), 'ads_read');
+  const state = loginUrl.searchParams.get('state');
+  assert.match(state, /^review\.[a-f0-9]{64}$/);
+  const cookie = start.headers.get('set-cookie').split(';')[0];
+  const done = await fetch(`${master.base}/oauth/facebook/callback?code=review-code&state=${encodeURIComponent(state)}`, { headers: { cookie } });
+  assert.match(await done.text(), /ไม่ได้เก็บ token จากการตรวจสอบนี้/);
+  assert.ok(!fs.readFileSync(path.join(masterDir, 'config.json'), 'utf8').includes('review-long-token'), 'token ของ reviewer ห้ามถูกเก็บใน config');
 });
 
 test('App กลางแลก token ที่ master แล้วส่งกลับ tenant ที่เริ่ม login เท่านั้น', async (t) => {

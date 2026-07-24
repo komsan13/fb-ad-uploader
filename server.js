@@ -41,6 +41,9 @@ const TENANT_CONTROL_CSRF_COOKIE = 'fbad_tenant_csrf';
 const OAUTH_STATE_COOKIE = 'fbad_oauth_state';
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 const oauthStates = new Map(); // state -> { profileId, expiresAt }, one-time and process-local by design
+// หน้านี้มีไว้ให้ผู้ตรวจสอบ Meta ยืนยัน Facebook Login/ads_read โดยไม่ต้องเปิด instance ผู้เช่า
+// token ที่ได้จาก flow นี้จะถูกทิ้งทันที ห้ามใช้เป็นทางเข้าสู่ข้อมูลหรือสิทธิ์ของผู้เช่ารายใด
+const reviewOauthStates = new Map();
 const CENTRAL_FB_APP_ID = String(process.env.FB_APP_ID || '').trim();
 const CENTRAL_FB_APP_SECRET = String(process.env.FB_APP_SECRET || '').trim();
 const CENTRAL_OAUTH_REDIRECT_URI = String(process.env.CENTRAL_OAUTH_REDIRECT_URI || `${PUBLIC_ORIGIN}/oauth/facebook/callback`).replace(/\/$/, '');
@@ -1818,6 +1821,10 @@ function tenantOAuthState(state) {
   const match = String(state || '').match(/^([a-f0-9]{32})\.([a-f0-9]{64})$/i);
   return match ? { code: match[1].toLowerCase(), nonce: match[2].toLowerCase() } : null;
 }
+function reviewOAuthState(state) {
+  const match = String(state || '').match(/^review\.([a-f0-9]{64})$/i);
+  return match ? match[1].toLowerCase() : '';
+}
 function oauthPage(res, ok, message, returnPath = PUBLIC_APP_PATH) {
   const origin = new URL(CENTRAL_OAUTH_REDIRECT_URI || PUBLIC_URL).origin;
   const safePath = typeof returnPath === 'string' && returnPath.startsWith('/') ? returnPath : PUBLIC_APP_PATH;
@@ -1828,12 +1835,12 @@ function oauthPage(res, ok, message, returnPath = PUBLIC_APP_PATH) {
     + `<script>if(window.opener){window.opener.postMessage('fb-auth-done',${JSON.stringify(origin)});setTimeout(function(){window.close()},1400)}else{setTimeout(function(){location.href=${JSON.stringify(safePath)}},1400)}</script>`
     + `</body>`);
 }
-function centralOAuthUrl(state) {
+function centralOAuthUrl(state, scopes = LOGIN_SCOPES) {
   return `https://www.facebook.com/v23.0/dialog/oauth`
     + `?client_id=${encodeURIComponent(CENTRAL_FB_APP_ID)}`
     + `&redirect_uri=${encodeURIComponent(CENTRAL_OAUTH_REDIRECT_URI)}`
     + `&state=${encodeURIComponent(state)}`
-    + `&response_type=code&scope=${encodeURIComponent(LOGIN_SCOPES)}`;
+    + `&response_type=code&scope=${encodeURIComponent(scopes)}`;
 }
 async function exchangeCentralOAuthCode(code) {
   const short = await (await fetch(`${API}/oauth/access_token`
@@ -1896,10 +1903,33 @@ app.get('/auth/login', oauthStartGuard, (req, res) => {
   res.redirect(centralOAuthUrl(state));
 });
 
+// URL สาธารณะจำกัดวัตถุประสงค์สำหรับ App Review: ไม่เปิด tenant, ไม่ดึงบัญชีโฆษณา
+// และไม่เก็บ token หลังผู้ตรวจสอบยืนยันว่า flow ทำงานได้.
+app.get('/oauth/review', (req, res) => {
+  res.type('html').send(`<!doctype html><html lang="th"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Facebook Login – Meta App Review</title><body style="font-family:system-ui,sans-serif;max-width:680px;margin:64px auto;padding:0 24px;color:#182230">
+    <h1>Facebook Login สำหรับการตรวจสอบ Meta</h1><p>หน้านี้ใช้ยืนยันขั้นตอน Facebook Login และสิทธิ์อ่านข้อมูลบัญชีโฆษณา (ads_read) ของแอป J1 เท่านั้น</p>
+    <p>ไม่มีข้อมูลผู้เช่าหรือ token ถูกแสดงหรือเก็บจากขั้นตอนตรวจสอบนี้</p>
+    <p><a href="/oauth/review/login" style="display:inline-block;background:#1877f2;color:white;padding:12px 18px;border-radius:7px;text-decoration:none;font-weight:600">ดำเนินการต่อด้วย Facebook</a></p>
+    </body></html>`);
+});
+
+app.get('/oauth/review/login', oauthStartGuard, (req, res) => {
+  if (!CENTRAL_OAUTH_MASTER_ENABLED) return res.status(503).send('Meta App กลางบนแอดมินหลักยังตั้งค่าไม่ครบ');
+  const now = Date.now();
+  for (const [key, value] of reviewOauthStates) if (!value || value.expiresAt <= now) reviewOauthStates.delete(key);
+  const state = `review.${crypto.randomBytes(32).toString('hex')}`;
+  reviewOauthStates.set(state, { expiresAt: now + OAUTH_STATE_TTL_MS });
+  res.cookie(OAUTH_STATE_COOKIE, state, oauthCookieOptions());
+  // ขอเฉพาะ permission ที่ยื่น App Review รอบนี้ ไม่พ่วง ads_management หรือข้อมูลผู้เช่า.
+  res.redirect(centralOAuthUrl(state, 'ads_read'));
+});
+
 app.get('/oauth/facebook/callback', async (req, res) => {
   const state = String(req.query.state || '');
   const cookieState = cookieValue(req, OAUTH_STATE_COOKIE);
   const tenantState = tenantOAuthState(state);
+  const reviewState = reviewOAuthState(state);
   const hasCookie = sameSecret(state, cookieState);
   res.clearCookie(OAUTH_STATE_COOKIE, oauthCookieOptions());
   if (tenantState) {
@@ -1922,6 +1952,22 @@ app.get('/oauth/facebook/callback', async (req, res) => {
       return oauthPage(res, true, 'เชื่อมต่อบัญชีแล้ว กลับไปเลือกบัญชีโฆษณาและเพจได้เลย', returnPath);
     } catch (error) {
       return oauthPage(res, false, error.message, returnPath);
+    }
+  }
+
+  const review = reviewState ? reviewOauthStates.get(state) : null;
+  const reviewValid = !!review && review.expiresAt > Date.now() && hasCookie;
+  if (reviewState) reviewOauthStates.delete(state); // state ของผู้ตรวจสอบใช้ได้ครั้งเดียวเสมอ
+  if (reviewState) {
+    if (!CENTRAL_OAUTH_MASTER_ENABLED || !reviewValid) return oauthPage(res, false, 'ลิงก์ตรวจสอบหมดอายุหรือไม่ตรงกับเบราว์เซอร์นี้ กรุณาเริ่มใหม่', '/oauth/review');
+    if (req.query.error) return oauthPage(res, false, req.query.error_description || req.query.error, '/oauth/review');
+    const code = String(req.query.code || '');
+    if (!code || code.length > 4096) return oauthPage(res, false, 'Facebook ไม่ส่ง code ที่ใช้ยืนยันกลับมา', '/oauth/review');
+    try {
+      await exchangeCentralOAuthCode(code);
+      return oauthPage(res, true, 'ยืนยัน Facebook Login และสิทธิ์ ads_read สำเร็จแล้ว ระบบไม่ได้เก็บ token จากการตรวจสอบนี้', '/oauth/review');
+    } catch (error) {
+      return oauthPage(res, false, error.message, '/oauth/review');
     }
   }
 
