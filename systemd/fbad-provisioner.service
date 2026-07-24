@@ -9,6 +9,7 @@ User=root
 Group=root
 WorkingDirectory=/usr/local/lib/fbad-provisioner
 EnvironmentFile=/etc/fbad-provisioner/provisioner.env
+EnvironmentFile=-/etc/fbad-oauth/central.env
 ExecStart=/usr/bin/node /usr/local/lib/fbad-provisioner/tenant-provisioner.js
 Restart=on-failure
 RestartSec=5

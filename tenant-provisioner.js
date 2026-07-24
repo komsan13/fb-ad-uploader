@@ -47,6 +47,14 @@ function json(res, status, body) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
   res.end(JSON.stringify(body));
 }
+function sameSecret(a, b) {
+  const left = Buffer.from(String(a || ''));
+  const right = Buffer.from(String(b || ''));
+  return left.length === right.length && left.length > 0 && crypto.timingSafeEqual(left, right);
+}
+function stateHash(value) {
+  return crypto.createHash('sha256').update(String(value || '')).digest('hex');
+}
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let size = 0; let raw = '';
@@ -168,6 +176,9 @@ function createProvisioner(overrides = {}) {
     traefikContainer: overrides.traefikContainer || process.env.TRAEFIK_CONTAINER || 'traefik-traefik-1',
     commandTimeoutMs: overrides.commandTimeoutMs || process.env.PROVISIONER_COMMAND_TIMEOUT_MS || 5 * 60 * 1000,
     maxCommandOutputBytes: overrides.maxCommandOutputBytes || process.env.PROVISIONER_MAX_OUTPUT_BYTES || 1024 * 1024,
+    fbApiBase: String(overrides.fbApiBase || process.env.FB_API_BASE || 'https://graph.facebook.com/v23.0').replace(/\/$/, ''),
+    centralAppId: String(overrides.centralAppId || process.env.FB_APP_ID || '').trim(),
+    centralAppSecret: String(overrides.centralAppSecret || process.env.FB_APP_SECRET || '').trim(),
     run: overrides.run || run,
   };
   if (!cfg.token || cfg.token.length < 32) throw new Error('PROVISIONER_TOKEN ต้องมีอย่างน้อย 32 ตัวอักษร');
@@ -216,6 +227,71 @@ function createProvisioner(overrides = {}) {
     const target = path.resolve(base, code);
     if (path.dirname(target) !== base) throw Object.assign(new Error('เส้นทางข้อมูลผู้เช่าไม่ปลอดภัย'), { status: 500 });
     return target;
+  };
+  const tenantConfigPath = (tenant) => path.join(tenantDataPath(cfg.dataRoot, tenant.code), 'config.json');
+  const readTenantConfig = (tenant) => {
+    const file = tenantConfigPath(tenant);
+    try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
+    catch (error) { throw Object.assign(new Error(`อ่านข้อมูลผู้เช่าเพื่อเชื่อม Facebook ไม่สำเร็จ: ${error.message}`), { status: 502 }); }
+  };
+  const writeTenantConfig = (tenant, value) => {
+    try { writeJson(tenantConfigPath(tenant), value); }
+    catch (error) { throw Object.assign(new Error(`บันทึก token Facebook ของผู้เช่าไม่สำเร็จ: ${error.message}`), { status: 502 }); }
+  };
+  const tenantProfile = (config) => {
+    if (!Array.isArray(config.profiles)) throw Object.assign(new Error('ข้อมูล Facebook ของผู้เช่าไม่ถูกต้อง'), { status: 409 });
+    const profile = config.profiles.find((item) => item && item.id === config.activeProfileId) || config.profiles[0];
+    if (!profile || typeof profile !== 'object') throw Object.assign(new Error('ยังไม่มีบัญชี Facebook สำหรับผู้เช่านี้'), { status: 409 });
+    return profile;
+  };
+  const fbJson = async (url) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30_000);
+    try {
+      const response = await fetch(url, { signal: controller.signal });
+      const body = await response.json();
+      if (!response.ok || body.error) throw new Error((body.error && body.error.message) || `Facebook ตอบ HTTP ${response.status}`);
+      return body;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  const refreshCentralOAuthTokens = async () => {
+    if (!cfg.centralAppId || !cfg.centralAppSecret) return { checked: 0, renewed: 0, configured: false };
+    let checked = 0;
+    let renewed = 0;
+    for (const tenant of registry.tenants) {
+      if (!['active', 'restored_hold'].includes(tenant.status)) continue;
+      try {
+        const initial = readTenantConfig(tenant);
+        const profile = tenantProfile(initial);
+        if (profile.oauthProvider !== 'central' || !profile.accessToken) continue;
+        checked += 1;
+        const oldToken = String(profile.accessToken);
+        const appToken = `${cfg.centralAppId}|${cfg.centralAppSecret}`;
+        const debug = await fbJson(`${cfg.fbApiBase}/debug_token?input_token=${encodeURIComponent(oldToken)}&access_token=${encodeURIComponent(appToken)}`);
+        const expiresAt = Number(debug.data && debug.data.expires_at) || 0;
+        if (!expiresAt || expiresAt * 1000 - Date.now() >= 14 * 24 * 60 * 60 * 1000) continue;
+        const refreshed = await fbJson(`${cfg.fbApiBase}/oauth/access_token?grant_type=fb_exchange_token&client_id=${encodeURIComponent(cfg.centralAppId)}&client_secret=${encodeURIComponent(cfg.centralAppSecret)}&fb_exchange_token=${encodeURIComponent(oldToken)}`);
+        const newToken = String(refreshed.access_token || '');
+        if (!newToken || newToken.length < 20) throw new Error('Facebook ไม่คืน access token ใหม่');
+        let stored = false;
+        await mutate(tenant, 'oauth:refresh-token', async () => {
+          const latest = readTenantConfig(tenant);
+          const latestProfile = tenantProfile(latest);
+          // ผู้ใช้อาจเพิ่ง login ใหม่ระหว่างที่ root service รอ Meta ตอบ ห้าม token เก่าทับ token ใหม่.
+          if (latestProfile.oauthProvider !== 'central' || latestProfile.accessToken !== oldToken) return;
+          latestProfile.accessToken = newToken;
+          latestProfile.centralOAuthRefreshedAt = new Date().toISOString();
+          writeTenantConfig(tenant, latest);
+          stored = true;
+        });
+        if (stored) renewed += 1;
+      } catch (error) {
+        audit('oauth:refresh-token:failed', tenant, { message: String(error.message || '').slice(0, 300) });
+      }
+    }
+    return { checked, renewed, configured: true };
   };
   const tenantEnv = (tenant, action, auth, hold = false) => ({
     ...process.env,
@@ -326,6 +402,54 @@ function createProvisioner(overrides = {}) {
       const tenant = find(code);
       if (!tenant) return json(res, 404, { error: 'ไม่พบสมาชิกนี้' });
       if (req.method === 'GET' && parts.length === 3) return json(res, 200, { tenant: publicTenant(tenant) });
+      if (req.method === 'POST' && parts.length === 5 && parts[3] === 'oauth' && ['consume', 'store-token'].includes(parts[4])) {
+        if (!['active', 'restored_hold'].includes(tenant.status)) throw Object.assign(new Error('สถานะสมาชิกนี้ไม่อนุญาตให้เชื่อม Facebook'), { status: 409 });
+        const body = await readBody(req);
+        if (parts[4] === 'consume') {
+          const state = String(body.state || '');
+          const match = state.match(/^([a-f0-9]{32})\.([a-f0-9]{64})$/i);
+          if (!match || match[1].toLowerCase() !== tenant.code) throw Object.assign(new Error('OAuth state ไม่ถูกต้อง'), { status: 400 });
+          await mutate(tenant, 'oauth:consume', async () => {
+            const config = readTenantConfig(tenant);
+            const profile = tenantProfile(config);
+            const pending = profile.centralOAuth || {};
+            const expiresAt = Number(pending.expiresAt) || 0;
+            if (!/^[a-f0-9]{64}$/i.test(String(pending.stateHash || '')) || expiresAt <= Date.now() || !sameSecret(pending.stateHash, stateHash(state))) {
+              throw Object.assign(new Error('ลิงก์เข้าสู่ระบบหมดอายุหรือถูกใช้ไปแล้ว'), { status: 400 });
+            }
+            profile.centralOAuth = {
+              consumedStateHash: pending.stateHash,
+              consumedAt: Date.now(),
+              expiresAt,
+            };
+            writeTenantConfig(tenant, config);
+          });
+          return json(res, 200, { accepted: true });
+        }
+        const state = String(body.state || '');
+        const stateMatch = state.match(/^([a-f0-9]{32})\.([a-f0-9]{64})$/i);
+        if (!stateMatch || stateMatch[1].toLowerCase() !== tenant.code) throw Object.assign(new Error('OAuth state ไม่ถูกต้อง'), { status: 400 });
+        const accessToken = String(body.accessToken || '');
+        if (accessToken.length < 20 || accessToken.length > 4096 || /\s/.test(accessToken)) throw Object.assign(new Error('access token ที่รับจาก Facebook ไม่ถูกต้อง'), { status: 400 });
+        await mutate(tenant, 'oauth:store-token', async () => {
+          const config = readTenantConfig(tenant);
+          const profile = tenantProfile(config);
+          const completed = profile.centralOAuth || {};
+          const expiresAt = Number(completed.expiresAt) || 0;
+          if (!/^[a-f0-9]{64}$/i.test(String(completed.consumedStateHash || '')) || expiresAt <= Date.now() || !sameSecret(completed.consumedStateHash, stateHash(state))) {
+            throw Object.assign(new Error('OAuth state หมดอายุหรือมีการเชื่อมต่อรายการใหม่กว่าแล้ว'), { status: 409 });
+          }
+          profile.accessToken = accessToken;
+          profile.oauthProvider = 'central';
+          profile.centralOAuthConnectedAt = new Date().toISOString();
+          delete profile.centralOAuth;
+          // ย้ายสำเร็จแล้วจึงล้าง credential ของแอปเก่าออกจาก volume ผู้เช่า
+          delete profile.appId;
+          delete profile.appSecret;
+          writeTenantConfig(tenant, config);
+        });
+        return json(res, 200, { stored: true });
+      }
       if (req.method === 'PATCH' && parts.length === 3) {
         const body = await readBody(req);
         requireRevision(body, tenant);
@@ -498,7 +622,7 @@ function createProvisioner(overrides = {}) {
     }
   };
   const server = http.createServer(handler);
-  return { cfg, server, handler };
+  return { cfg, server, handler, refreshCentralOAuthTokens };
 }
 
 if (require.main === module) {
@@ -510,6 +634,11 @@ if (require.main === module) {
     fs.chmodSync(provisioner.cfg.socketPath, 0o660);
     console.log(`tenant provisioner listening on ${provisioner.cfg.socketPath}`);
   });
+  if (provisioner.cfg.centralAppId && provisioner.cfg.centralAppSecret) {
+    const refresh = () => provisioner.refreshCentralOAuthTokens().catch((error) => console.error(`central OAuth token refresh failed: ${error.message}`));
+    setTimeout(refresh, 2 * 60 * 1000).unref();
+    setInterval(refresh, 6 * 60 * 60 * 1000).unref();
+  }
 }
 
 module.exports = { createProvisioner, credentials, tenantInput, publicTenant };

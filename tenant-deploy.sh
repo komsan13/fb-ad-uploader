@@ -20,6 +20,7 @@ AUTOPILOT_HOLD="${AUTOPILOT_HOLD:-0}"
 TENANT_MEMORY_LIMIT="${TENANT_MEMORY_LIMIT:-1g}"
 TENANT_CPU_LIMIT="${TENANT_CPU_LIMIT:-1.0}"
 TENANT_PIDS_LIMIT="${TENANT_PIDS_LIMIT:-256}"
+CENTRAL_OAUTH_ENV="${CENTRAL_OAUTH_ENV:-/etc/fbad-oauth/central.env}"
 
 if [[ ! "$ACTION" =~ ^(create|retry-create|redeploy|restore|reset-password)$ ]]; then
   echo "ACTION ต้องเป็น create, retry-create, redeploy, restore หรือ reset-password" >&2
@@ -37,6 +38,20 @@ fi
 if [[ ! "$PROFILE_CODE" =~ ^[a-f0-9]{32}$ ]]; then
   echo "PROFILE_CODE ต้องเป็นรหัส hex 32 ตัวอักษร" >&2
   exit 1
+fi
+
+# App Secret อยู่เฉพาะ master/provisioner host เท่านั้น; tenant ต้องได้แค่ App ID ที่เป็น public identifier
+TENANT_OAUTH_ARGS=(-e "TENANT_CODE=$PROFILE_CODE")
+if [ -e "$CENTRAL_OAUTH_ENV" ]; then
+  [ -r "$CENTRAL_OAUTH_ENV" ] || { echo "อ่าน $CENTRAL_OAUTH_ENV ไม่ได้" >&2; exit 1; }
+  set -a
+  # shellcheck source=/etc/fbad-oauth/central.env
+  . "$CENTRAL_OAUTH_ENV"
+  set +a
+  [[ "${FB_APP_ID:-}" =~ ^[0-9]{5,32}$ ]] || { echo "FB_APP_ID ใน $CENTRAL_OAUTH_ENV ไม่ถูกต้อง" >&2; exit 1; }
+  [[ "${FB_APP_SECRET:-}" =~ ^[A-Fa-f0-9]{32}$ ]] || { echo "FB_APP_SECRET ใน $CENTRAL_OAUTH_ENV ไม่ถูกต้อง" >&2; exit 1; }
+  TENANT_OAUTH_ARGS+=(-e "FB_APP_ID=$FB_APP_ID" -e CENTRAL_OAUTH_ENABLED=1 -e "CENTRAL_OAUTH_REDIRECT_URI=https://${DOMAIN}/oauth/facebook/callback")
+  unset FB_APP_ID FB_APP_SECRET
 fi
 
 # ผู้เช่าแต่ละรายต้องอยู่ network ของตัวเองเท่านั้น; ห้าม fallback ไป shared `web`
@@ -194,6 +209,7 @@ if ! docker run -d --name "$CONTAINER" --restart unless-stopped \
   -e CONFIG_PATH=/data/config.json \
   -e MAX_PROFILES=1 \
   -e "AUTOPILOT_HOLD=${AUTOPILOT_HOLD}" \
+  "${TENANT_OAUTH_ARGS[@]}" \
   -v "${DATA_DIR}:/data" \
   --label fbad.tenant.managed=true \
   --label "fbad.tenant.code=${PROFILE_CODE}" \

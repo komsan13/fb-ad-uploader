@@ -28,29 +28,39 @@ function seed(dir, { config = {}, videos = 1, captions = 1 } = {}) {
 }
 
 async function startServer(dir, fbPort, extraEnv = {}) {
-  const port = 20000 + Math.floor(Math.random() * 20000);
   const { PUBLIC_URL_PATH = '', ...restEnv } = extraEnv;
-  const child = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
-    env: {
-      ...process.env,
-      PORT: String(port),
-      CONFIG_PATH: path.join(dir, 'config.json'),
-      FB_API_BASE: `http://127.0.0.1:${fbPort}`,
-      // ต้องตรงกับ base ที่เทสใช้เรียก ไม่งั้นโค้ดที่เทียบว่า "ลิงก์ชี้มาหน้าเราไหม" จะไม่ตรง
-      PUBLIC_URL: `http://127.0.0.1:${port}${PUBLIC_URL_PATH}`,
-      ...restEnv,
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  let log = '';
-  child.stdout.on('data', (d) => { log += d; });
-  child.stderr.on('data', (d) => { log += d; });
-
-  const base = `http://127.0.0.1:${port}`;
-  for (let i = 0; i < 100; i++) {
-    try { await fetch(base + '/api/autopilot'); break; } catch { await new Promise((r) => setTimeout(r, 100)); }
+  let lastLog = '';
+  // test files รันขนานกัน; random port อาจชนกันแล้ว server ตายเงียบ ทำให้เกิด fetch failed ที่หลอกว่าเป็นบั๊ก product.
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const port = 20000 + Math.floor(Math.random() * 20000);
+    const child = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
+      env: {
+        ...process.env,
+        PORT: String(port),
+        CONFIG_PATH: path.join(dir, 'config.json'),
+        FB_API_BASE: `http://127.0.0.1:${fbPort}`,
+        // ต้องตรงกับ base ที่เทสใช้เรียก ไม่งั้นโค้ดที่เทียบว่า "ลิงก์ชี้มาหน้าเราไหม" จะไม่ตรง
+        PUBLIC_URL: `http://127.0.0.1:${port}${PUBLIC_URL_PATH}`,
+        ...restEnv,
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let log = '';
+    let exited = false;
+    child.stdout.on('data', (d) => { log += d; });
+    child.stderr.on('data', (d) => { log += d; });
+    child.once('exit', () => { exited = true; });
+    const base = `http://127.0.0.1:${port}`;
+    for (let i = 0; i < 100 && !exited; i++) {
+      try {
+        await fetch(base + '/api/autopilot');
+        return { child, base, getLog: () => log, stop: () => child.kill() };
+      } catch { await new Promise((r) => setTimeout(r, 100)); }
+    }
+    lastLog = log;
+    if (!child.killed && !exited) child.kill();
   }
-  return { child, base, getLog: () => log, stop: () => child.kill() };
+  throw new Error(`test server ไม่พร้อมหลังลอง 4 พอร์ต: ${lastLog.slice(-1000)}`);
 }
 
 const get = async (base, p) => (await fetch(base + p)).json();

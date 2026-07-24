@@ -1039,16 +1039,7 @@
         <h2><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/><path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3"/></svg></span>บัญชี FB ทั้งหมด <span class="h-desc">— เพิ่มได้หลายบัญชี แต่ละบัญชีมี token + บัญชีโฆษณา + เพจของตัวเอง</span></h2>
         <div id="profList"></div>
         <button class="btn-primary" onclick="addProfile()">+ เพิ่มบัญชี FB</button>
-        <details style="margin-top:14px;border:1px solid var(--line);border-radius:var(--r-md);padding:8px 12px">
-          <summary style="cursor:pointer;font-weight:600">คู่มือตั้งค่า "เข้าสู่ระบบด้วย Facebook" — ทำครั้งเดียวต่อแอป หลังจากนั้นกดปุ่มเดียวจบ</summary>
-          <ol class="setup-list" style="margin-top:10px">
-            <li><span>เปิดแอปที่ <a href="https://developers.facebook.com/apps" target="_blank">developers.facebook.com/apps</a> → "เพิ่มผลิตภัณฑ์" → เพิ่ม <b>Facebook Login</b> (Login ด้วย Facebook)</span></li>
-            <li><span>ไปที่ Facebook Login → <b>การตั้งค่า (Settings)</b> → ช่อง <b>Valid OAuth Redirect URIs</b> วาง: <code id="redirectUriText">http://localhost:4000/auth/callback</code> → บันทึก</span></li>
-            <li><span>เมนู การตั้งค่าแอป → <b>พื้นฐาน (Basic)</b> → คัดลอก <b>App ID</b> และ <b>App Secret</b> (กด "แสดง") มาวางในการ์ดบัญชีด้านบน</span></li>
-            <li><span>กดปุ่ม <b>เข้าสู่ระบบด้วย Facebook</b> → login → กดยอมรับ → เสร็จ! token มาเองและต่ออายุ 60 วันอัตโนมัติ</span></li>
-          </ol>
-          <div class="hint"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#b8860b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg> บัญชี FB ที่ login ต้องเป็นแอดมิน/ผู้ทดสอบของแอปนั้น (เฟสที่สร้างแอปเองเป็นแอดมินอยู่แล้ว ไม่ต้องส่ง App Review) • ถ้าหลาย ad account อยู่ใต้ FB เดียวกัน login ครั้งเดียวเห็นครบทุกบัญชี</div>
-        </details>
+        <div class="hint" style="margin-top:14px"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><circle cx="12" cy="12" r="4"/><path d="M4.9 19.1 7.8 16.2"/><path d="M2 12h4"/><path d="M4.9 4.9 7.8 7.8"/></svg> ใช้ Meta App กลางของแพลตฟอร์ม กดเข้าสู่ระบบด้วย Facebook แล้วอนุญาตสิทธิ์ได้ทันที ไม่ต้องใส่ App ID, App Secret หรือ Access Token</div>
         <div class="hint" style="margin-top:10px"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> URL นโยบายความเป็นส่วนตัว (ใช้กรอกใน Meta / Business Manager): <a id="privacyUrl" href="https://ad.senball.com/privacy.html" target="_blank"><code id="privacyUrlText">https://ad.senball.com/privacy.html</code></a></div>
       </div>
 
@@ -1384,6 +1375,7 @@ document.querySelectorAll('[data-tenant-path]').forEach((el) => { el.href = tena
 let adRowSeq = 0;
 let profiles = [];            // [{id, label, adAccountId, pageId, hasToken}]
 let activeProfileId = null;
+let centralOauthReady = false;
 let tenantControlEnabled = false;
 let tenantControlCsrf = '';
 let tenants = [];
@@ -1822,19 +1814,9 @@ function profCardHTML(p) {
     </div>
     <div class="pc-body">
       <div class="pc-col">
-        <div class="pc-step"><span class="pc-step-num">1</span> เชื่อมต่อด้วยแอป Meta</div>
-        <div class="row">
-          <div class="field"><label>App ID</label><input class="p-appid" value="${esc(p.appId || '')}" placeholder="เช่น 1719021692348316" onchange="saveProfileField(${jsStr(p.id)}, {appId: this.value})"></div>
-          <div class="field"><label>App Secret</label><input type="password" class="p-appsecret" placeholder="${p.hasSecret ? 'บันทึกแล้ว — ใส่ใหม่เมื่อต้องการเปลี่ยน' : 'คัดลอกจากหน้า Basic Settings'}" onchange="saveProfileField(${jsStr(p.id)}, {appSecret: this.value})"></div>
-        </div>
-        <button class="btn-fblogin" onclick="fbLogin(${jsStr(p.id)})"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M22 12a10 10 0 1 0-11.6 9.9v-7H7.9V12h2.5V9.8c0-2.5 1.5-3.9 3.8-3.9 1.1 0 2.2.2 2.2.2v2.5h-1.3c-1.2 0-1.6.8-1.6 1.6V12h2.8l-.4 2.9h-2.4v7A10 10 0 0 0 22 12z"/></svg>เข้าสู่ระบบด้วย Facebook</button>
-        <details class="target">
-          <summary>หรือวาง Access Token เอง (ทางเลือก)</summary>
-          <div class="row" style="margin-top:8px">
-            <div style="flex:3"><input type="password" class="p-token" placeholder="${p.hasToken ? 'มี token แล้ว — วางใหม่เฉพาะตอนต้องการเปลี่ยน' : 'วาง Access Token (EAA...)'}"></div>
-            <div style="flex:0 0 auto;min-width:auto"><button class="btn-primary btn-sm" onclick="connectProfile(${jsStr(p.id)})" style="padding:8px 14px">${p.hasToken ? '⟳ โหลดบัญชี' : 'เชื่อมต่อ'}</button></div>
-          </div>
-        </details>
+        <div class="pc-step"><span class="pc-step-num">1</span> เชื่อมต่อ Facebook</div>
+        <div class="hint" style="margin:0 0 10px">ระบบจะเปิดหน้า Facebook ให้เลือกบัญชีและอนุญาตสิทธิ์ แล้วบันทึกการเชื่อมต่อกลับมาให้อัตโนมัติ</div>
+        <button class="btn-fblogin" onclick="fbLogin(${jsStr(p.id)})"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M22 12a10 10 0 1 0-11.6 9.9v-7H7.9V12h2.5V9.8c0-2.5 1.5-3.9 3.8-3.9 1.1 0 2.2.2 2.2.2v2.5h-1.3c-1.2 0-1.6.8-1.6 1.6V12h2.8l-.4 2.9h-2.4v7A10 10 0 0 0 22 12z"/></svg>${p.hasToken ? 'เชื่อมต่อ Facebook ใหม่' : 'เข้าสู่ระบบด้วย Facebook'}</button>
       </div>
       <div class="pc-col">
         <div class="pc-step"><span class="pc-step-num">2</span> เลือกบัญชีโฆษณาและเพจ</div>
@@ -1851,20 +1833,14 @@ function profCardHTML(p) {
   </div>`;
 }
 function fbLogin(pid) {
-  const card = document.querySelector(`.prof-card[data-pid="${pid}"]`);
-  const appId = card.querySelector('.p-appid').value.trim();
-  const appSecret = card.querySelector('.p-appsecret').value.trim();
-  if (!appId) return toast('ใส่ App ID ก่อนครับ (หาได้ในหน้า Basic Settings ของแอป)');
-  const body = { id: pid, appId };
-  if (appSecret) body.appSecret = appSecret;
-  fetch('/api/profiles/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(() => {
-    const w = 600, h = 720, left = (screen.width - w) / 2, top = (screen.height - h) / 2;
-    const popup = window.open(tenantUrl('/auth/login?profile=' + pid), 'fblogin', `width=${w},height=${h},left=${left},top=${top}`);
-    if (!popup) toast('เบราว์เซอร์บล็อก popup — อนุญาต popup ให้ localhost แล้วลองใหม่ครับ');
-  });
+  if (!centralOauthReady) return toast('ผู้ดูแลระบบยังไม่ได้ตั้งค่า Meta App กลางให้พร้อมใช้งาน');
+  const w = 600, h = 720, left = (screen.width - w) / 2, top = (screen.height - h) / 2;
+  const popup = window.open(tenantUrl('/auth/login?profile=' + pid), 'fblogin', `width=${w},height=${h},left=${left},top=${top}`);
+  if (!popup) toast('เบราว์เซอร์บล็อก popup — อนุญาต popup ให้เว็บไซต์นี้ แล้วลองใหม่ครับ');
 }
 window.addEventListener('message', async (e) => {
-  if (e.data === 'fb-auth-done') {
+  if (e.origin !== location.origin || e.data !== 'fb-auth-done') return;
+  {
     bustCaches(); // login ใหม่ = token ใหม่ ข้อมูลต้องดึงใหม่
     await loadProfiles();
     renderSettings();
@@ -1971,21 +1947,6 @@ async function testTelegram(btn) {
   btn.disabled = false; btn.textContent = 'ส่งทดสอบ';
   toast(r.ok ? '✓ ส่งสำเร็จ! เช็คข้อความในแชท Telegram' : '✗ ' + r.error);
 }
-async function connectProfile(pid) {
-  const card = document.querySelector(`.prof-card[data-pid="${pid}"]`);
-  const token = card.querySelector('.p-token').value.trim();
-  const st = card.querySelector('.p-status');
-  if (token) {
-    await fetch('/api/profiles/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: pid, accessToken: token }) });
-    profiles.find(x => x.id === pid).hasToken = true;
-    delete accountCache[pid];
-    bustCaches(); // token ใหม่ = ข้อมูลชุดใหม่
-  }
-  st.textContent = 'กำลังเชื่อมต่อ...';
-  st.className = 'p-status hint';
-  await populateProfileCard(pid, true);
-  renderProfileUI();
-}
 async function populateProfileCard(pid, force) {
   const card = document.querySelector(`.prof-card[data-pid="${pid}"]`);
   if (!card) return;
@@ -2053,12 +2014,13 @@ setInterval(tickClock, 1000);
   }
   try {
     const env = await (await fetch('/api/env')).json();
-    if (env.redirectUri) document.getElementById('redirectUriText').textContent = env.redirectUri;
+    centralOauthReady = !!env.centralOauthReady;
     if (env.publicUrl) {
       const privacyUrl = env.publicUrl.replace(/\/$/, '') + '/privacy.html';
       document.getElementById('privacyUrl').href = privacyUrl;
       document.getElementById('privacyUrlText').textContent = privacyUrl;
     }
+    renderSettings();
   } catch {}
   await loadTenantControl();
   restoreCaches(); // ดึงข้อมูลที่จำไว้จากรอบก่อน (sessionStorage) — F5 แล้วหน้าโชว์ทันที

@@ -14,7 +14,9 @@ npm start
 
 ---
 
-## วิธีเอา Access Token (ทำครั้งแรกครั้งเดียว ~15 นาที)
+## วิธีเอา Access Token ด้วยมือ (เฉพาะ local development / ระบบเก่า)
+
+> Production แบบเปิดเช่าใช้ **Meta App กลาง** ตามหัวข้อด้านล่าง ผู้เช่าไม่ต้องทำขั้นตอนนี้และหน้าเว็บจะไม่รับ App ID, App Secret หรือ Access Token รายบุคคลแล้ว
 
 ### 1. สร้าง Meta App
 1. ไปที่ https://developers.facebook.com → ล็อกอินด้วย FB ที่มีสิทธิ์ในบัญชีโฆษณา
@@ -129,5 +131,24 @@ bash redeploy.sh
 Provisioner ฟังเฉพาะ Unix socket `/run/fbad-provisioner.sock` และยอมรับเฉพาะ lifecycle ที่กำหนดไว้ตายตัว เว็บแอดมินหลักเป็นเพียง proxy จึง **ไม่ mount Docker socket และไม่ mount data ของผู้เช่า**. ข้อมูลทะเบียนและ audit เก็บที่ `/opt/fbad-provisioner/`; รหัสผ่านไม่ถูกเก็บในทะเบียนหรือส่งกลับ API
 
 Provisioner จะสร้าง private Docker network ต่อผู้เช่าหนึ่งราย แล้วเชื่อมเฉพาะ Traefik กับ tenant container (ไม่ใช้ `web` network ร่วม) เพื่อไม่ให้ tenant ต่อ HTTP ถึง container อื่นโดยตรง. ตอนติดตั้ง script จะตรึง `TENANT_IMAGE` เป็น local Docker image ID (`sha256:...`) ที่เพิ่ง build แล้ว, provisioner ปฏิเสธ mutable tag เช่น `fbad:latest`
+
+### Meta App กลางสำหรับผู้เช่า
+
+ผู้เช่าไม่ต้องสร้าง Meta App, วาง App ID/Secret หรือวาง Access Token เอง. สร้าง App กลางเพียงตัวเดียวใน Meta for Developers แล้วตั้ง Valid OAuth Redirect URI เป็น:
+
+```text
+https://ad.senball.com/oauth/facebook/callback
+```
+
+เก็บ App ID และ App Secret บน production host เท่านั้นที่ `/etc/fbad-oauth/central.env` (owner `root`, permission `600`):
+
+```text
+FB_APP_ID=<Meta App ID>
+FB_APP_SECRET=<Meta App Secret>
+```
+
+จากนั้นรัน `bash redeploy.sh` หนึ่งครั้ง. Master จะถือ App Secret เพื่อแลก OAuth code, แต่ tenant container ได้เพียง App ID และ state แบบใช้ครั้งเดียว. Token ที่ได้จะถูกส่งผ่าน Unix provisioner socket กลับไปยัง data directory ของ tenant ที่เป็นผู้เริ่ม login เท่านั้น. App Secret จึงห้ามใส่ใน `config.json` ของผู้เช่าหรือส่งผ่านแชต.
+
+หลัง deploy ผู้เช่าเพิ่มบัญชี FB แล้วกด **เข้าสู่ระบบด้วย Facebook** ได้ทันที. root-only provisioner จะตรวจและต่ออายุ token ของ App กลางก่อนหมดอายุ โดย tenant container ไม่ได้ถือ App Secret. เมื่อเปิด App กลาง ระบบจะล้าง App ID/App Secret แบบเก่าออกจาก `config.json` และ backup ของ tenant; token เดิมอาจใช้ได้จนหมดอายุ แต่ต้องให้ผู้ใช้เชื่อมใหม่เพื่อรับการต่ออายุผ่าน App กลาง.
 
 `Archive` หยุด instance และย้าย data ไป `/opt/fbad-tenants-archive/` โดยไม่ลบข้อมูล แต่ไม่ได้ pause แคมเปญที่เปิดอยู่บน Meta. `Restore` จะเปิด container ด้วย `AUTOPILOT_HOLD=1`; ต้องพิมพ์ `ENABLE_AUTOPILOT` ในเมนูสมาชิกเพื่อปลด hold อย่างตั้งใจเท่านั้น

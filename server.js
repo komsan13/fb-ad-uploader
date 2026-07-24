@@ -16,6 +16,7 @@ const VIDEO_API = API.includes('graph.facebook.com') ? API.replace('graph.facebo
 const PORT = process.env.PORT || 4000;
 // URL สาธารณะของแอป (ตั้งผ่าน env ตอน deploy) — ใช้สร้าง redirect URI ของ OAuth
 const PUBLIC_URL = (process.env.PUBLIC_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
+const PUBLIC_ORIGIN = new URL(PUBLIC_URL).origin;
 // instance เช่าใต้ host เดียวกันใช้ path /p/<รหัส>/... ส่วน server เห็น path หลัง Traefik strip prefix แล้ว
 // จึงต้องคืน URL ของ Landing/asset ที่มี public path เดิมติดไปด้วย มิฉะนั้นรูปจะหลุดไปหา instance หลัก
 const PUBLIC_PATH = new URL(PUBLIC_URL).pathname.replace(/\/+$/, '');
@@ -40,6 +41,20 @@ const TENANT_CONTROL_CSRF_COOKIE = 'fbad_tenant_csrf';
 const OAUTH_STATE_COOKIE = 'fbad_oauth_state';
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 const oauthStates = new Map(); // state -> { profileId, expiresAt }, one-time and process-local by design
+const CENTRAL_FB_APP_ID = String(process.env.FB_APP_ID || '').trim();
+const CENTRAL_FB_APP_SECRET = String(process.env.FB_APP_SECRET || '').trim();
+const CENTRAL_OAUTH_REDIRECT_URI = String(process.env.CENTRAL_OAUTH_REDIRECT_URI || `${PUBLIC_ORIGIN}/oauth/facebook/callback`).replace(/\/$/, '');
+const CENTRAL_OAUTH_ENABLED = process.env.CENTRAL_OAUTH_ENABLED !== '0' && !!CENTRAL_FB_APP_ID && !!CENTRAL_OAUTH_REDIRECT_URI;
+const CENTRAL_OAUTH_MASTER_ENABLED = CENTRAL_OAUTH_ENABLED && !!CENTRAL_FB_APP_SECRET && TENANT_CONTROL_ENABLED;
+const TENANT_CODE_RE = /^[a-f0-9]{32}$/;
+const TENANT_CODE = (() => {
+  const configured = String(process.env.TENANT_CODE || '').trim();
+  if (TENANT_CODE_RE.test(configured)) return configured;
+  try {
+    const parts = new URL(PUBLIC_URL).pathname.split('/').filter(Boolean);
+    return parts.length === 2 && parts[0] === 'p' && TENANT_CODE_RE.test(parts[1]) ? parts[1] : '';
+  } catch { return ''; }
+})();
 const FB_FETCH_TIMEOUT_MS = Math.max(5_000, Math.min(120_000, Number(process.env.FB_FETCH_TIMEOUT_MS) || 30_000));
 const MAX_UPLOAD_FILE_BYTES = Math.max(8 * 1024 * 1024, Math.min(512 * 1024 * 1024, Number(process.env.MAX_UPLOAD_FILE_BYTES) || 128 * 1024 * 1024));
 const MAX_LAUNCH_FILES = Math.max(1, Math.min(10, Number(process.env.MAX_LAUNCH_FILES) || 4));
@@ -78,6 +93,7 @@ app.get(['/members', '/members/'], (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 const BACKUP_DIR = path.join(path.dirname(CONFIG_PATH), 'config-backups');
+let legacyAppCredentialBackupsScrubbed = false;
 function chmodPrivate(target, mode) {
   try { if (fs.existsSync(target)) fs.chmodSync(target, mode); } catch { /* Windows/readonly volume: deploy must not be blocked */ }
 }
@@ -100,6 +116,34 @@ function writeJsonAtomic(file, value, mode = 0o600) {
 chmodPrivate(path.dirname(CONFIG_PATH), 0o700);
 chmodPrivate(CONFIG_PATH, 0o600);
 chmodPrivate(BACKUP_DIR, 0o700);
+// App กลางทำให้ credential รายผู้เช่าไม่ควรอยู่ใน volume อีกต่อไป. ล้างเฉพาะ field
+// OAuth รุ่นเก่าที่รู้จัก (ทั้ง config รุ่นเก่าและ profile รุ่นใหม่) ไม่แตะ setting อื่นที่อาจชื่อคล้ายกัน.
+function stripLegacyAppCredentials(cfg) {
+  if (!cfg || typeof cfg !== 'object') return false;
+  let changed = false;
+  for (const key of ['appId', 'appSecret']) {
+    if (Object.prototype.hasOwnProperty.call(cfg, key)) { delete cfg[key]; changed = true; }
+  }
+  if (!Array.isArray(cfg.profiles)) return changed;
+  for (const profile of cfg.profiles) {
+    if (!profile || typeof profile !== 'object') continue;
+    for (const key of ['appId', 'appSecret']) {
+      if (Object.prototype.hasOwnProperty.call(profile, key)) { delete profile[key]; changed = true; }
+    }
+  }
+  return changed;
+}
+function scrubLegacyAppCredentialBackups() {
+  try {
+    for (const file of fs.readdirSync(BACKUP_DIR).filter((name) => /^config-.*\.json$/.test(name))) {
+      const target = path.join(BACKUP_DIR, file);
+      try {
+        const backup = JSON.parse(fs.readFileSync(target, 'utf8'));
+        if (stripLegacyAppCredentials(backup)) writeJsonAtomic(target, backup);
+      } catch { /* backup ที่เสียอยู่แล้วห้ามขวางการเริ่มระบบ */ }
+    }
+  } catch { /* ไม่มี backup ยังไม่ใช่ความผิดพลาด */ }
+}
 function loadConfig() {
   let cfg = null;
   try { cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')); }
@@ -131,6 +175,13 @@ function loadConfig() {
     delete cfg.appId;
     delete cfg.appSecret;
     saveConfig(cfg);
+  }
+  if (CENTRAL_OAUTH_ENABLED) {
+    if (stripLegacyAppCredentials(cfg)) saveConfig(cfg);
+    if (!legacyAppCredentialBackupsScrubbed) {
+      scrubLegacyAppCredentialBackups();
+      legacyAppCredentialBackupsScrubbed = true;
+    }
   }
   return cfg;
 }
@@ -166,7 +217,7 @@ function publicProfiles(cfg) {
     activeProfileId: cfg.activeProfileId,
     profiles: cfg.profiles.map((p) => ({
       id: p.id, label: p.label, adAccountId: p.adAccountId, pageId: p.pageId,
-      hasToken: !!p.accessToken, appId: p.appId || '', hasSecret: !!p.appSecret,
+      hasToken: !!p.accessToken,
     })),
   };
 }
@@ -176,7 +227,7 @@ const THROTTLE_CODES = new Set([4, 17, 32, 613, 80000, 80003, 80004, 80014]);
 
 // error 200 + ข้อความนี้ = Meta บล็อกทั้ง "แอป" ที่ใช้เชื่อม — ใช้ร่วมกันระหว่าง fb() กับ uploadVideo
 const isFbAppBlock = (e) => e.code === 200 && /API access blocked/i.test(e.message || '');
-const FB_APP_BLOCK_MSG = 'Meta บล็อกการเข้า API ของ "แอป" ที่ใช้เชื่อม (ไม่ใช่ตัวบัญชี FB) — เปิด developers.facebook.com/apps เพื่อดูประกาศ/กดอุทธรณ์ หรือสร้างแอปใหม่แล้วใส่ App ID/Secret ในหน้า "บัญชี FB" แล้วล็อกอินใหม่';
+const FB_APP_BLOCK_MSG = 'Meta บล็อกการเข้า API ของแอปกลาง (ไม่ใช่ตัวบัญชี FB) — ผู้ดูแลระบบต้องตรวจสถานะและอุทธรณ์ใน Meta for Developers';
 
 // ---- เกราะ rate limit + app-block ----
 // Meta แนบโควตาการใช้ API มากับทุก response — คำแนะนำทางการคือ "หยุดยิงก่อนชนลิมิต
@@ -430,7 +481,6 @@ async function videoThumb(videoId, token) {
 // ห้ามใช้ search type=adlocale q=Thai (คืนค่าว่าง) และห้ามใช้ 24 (= English UK)
 const THAI_LOCALE = 35;
 
-const REDIRECT_URI = `${PUBLIC_URL}/auth/callback`;
 const LOGIN_SCOPES = 'ads_management,ads_read,business_management,pages_show_list,pages_read_engagement';
 
 const OBJECTIVES = {
@@ -1621,8 +1671,10 @@ app.post('/api/ai-key', (req, res) => {
 // ---------- จัดการบัญชี FB (profiles) ----------
 app.get('/api/profiles', (req, res) => res.json(publicProfiles(loadConfig())));
 
-// redirect URI ที่ต้องเอาไปใส่ในแอป FB (เปลี่ยนตาม env ตอน deploy)
-app.get('/api/env', (req, res) => res.json({ redirectUri: REDIRECT_URI, publicUrl: PUBLIC_URL }));
+app.get('/api/env', (req, res) => res.json({
+  publicUrl: PUBLIC_URL,
+  centralOauthReady: CENTRAL_OAUTH_ENABLED && (MAX_PROFILES === 1 || CENTRAL_OAUTH_MASTER_ENABLED),
+}));
 
 // ---------- จัดการสมาชิกผู้เช่า (master only) ----------
 // provisioner อยู่บน host และรับได้เฉพาะ lifecycle ที่ whitelist ไว้ใน tenant-provisioner.js
@@ -1699,6 +1751,9 @@ app.post('/api/tenants/:code/actions/:action', tenantControlMutation, tenantCont
 
 app.post('/api/profiles', (req, res) => {
   const cfg = loadConfig();
+  if (req.body.accessToken !== undefined || req.body.appId !== undefined || req.body.appSecret !== undefined) {
+    return res.status(400).json({ error: 'เพิ่มบัญชีผ่าน Meta App กลางแล้ว กรุณากดเข้าสู่ระบบด้วย Facebook หลังสร้างบัญชี' });
+  }
   if (MAX_PROFILES && cfg.profiles.length >= MAX_PROFILES) {
     return res.status(403).json({ error: `instance นี้รองรับได้ ${MAX_PROFILES} โปรไฟล์ FB เพื่อคงการแยกข้อมูลของผู้เช่า` });
   }
@@ -1706,7 +1761,7 @@ app.post('/api/profiles', (req, res) => {
   cfg.profiles.push({
     id,
     label: req.body.label || `บัญชี FB ${cfg.profiles.length + 1}`,
-    accessToken: req.body.accessToken || '',
+    accessToken: '',
     adAccountId: '', pageId: '',
   });
   if (!cfg.activeProfileId) cfg.activeProfileId = id;
@@ -1718,12 +1773,11 @@ app.post('/api/profiles/update', (req, res) => {
   const cfg = loadConfig();
   const p = cfg.profiles.find((x) => x.id === req.body.id);
   if (!p) return res.status(404).json({ error: 'ไม่พบบัญชีนี้' });
-  // ความลับ (token/secret): ช่องว่าง = "ไม่เปลี่ยน" เพราะหน้าเว็บโชว์เป็น placeholder ไม่เคยส่งค่าเดิมกลับมา
-  for (const k of ['accessToken', 'appSecret']) {
-    if (req.body[k]) p[k] = req.body[k];
+  if (req.body.appId !== undefined || req.body.appSecret !== undefined || req.body.accessToken !== undefined) {
+    return res.status(400).json({ error: 'ระบบใช้ Meta App กลางแล้ว จึงไม่รับ App ID, App Secret หรือ Access Token รายบัญชี' });
   }
-  // ค่าธรรมดา: ช่องว่าง = ตั้งใจล้างค่า (เดิมล้าง appId/เพจ/บัญชีโฆษณาที่เลือกผิดไว้ไม่ได้เลย)
-  for (const k of ['label', 'adAccountId', 'pageId', 'appId']) {
+  // ค่าธรรมดา: ช่องว่าง = ตั้งใจล้างค่า
+  for (const k of ['label', 'adAccountId', 'pageId']) {
     if (req.body[k] !== undefined) p[k] = req.body[k];
   }
   saveConfig(cfg);
@@ -1749,79 +1803,156 @@ app.post('/api/profiles/active', (req, res) => {
 
 // ---------- Login with Facebook (OAuth) ----------
 function oauthCookieOptions() {
-  return { httpOnly: true, sameSite: 'lax', path: PUBLIC_APP_PATH, secure: new URL(PUBLIC_URL).protocol === 'https:', maxAge: OAUTH_STATE_TTL_MS };
+  // callback กลางอยู่ที่ root ของโดเมน ส่วน tenant เริ่มจาก /p/<code>/ จึงต้องใช้ path=/
+  return { httpOnly: true, sameSite: 'lax', path: '/', secure: new URL(PUBLIC_URL).protocol === 'https:', maxAge: OAUTH_STATE_TTL_MS };
 }
 function sameSecret(a, b) {
   const left = Buffer.from(String(a || ''));
   const right = Buffer.from(String(b || ''));
   return left.length === right.length && left.length > 0 && crypto.timingSafeEqual(left, right);
 }
-app.get('/auth/login', (req, res) => {
+function stateHash(value) {
+  return crypto.createHash('sha256').update(String(value || '')).digest('hex');
+}
+function tenantOAuthState(state) {
+  const match = String(state || '').match(/^([a-f0-9]{32})\.([a-f0-9]{64})$/i);
+  return match ? { code: match[1].toLowerCase(), nonce: match[2].toLowerCase() } : null;
+}
+function oauthPage(res, ok, message, returnPath = PUBLIC_APP_PATH) {
+  const origin = new URL(CENTRAL_OAUTH_REDIRECT_URI || PUBLIC_URL).origin;
+  const safePath = typeof returnPath === 'string' && returnPath.startsWith('/') ? returnPath : PUBLIC_APP_PATH;
+  return res.send(`<!doctype html><meta charset="utf8">`
+    + `<body style="font-family:'Segoe UI',sans-serif;padding:48px;text-align:center;color:#1c1e21">`
+    + `<h2>${ok ? '✅ เชื่อมต่อสำเร็จ' : '❌ ไม่สำเร็จ'}</h2><p style="color:#65676b">${lpEsc(message)}</p>`
+    + `<p style="color:#aaa;font-size:13px">หน้านี้จะปิดเอง…</p>`
+    + `<script>if(window.opener){window.opener.postMessage('fb-auth-done',${JSON.stringify(origin)});setTimeout(function(){window.close()},1400)}else{setTimeout(function(){location.href=${JSON.stringify(safePath)}},1400)}</script>`
+    + `</body>`);
+}
+function centralOAuthUrl(state) {
+  return `https://www.facebook.com/v23.0/dialog/oauth`
+    + `?client_id=${encodeURIComponent(CENTRAL_FB_APP_ID)}`
+    + `&redirect_uri=${encodeURIComponent(CENTRAL_OAUTH_REDIRECT_URI)}`
+    + `&state=${encodeURIComponent(state)}`
+    + `&response_type=code&scope=${encodeURIComponent(LOGIN_SCOPES)}`;
+}
+async function exchangeCentralOAuthCode(code) {
+  const short = await (await fetch(`${API}/oauth/access_token`
+    + `?client_id=${encodeURIComponent(CENTRAL_FB_APP_ID)}`
+    + `&redirect_uri=${encodeURIComponent(CENTRAL_OAUTH_REDIRECT_URI)}`
+    + `&client_secret=${encodeURIComponent(CENTRAL_FB_APP_SECRET)}`
+    + `&code=${encodeURIComponent(code)}`)).json();
+  if (short.error) throw new Error(short.error.message || 'แลก Facebook code ไม่สำเร็จ');
+  const long = await (await fetch(`${API}/oauth/access_token`
+    + `?grant_type=fb_exchange_token`
+    + `&client_id=${encodeURIComponent(CENTRAL_FB_APP_ID)}`
+    + `&client_secret=${encodeURIComponent(CENTRAL_FB_APP_SECRET)}`
+    + `&fb_exchange_token=${encodeURIComponent(short.access_token)}`)).json();
+  if (long.error) throw new Error(long.error.message || 'ต่ออายุ Facebook token ไม่สำเร็จ');
+  if (!long.access_token && !short.access_token) throw new Error('Facebook ไม่คืน access token');
+  return long.access_token || short.access_token;
+}
+function oauthRenewalCredentials(profile) {
+  if (profile && profile.oauthProvider === 'central' && CENTRAL_FB_APP_ID && CENTRAL_FB_APP_SECRET) {
+    return { appId: CENTRAL_FB_APP_ID, appSecret: CENTRAL_FB_APP_SECRET };
+  }
+  // token เดิมที่เชื่อมก่อนย้ายระบบยังต่ออายุด้วยแอปเดิมได้จนกว่าผู้ใช้จะล็อกอินผ่าน App กลางอีกครั้ง
+  if (profile && profile.appId && profile.appSecret) return { appId: profile.appId, appSecret: profile.appSecret };
+  return null;
+}
+function provisionerError(result) {
+  try { return JSON.parse(result.raw || '{}').error || 'ระบบจัดการผู้เช่าปฏิเสธคำขอ'; }
+  catch { return 'ระบบจัดการผู้เช่าตอบข้อมูลไม่ถูกต้อง'; }
+}
+function oauthStartGuard(req, res, next) {
+  // GET นี้ออก state และเขียน cookie จึงต้องกันเว็บอื่นเริ่ม OAuth flow ด้วย session ของผู้ใช้.
+  // ยอมรับ navigation พิมพ์ URL ตรง (Sec-Fetch-Site: none) และ client เก่าที่ไม่มี header.
+  const origin = req.get('origin');
+  const fetchSite = req.get('sec-fetch-site');
+  if ((origin && origin !== PUBLIC_ORIGIN) || (fetchSite && !['same-origin', 'none'].includes(fetchSite))) {
+    return res.status(403).send('เริ่มเชื่อม Facebook ได้จากหน้าเว็บระบบเดียวกันเท่านั้น');
+  }
+  return next();
+}
+app.get('/auth/login', oauthStartGuard, (req, res) => {
   const cfg = loadConfig();
   const prof = cfg.profiles.find((p) => p.id === req.query.profile);
   if (!prof) return res.status(404).send('ไม่พบบัญชี');
-  if (!prof.appId) return res.status(400).send('ยังไม่ได้ใส่ App ID ในการ์ดบัญชี');
+  if (!CENTRAL_OAUTH_ENABLED) return res.status(503).send('ผู้ดูแลยังไม่ได้ตั้งค่า Meta App กลาง');
   const now = Date.now();
-  for (const [key, value] of oauthStates) if (!value || value.expiresAt <= now) oauthStates.delete(key);
-  const state = crypto.randomBytes(32).toString('hex');
-  oauthStates.set(state, { profileId: prof.id, expiresAt: now + OAUTH_STATE_TTL_MS });
+  let state;
+  if (MAX_PROFILES === 1) {
+    if (!TENANT_CODE) return res.status(503).send('instance ผู้เช่านี้ไม่มี Profile code สำหรับเชื่อม Facebook กลาง');
+    const nonce = crypto.randomBytes(32).toString('hex');
+    state = `${TENANT_CODE}.${nonce}`;
+    prof.centralOAuth = { stateHash: stateHash(state), expiresAt: now + OAUTH_STATE_TTL_MS };
+    saveConfig(cfg);
+  } else {
+    if (!CENTRAL_OAUTH_MASTER_ENABLED) return res.status(503).send('Meta App กลางบนแอดมินหลักยังตั้งค่าไม่ครบ');
+    for (const [key, value] of oauthStates) if (!value || value.expiresAt <= now) oauthStates.delete(key);
+    state = crypto.randomBytes(32).toString('hex');
+    oauthStates.set(state, { profileId: prof.id, expiresAt: now + OAUTH_STATE_TTL_MS });
+  }
   res.cookie(OAUTH_STATE_COOKIE, state, oauthCookieOptions());
-  const url = `https://www.facebook.com/v23.0/dialog/oauth`
-    + `?client_id=${encodeURIComponent(prof.appId)}`
-    + `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`
-    + `&state=${encodeURIComponent(state)}`
-    + `&response_type=code&scope=${encodeURIComponent(LOGIN_SCOPES)}`;
-  res.redirect(url);
+  res.redirect(centralOAuthUrl(state));
 });
 
-app.get('/auth/callback', async (req, res) => {
+app.get('/oauth/facebook/callback', async (req, res) => {
   const state = String(req.query.state || '');
-  const saved = oauthStates.get(state);
   const cookieState = cookieValue(req, OAUTH_STATE_COOKIE);
-  const validState = /^[a-f0-9]{64}$/i.test(state) && !!saved && saved.expiresAt > Date.now() && sameSecret(state, cookieState);
-  if (validState) oauthStates.delete(state); // one-time, even if Meta token exchange subsequently fails
+  const tenantState = tenantOAuthState(state);
+  const hasCookie = sameSecret(state, cookieState);
   res.clearCookie(OAUTH_STATE_COOKIE, oauthCookieOptions());
-  const cfg = loadConfig();
-  const prof = validState ? cfg.profiles.find((p) => p.id === saved.profileId) : null;
-  const done = (ok, msg) => res.send(`<!doctype html><meta charset="utf8">`
-    + `<body style="font-family:'Segoe UI',sans-serif;padding:48px;text-align:center;color:#1c1e21">`
-    // msg มาจาก query string ได้ (error_description ของ FB) — ไม่ escape คือ reflected XSS
-    + `<h2>${ok ? '✅ เชื่อมต่อสำเร็จ' : '❌ ไม่สำเร็จ'}</h2><p style="color:#65676b">${lpEsc(msg)}</p>`
-    + `<p style="color:#aaa;font-size:13px">หน้านี้จะปิดเอง…</p>`
-    + `<script>if(window.opener){window.opener.postMessage('fb-auth-done',${JSON.stringify(new URL(PUBLIC_URL).origin)});setTimeout(function(){window.close()},1400)}else{setTimeout(function(){location.href=${JSON.stringify(PUBLIC_APP_PATH)}},1400)}</script>`
-    + `</body>`);
+  if (tenantState) {
+    const returnPath = `/p/${tenantState.code}/`;
+    if (!CENTRAL_OAUTH_MASTER_ENABLED || !hasCookie) return oauthPage(res, false, 'ลิงก์เข้าสู่ระบบหมดอายุหรือไม่ตรงกับเบราว์เซอร์นี้ กรุณาเริ่มเชื่อมต่อใหม่', returnPath);
+    let consumed;
+    try {
+      consumed = await provisionerCall('POST', `/v1/tenants/${tenantState.code}/oauth/consume`, { state });
+    } catch (error) {
+      return oauthPage(res, false, error.message, returnPath);
+    }
+    if (consumed.status < 200 || consumed.status >= 300) return oauthPage(res, false, provisionerError(consumed), returnPath);
+    if (req.query.error) return oauthPage(res, false, req.query.error_description || req.query.error, returnPath);
+    const code = String(req.query.code || '');
+    if (!code || code.length > 4096) return oauthPage(res, false, 'Facebook ไม่ส่ง code ที่ใช้แลก token กลับมา', returnPath);
+    try {
+      const accessToken = await exchangeCentralOAuthCode(code);
+      const stored = await provisionerCall('POST', `/v1/tenants/${tenantState.code}/oauth/store-token`, { state, accessToken });
+      if (stored.status < 200 || stored.status >= 300) return oauthPage(res, false, provisionerError(stored), returnPath);
+      return oauthPage(res, true, 'เชื่อมต่อบัญชีแล้ว กลับไปเลือกบัญชีโฆษณาและเพจได้เลย', returnPath);
+    } catch (error) {
+      return oauthPage(res, false, error.message, returnPath);
+    }
+  }
 
-  if (!validState) return done(false, 'ลิงก์เข้าสู่ระบบหมดอายุหรือไม่ตรงกับเบราว์เซอร์นี้ กรุณาเริ่มเชื่อมต่อใหม่');
-  if (req.query.error) return done(false, req.query.error_description || req.query.error);
-  if (!prof) return done(false, 'ไม่พบบัญชี (state ไม่ตรง)');
-  if (!prof.appSecret) return done(false, 'ยังไม่ได้ใส่ App Secret');
+  const saved = oauthStates.get(state);
+  const validState = /^[a-f0-9]{64}$/i.test(state) && !!saved && saved.expiresAt > Date.now() && hasCookie;
+  if (validState) oauthStates.delete(state); // one-time, even if Meta token exchange subsequently fails
+  if (!CENTRAL_OAUTH_MASTER_ENABLED || !validState) return oauthPage(res, false, 'ลิงก์เข้าสู่ระบบหมดอายุหรือไม่ตรงกับเบราว์เซอร์นี้ กรุณาเริ่มเชื่อมต่อใหม่');
+  if (req.query.error) return oauthPage(res, false, req.query.error_description || req.query.error);
+  const cfg = loadConfig();
+  const prof = cfg.profiles.find((p) => p.id === saved.profileId);
+  if (!prof) return oauthPage(res, false, 'บัญชีนี้ถูกลบไประหว่างล็อกอิน');
   try {
-    // แลก code → short-lived token
-    const s = await (await fetch(`${API}/oauth/access_token`
-      + `?client_id=${encodeURIComponent(prof.appId)}`
-      + `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`
-      + `&client_secret=${encodeURIComponent(prof.appSecret)}`
-      + `&code=${encodeURIComponent(req.query.code)}`)).json();
-    if (s.error) throw new Error(s.error.message);
-    // แลก → long-lived token (~60 วัน)
-    const l = await (await fetch(`${API}/oauth/access_token`
-      + `?grant_type=fb_exchange_token`
-      + `&client_id=${encodeURIComponent(prof.appId)}`
-      + `&client_secret=${encodeURIComponent(prof.appSecret)}`
-      + `&fb_exchange_token=${encodeURIComponent(s.access_token)}`)).json();
-    if (l.error) throw new Error(l.error.message);
     // โหลด config สดก่อนเขียน — ระหว่างรอ FB ตอบ (หลายวินาที) อาจมีการแก้ค่าอื่นเข้ามา
-    // เช่น watchTick ต่ออายุ token ให้บัญชีอื่น ถ้าเขียนทับด้วย cfg ที่โหลดไว้ตั้งแต่ต้น ค่านั้นจะหาย
+    // ถ้าเขียนทับด้วย cfg ที่โหลดไว้ตั้งแต่ต้น ค่าที่เพิ่งแก้จากหน้าจอจะหาย
     const cfgNow = loadConfig();
     const profNow = cfgNow.profiles.find((p) => p.id === prof.id);
-    if (!profNow) return done(false, 'บัญชีนี้ถูกลบไประหว่างล็อกอิน');
-    profNow.accessToken = l.access_token || s.access_token;
+    if (!profNow) return oauthPage(res, false, 'บัญชีนี้ถูกลบไประหว่างล็อกอิน');
+    profNow.accessToken = await exchangeCentralOAuthCode(String(req.query.code || ''));
+    profNow.oauthProvider = 'central';
+    profNow.centralOAuthConnectedAt = new Date().toISOString();
+    delete profNow.appId;
+    delete profNow.appSecret;
     saveConfig(cfgNow);
-    done(true, 'ได้ token แล้ว (ต่ออายุ 60 วันอัตโนมัติ) — กลับไปที่โปรแกรมได้เลย');
+    return oauthPage(res, true, 'เชื่อมต่อบัญชีแล้ว กลับไปเลือกบัญชีโฆษณาและเพจได้เลย');
   } catch (e) {
-    done(false, e.message);
+    return oauthPage(res, false, e.message);
   }
 });
+
+// callback รุ่นก่อนเป็น tenant-local และใช้ไม่ได้กับ App กลาง จึงไม่เปิดทางแลก token ผ่าน App Secret รายบัญชีอีก
+app.get('/auth/callback', (req, res) => oauthPage(res, false, 'ลิงก์เชื่อมต่อเดิมหมดอายุแล้ว กรุณากด “เข้าสู่ระบบด้วย Facebook” จากหน้าโปรแกรมอีกครั้ง'));
 
 // ---------- ข้อมูลจาก FB ----------
 // ตรวจ token + ดึงรายชื่อบัญชีโฆษณาและเพจ (ระบุ ?profile=id ได้)
@@ -2622,14 +2753,16 @@ async function watchTick() {
       }
       continue; // token ตาย ตรวจอย่างอื่นต่อไม่ได้
     }
-    // 2) ใกล้หมดอายุ (<14 วัน) → ต่ออายุอัตโนมัติ (ต้องมี appId+appSecret ของโปรไฟล์)
-    if (prof.appId && prof.appSecret) {
+    // 2) ใกล้หมดอายุ (<14 วัน) → master ต่ออายุเองได้; tenant ให้ root-only provisioner ทำแทน
+    // เพื่อไม่กระจาย App Secret เข้า container ของผู้เช่า
+    const oauthApp = oauthRenewalCredentials(prof);
+    if (oauthApp) {
       try {
-        const appTok = `${prof.appId}|${prof.appSecret}`;
+        const appTok = `${oauthApp.appId}|${oauthApp.appSecret}`;
         const dbg = await (await fetch(`${API}/debug_token?input_token=${encodeURIComponent(prof.accessToken)}&access_token=${encodeURIComponent(appTok)}`)).json();
         const exp = dbg.data && dbg.data.expires_at; // 0 = ไม่หมดอายุ
         if (exp && exp * 1000 - Date.now() < 14 * 864e5) {
-          const l = await (await fetch(`${API}/oauth/access_token?grant_type=fb_exchange_token&client_id=${encodeURIComponent(prof.appId)}&client_secret=${encodeURIComponent(prof.appSecret)}&fb_exchange_token=${encodeURIComponent(prof.accessToken)}`)).json();
+          const l = await (await fetch(`${API}/oauth/access_token?grant_type=fb_exchange_token&client_id=${encodeURIComponent(oauthApp.appId)}&client_secret=${encodeURIComponent(oauthApp.appSecret)}&fb_exchange_token=${encodeURIComponent(prof.accessToken)}`)).json();
           if (l.access_token) {
             const cfg2 = loadConfig(); // โหลดสดกันทับค่าที่เพิ่งแก้ระหว่างรอบ
             const p2 = cfg2.profiles.find((x) => x.id === prof.id);

@@ -6,6 +6,7 @@ cd "$(dirname "$0")"
 command -v curl >/dev/null || { echo "ไม่พบ curl สำหรับตรวจ routing หลัง deploy" >&2; exit 1; }
 
 PROVISIONER_ENV=/etc/fbad-provisioner/provisioner.env
+CENTRAL_OAUTH_ENV=/etc/fbad-oauth/central.env
 TRAEFIK_CONTAINER="${TRAEFIK_CONTAINER:-}"
 if [ -r "$PROVISIONER_ENV" ]; then
   set -a
@@ -75,6 +76,22 @@ if [ -S /run/fbad-provisioner.sock ]; then
   [[ "${TENANT_PROVISIONER_TOKEN:-}" =~ ^[A-Fa-f0-9]{64}$ ]] || { echo "TENANT_PROVISIONER_TOKEN ต้องเป็น hex 64 ตัว"; exit 1; }
   [ -S "$TENANT_PROVISIONER_SOCKET" ] || { echo "ไม่พบ provisioner socket ตามที่ตั้งค่า"; exit 1; }
   PROVISIONER_ARGS=(-e "TENANT_PROVISIONER_SOCKET=$TENANT_PROVISIONER_SOCKET" -e "TENANT_PROVISIONER_TOKEN=$TENANT_PROVISIONER_TOKEN" -v "$TENANT_PROVISIONER_SOCKET:$TENANT_PROVISIONER_SOCKET")
+fi
+CENTRAL_OAUTH_ARGS=()
+if [ -e "$CENTRAL_OAUTH_ENV" ]; then
+  [ -r "$CENTRAL_OAUTH_ENV" ] || { echo "อ่าน $CENTRAL_OAUTH_ENV ไม่ได้" >&2; exit 1; }
+  if grep -Eq '^(CENTRAL_OAUTH_ENABLED|CENTRAL_OAUTH_REDIRECT_URI)=' "$CENTRAL_OAUTH_ENV"; then
+    echo "$CENTRAL_OAUTH_ENV รับเฉพาะ FB_APP_ID และ FB_APP_SECRET; callback ถูกตรึงเป็น https://ad.senball.com/oauth/facebook/callback" >&2
+    exit 1
+  fi
+  set -a
+  # shellcheck source=/etc/fbad-oauth/central.env
+  . "$CENTRAL_OAUTH_ENV"
+  set +a
+  [[ "${FB_APP_ID:-}" =~ ^[0-9]{5,32}$ ]] || { echo "FB_APP_ID ใน $CENTRAL_OAUTH_ENV ไม่ถูกต้อง" >&2; exit 1; }
+  [[ "${FB_APP_SECRET:-}" =~ ^[A-Fa-f0-9]{32}$ ]] || { echo "FB_APP_SECRET ใน $CENTRAL_OAUTH_ENV ไม่ถูกต้อง" >&2; exit 1; }
+  CENTRAL_OAUTH_ARGS=(--env-file "$CENTRAL_OAUTH_ENV" -e CENTRAL_OAUTH_ENABLED=1 -e CENTRAL_OAUTH_REDIRECT_URI=https://ad.senball.com/oauth/facebook/callback)
+  unset FB_APP_ID FB_APP_SECRET
 fi
 UPDATED_TENANTS=()
 UPDATED_IMAGES=()
@@ -150,6 +167,7 @@ if ! docker run -d --name fbad --restart unless-stopped \
   -e CONFIG_PATH=/data/config.json \
   -v /opt/fbad-data:/data \
   "${PROVISIONER_ARGS[@]}" \
+  "${CENTRAL_OAUTH_ARGS[@]}" \
   --label traefik.enable=true \
   --label "traefik.docker.network=$MASTER_NETWORK" \
   --label 'traefik.http.routers.fbad.rule=Host(`ad.senball.com`)' \
@@ -158,7 +176,7 @@ if ! docker run -d --name fbad --restart unless-stopped \
   --label traefik.http.routers.fbad.middlewares=fbad-auth \
   --label "traefik.http.middlewares.fbad-auth.basicauth.users=$HASH" \
   --label 'traefik.http.middlewares.fbad-auth.basicauth.realm=fbad-master' \
-  --label 'traefik.http.routers.fbadpub.rule=Host(`ad.senball.com`) && (Path(`/privacy.html`) || Path(`/lp`) || Path(`/lp/`) || PathPrefix(`/lp-asset/`))' \
+  --label 'traefik.http.routers.fbadpub.rule=Host(`ad.senball.com`) && (Path(`/privacy.html`) || Path(`/oauth/facebook/callback`) || Path(`/lp`) || Path(`/lp/`) || PathPrefix(`/lp-asset/`))' \
   --label traefik.http.routers.fbadpub.entrypoints=websecure \
   --label traefik.http.routers.fbadpub.service=fbad \
   --label traefik.http.routers.fbadpub.tls.certresolver=le \
@@ -169,15 +187,16 @@ if ! docker run -d --name fbad --restart unless-stopped \
 fi
 
 sleep 2
-MASTER_LP_STATUS=""; MASTER_ADMIN_STATUS=""
+MASTER_LP_STATUS=""; MASTER_ADMIN_STATUS=""; MASTER_OAUTH_STATUS=""
 for _ in {1..5}; do
   MASTER_LP_STATUS="$(curl -sk --connect-timeout 5 --resolve ad.senball.com:443:127.0.0.1 -o /dev/null -w '%{http_code}' https://ad.senball.com/lp || true)"
   MASTER_ADMIN_STATUS="$(curl -sk --connect-timeout 5 --resolve ad.senball.com:443:127.0.0.1 -o /dev/null -w '%{http_code}' https://ad.senball.com/ || true)"
-  [ "$MASTER_LP_STATUS" = "200" ] && [ "$MASTER_ADMIN_STATUS" = "401" ] && break
+  MASTER_OAUTH_STATUS="$(curl -sk --connect-timeout 5 --resolve ad.senball.com:443:127.0.0.1 -o /dev/null -w '%{http_code}' https://ad.senball.com/oauth/facebook/callback || true)"
+  [ "$MASTER_LP_STATUS" = "200" ] && [ "$MASTER_ADMIN_STATUS" = "401" ] && [ "$MASTER_OAUTH_STATUS" = "200" ] && break
   sleep 2
 done
-if ! docker exec fbad wget -qO /dev/null http://localhost:4000/ || [ "$MASTER_LP_STATUS" != "200" ] || [ "$MASTER_ADMIN_STATUS" != "401" ]; then
-  echo "❌ master health/routing ไม่ผ่าน (lp=${MASTER_LP_STATUS:-none}, admin=${MASTER_ADMIN_STATUS:-none}) — จะกู้ตัวเดิมกลับแล้ว" >&2
+if ! docker exec fbad wget -qO /dev/null http://localhost:4000/ || [ "$MASTER_LP_STATUS" != "200" ] || [ "$MASTER_ADMIN_STATUS" != "401" ] || [ "$MASTER_OAUTH_STATUS" != "200" ]; then
+  echo "❌ master health/routing ไม่ผ่าน (lp=${MASTER_LP_STATUS:-none}, admin=${MASTER_ADMIN_STATUS:-none}, oauth=${MASTER_OAUTH_STATUS:-none}) — จะกู้ตัวเดิมกลับแล้ว" >&2
   exit 1
 fi
 

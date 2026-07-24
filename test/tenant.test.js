@@ -144,11 +144,15 @@ esac
     assert.ok(page.includes(`location.href="/p/${code}/"`), 'OAuth ที่เปิดตรงๆ ต้องกลับ instance เดิม ไม่ใช่ root');
   });
 
-  test('OAuth callback ต้องยอมรับเฉพาะ state ที่สุ่มและ cookie ของ browser เดียวกัน', async (t) => {
+  test('tenant OAuth สร้าง state ผูก Profile code โดยไม่ต้องมี App ID หรือ Secret ใน config', async (t) => {
     const fb = await makeFakeFb({});
     const dir = tmpDir();
-    seed(dir, { config: { profiles: [{ id: 'p1', label: 'ร้าน', appId: 'app-id', appSecret: 'app-secret', accessToken: 'token-old' }] } });
-    const srv = await startServer(dir, fb.port);
+    const code = 'b'.repeat(32);
+    seed(dir, { config: { profiles: [{ id: 'p1', label: 'ร้าน', accessToken: 'token-old' }], activeProfileId: 'p1' } });
+    const srv = await startServer(dir, fb.port, {
+      MAX_PROFILES: '1', TENANT_CODE: code, PUBLIC_URL_PATH: '/p/' + code,
+      FB_APP_ID: '12345678', CENTRAL_OAUTH_ENABLED: '1', CENTRAL_OAUTH_REDIRECT_URI: 'https://ad.senball.com/oauth/facebook/callback',
+    });
     t.after(() => { srv.stop(); fb.server.close(); });
 
     const login = await fetch(srv.base + '/auth/login?profile=p1', { redirect: 'manual' });
@@ -156,13 +160,42 @@ esac
     const loginUrl = new URL(login.headers.get('location'));
     const state = loginUrl.searchParams.get('state');
     const cookie = login.headers.get('set-cookie').split(';')[0];
-    assert.match(state, /^[a-f0-9]{64}$/);
-
-    const forged = await (await fetch(srv.base + '/auth/callback?code=fake&state=p1')).text();
-    assert.match(forged, /หมดอายุ|ไม่ตรงกับเบราว์เซอร์/, 'ห้ามใช้ profile id เป็น OAuth state ได้โดยตรง');
-    const cancelled = await (await fetch(srv.base + `/auth/callback?error=cancelled&state=${state}`, { headers: { cookie } })).text();
-    assert.match(cancelled, /cancelled/);
+    assert.match(state, new RegExp(`^${code}\\.[a-f0-9]{64}$`));
+    assert.strictEqual(loginUrl.searchParams.get('client_id'), '12345678');
+    assert.strictEqual(loginUrl.searchParams.get('redirect_uri'), 'https://ad.senball.com/oauth/facebook/callback');
+    assert.match(login.headers.get('set-cookie'), /Path=\//, 'cookie ต้องส่งถึง callback กลางที่ root path ได้');
     const config = JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8'));
-    assert.strictEqual(config.profiles[0].accessToken, 'token-old', 'callback ที่ไม่ผ่าน state ห้ามเขียนทับ token');
+    assert.match(config.profiles[0].centralOAuth.stateHash, /^[a-f0-9]{64}$/);
+    assert.ok(!JSON.stringify(config).includes(state), 'ไม่เก็บ OAuth state ดิบลง volume ผู้เช่า');
+    assert.strictEqual(config.profiles[0].accessToken, 'token-old');
+    const publicProfiles = await get(srv.base, '/api/profiles');
+    assert.ok(!('appId' in publicProfiles.profiles[0]) && !('hasSecret' in publicProfiles.profiles[0]));
+    const oldCredentials = await fetch(srv.base + '/api/profiles/update', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: 'p1', accessToken: 'not-allowed' }),
+    });
+    assert.strictEqual(oldCredentials.status, 400, 'ห้ามย้อนกลับไปเก็บ credential รายผู้เช่า');
+    assert.match((await oldCredentials.json()).error, /App กลาง/);
+    const directProfile = await fetch(srv.base + '/api/profiles', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ accessToken: 'not-allowed' }),
+    });
+    assert.strictEqual(directProfile.status, 400, 'ห้ามสร้าง profile ด้วย token ที่ client ส่งมา');
+    assert.ok(cookie.includes(state), 'cookie ต้องมี state เดียวกับ query');
+    const crossSite = await fetch(srv.base + '/auth/login?profile=p1', { redirect: 'manual', headers: { 'sec-fetch-site': 'cross-site' } });
+    assert.strictEqual(crossSite.status, 403, 'เว็บอื่นห้ามเริ่ม OAuth flow ด้วย session ของผู้เช่า');
+  });
+
+  test('เมื่อเปิด App กลาง ให้ล้าง App Secret เดิมจาก config และ backup', async (t) => {
+    const fb = await makeFakeFb({});
+    const dir = tmpDir();
+    seed(dir, { config: { activeProfileId: 'p1', profiles: [{ id: 'p1', accessToken: 'legacy-token' }] } });
+    const backups = path.join(dir, 'config-backups');
+    fs.mkdirSync(backups);
+    fs.writeFileSync(path.join(backups, 'config-2026-07-01.json'), JSON.stringify({ profiles: [{ id: 'p1', appId: 'old-app', appSecret: 'old-secret' }] }));
+    const srv = await startServer(dir, fb.port, { MAX_PROFILES: '1', TENANT_CODE: 'c'.repeat(32), FB_APP_ID: '12345678', CENTRAL_OAUTH_ENABLED: '1' });
+    t.after(() => { srv.stop(); fb.server.close(); });
+
+    await fetch(srv.base + '/api/profiles');
+    assert.ok(!fs.readFileSync(path.join(dir, 'config.json'), 'utf8').includes('old-secret'));
+    for (const file of fs.readdirSync(backups)) assert.ok(!fs.readFileSync(path.join(backups, file), 'utf8').includes('old-secret'), `backup ${file} ต้องไม่เก็บ App Secret เดิม`);
   });
 });
