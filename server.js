@@ -503,6 +503,10 @@ const LP_DEFAULT = {
   pixels: [],          // [{ id, type: 'meta'|'ga' }]
   links: [],           // [{ id, label, url, icon, event }]
 };
+// 1 พิกเซลต่อ 1 บัญชีโฆษณา ระบบรองรับบัญชีหลักร้อย เพดานจึงต้องสูงกว่านั้น
+// เพดานเดิม 30 ต่ำกว่าจำนวนพิกเซลที่ระบบฝังเอง = กดบันทึกหน้า Landing แล้วพิกเซลท้ายๆ หายเงียบ
+// บัญชีที่พิกเซลหายจะรายงานคอนเวอร์ชั่นเป็น 0 ทั้งที่คนกดจริง แล้วตัวปิดแอดขาดทุนจะเชือดผิดตัว
+const LP_MAX_PIXELS = 300;
 function loadLp() {
   try { return { ...LP_DEFAULT, ...JSON.parse(fs.readFileSync(LP_PATH, 'utf8')) }; }
   catch { return { ...LP_DEFAULT }; }
@@ -557,15 +561,25 @@ function lpIsOurLanding(link) {
   } catch { return false; }
 }
 
-// ฝังพิกเซลลงหน้า Landing ถ้ายังไม่มี — คืน true เมื่อเพิ่งเพิ่มเข้าไป
-function lpEnsurePixel(pixelId) {
-  const id = String(pixelId || '').replace(/[^A-Za-z0-9-]/g, '');
-  if (!id) return false;
+// ฝังพิกเซลลงหน้า Landing ถ้ายังไม่มี — คืนรายการ id ที่เพิ่งเพิ่มเข้าไป (เขียนไฟล์ครั้งเดียว)
+function lpEnsurePixels(pixelIds) {
   const v = loadLp();
-  if (v.pixels.some((p) => p.type === 'meta' && p.id === id)) return false;
-  v.pixels.push({ type: 'meta', id });
-  saveLp(v);
-  return true;
+  const have = new Set(v.pixels.filter((p) => p.type === 'meta').map((p) => p.id));
+  const added = [];
+  for (const raw of pixelIds || []) {
+    const id = String(raw || '').replace(/[^A-Za-z0-9-]/g, '');
+    if (!id || have.has(id)) continue;
+    if (v.pixels.length >= LP_MAX_PIXELS) break;   // เต็มเพดาน — หยุดเพิ่ม ไม่ตัดของเดิมทิ้ง
+    v.pixels.push({ type: 'meta', id });
+    have.add(id);
+    added.push(id);
+  }
+  if (added.length) saveLp(v);
+  return added;
+}
+// คืน true เมื่อเพิ่งเพิ่มเข้าไป
+function lpEnsurePixel(pixelId) {
+  return lpEnsurePixels([pixelId]).length > 0;
 }
 
 app.post('/api/landing/upload', uploadLpImg.single('file'), (req, res) => {
@@ -703,7 +717,7 @@ app.post('/api/landing', (req, res) => {
     bg: Object.prototype.hasOwnProperty.call(LP_BGS, b.bg ?? cur.bg) ? (b.bg ?? cur.bg) : '',
     // รับเฉพาะรูปที่อัปผ่านระบบเรา — ลิงก์รูปจากเว็บนอกทำให้หน้าพังเมื่อเว็บนั้นล่ม
     bgImage: /^\/lp-asset\/[0-9a-f-]{36}\.(jpg|png|webp|gif)$/i.test(String(b.bgImage ?? cur.bgImage ?? '')) ? String(b.bgImage ?? cur.bgImage) : '',
-    pixels: (Array.isArray(b.pixels) ? b.pixels : cur.pixels).slice(0, 30).map((p) => ({
+    pixels: (Array.isArray(b.pixels) ? b.pixels : cur.pixels).slice(0, LP_MAX_PIXELS).map((p) => ({
       type: p.type === 'ga' ? 'ga' : 'meta',
       id: String(p.id || '').replace(/[^A-Za-z0-9-]/g, '').slice(0, 40),
     })).filter((p) => p.id),
@@ -1439,14 +1453,24 @@ app.get('/api/health-overview', async (req, res) => {
       fbAll('me/accounts', { fields: 'name,is_published,promotion_eligible,promotion_ineligible_reason', limit: 100 }, token),
     ]);
     // หน้าสุขภาพคือ "ตัวจัดการ" — โชว์ทุกตัวรวมที่ซ่อน/ถูกปิด พร้อมธง hidden ให้กดสลับได้
+    const accounts = accts.map((a) => ({
+      id: a.account_id, name: a.name, status: a.account_status,
+      business: a.business ? a.business.name : null,
+      pixels: ((a.adspixels || {}).data || []).map((x) => ({ id: x.id, name: x.name })),
+      funding: (a.funding_source_details && (a.funding_source_details.display_string || 'เชื่อมแล้ว')) || null,
+      hidden: !!(hidden.accounts || {})[a.account_id],
+    }));
+    // พิกเซลที่ไม่ได้ฝังในหน้า Landing = แคมเปญของบัญชีนั้นเห็นคอนเวอร์ชั่นเป็นศูนย์ตลอดทั้งที่คนกดจริง
+    // เดิมผูกให้เฉพาะตอนขึ้นแอด/autopilot เติมแอด บัญชีที่ยังไม่ถึงคิวจึงค้างไม่ผูก — ผูกให้ตรงนี้ด้วย
+    // ข้ามบัญชีที่ถูกซ่อน (ผู้ใช้สั่งว่าไม่ต้องดูแล) และบัญชีที่ไม่ได้อยู่ในสถานะใช้งานได้
+    const boundToLp = lpEnsurePixels(
+      accounts.filter((a) => a.status === 1 && !a.hidden).flatMap((a) => a.pixels.map((x) => x.id)),
+    );
+    const onLp = new Set(loadLp().pixels.filter((p) => p.type === 'meta').map((p) => p.id));
+    for (const a of accounts) for (const x of a.pixels) x.onLp = onLp.has(String(x.id));
     res.json({
-      accounts: accts.map((a) => ({
-        id: a.account_id, name: a.name, status: a.account_status,
-        business: a.business ? a.business.name : null,
-        pixels: ((a.adspixels || {}).data || []).map((x) => ({ id: x.id, name: x.name })),
-        funding: (a.funding_source_details && (a.funding_source_details.display_string || 'เชื่อมแล้ว')) || null,
-        hidden: !!(hidden.accounts || {})[a.account_id],
-      })),
+      accounts,
+      boundToLp,
       pages: (pages || []).map((p) => ({
         id: p.id, name: p.name, published: !!p.is_published,
         eligible: !!p.promotion_eligible, reason: p.promotion_ineligible_reason || null,
@@ -1488,7 +1512,8 @@ app.post('/api/create-pixel', async (req, res) => {
   if (!name) return res.status(400).json({ error: 'กรุณาตั้งชื่อ Pixel' });
   try {
     const r = await fb(`act_${acctId}/adspixels`, { name }, 'POST', prof.accessToken);
-    res.json({ ok: true, id: r.id });
+    // สร้างเสร็จผูกเข้าหน้า Landing ให้เลย ไม่ต้องรอรอบ autopilot มาผูกทีหลัง
+    res.json({ ok: true, id: r.id, boundToLp: lpEnsurePixel(r.id) });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
