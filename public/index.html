@@ -852,10 +852,11 @@
               <th>ชื่อ</th>
               <th class="cap-sort" style="width:90px" onclick="libSortBy('size')">ขนาด <span id="libSortSize"></span></th>
               <th class="cap-sort" style="width:110px" onclick="libSortBy('used')">ใช้ไปแล้ว <span id="libSortUsed"></span></th>
+              <th style="width:150px">ผลรีวิว</th>
               <th class="cap-sort" style="width:110px" onclick="libSortBy('ts')">เพิ่มเมื่อ <span id="libSortTs"></span></th>
               <th style="width:84px"></th>
             </tr></thead>
-            <tbody id="libRows"><tr><td colspan="7" class="tbl-msg">กำลังโหลด...</td></tr></tbody>
+            <tbody id="libRows"><tr><td colspan="8" class="tbl-msg">กำลังโหลด...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -873,10 +874,11 @@
               <th>ข้อความหลัก</th>
               <th style="width:170px">หัวข้อ</th>
               <th class="cap-sort" style="width:90px" onclick="capSortBy('len')">ความยาว <span id="capSortLen"></span></th>
+              <th style="width:150px">ผลรีวิว</th>
               <th class="cap-sort" style="width:110px" onclick="capSortBy('ts')">เพิ่มเมื่อ <span id="capSortTs"></span></th>
               <th style="width:84px"></th>
             </tr></thead>
-            <tbody id="capRows"><tr><td colspan="6" class="tbl-msg">กำลังโหลด...</td></tr></tbody>
+            <tbody id="capRows"><tr><td colspan="7" class="tbl-msg">กำลังโหลด...</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -2547,11 +2549,46 @@ async function fetchLib() {
   libItems = Array.isArray(d) ? d : [];
 }
 
+// ---------- สถิติผลรีวิวของครีเอทีฟ (ใช้ร่วมกันทั้งคลังวิดีโอและคลังแคปชั่น) ----------
+let creStats = { m: {}, c: {} };
+async function fetchCreStats() {
+  try {
+    const d = await (await fetch('/api/creative-stats')).json();
+    creStats = { m: d.m || {}, c: d.c || {} };
+  } catch { /* ไม่มีสถิติก็ยังโชว์ตารางได้ตามปกติ */ }
+}
+function creCell(kind, id) {
+  const st = (creStats[kind] || {})[id];
+  if (!st || (!st.ok && !st.bad)) return '<span style="color:var(--muted)">ยังไม่มีข้อมูล</span>';
+  const cats = Object.keys(st.cats || {}).join(', ');
+  const out = [];
+  if (st.ok) out.push(`<span class="st-pill on">ผ่าน ${st.ok}</span>`);
+  if (st.bad) out.push(`<span class="st-pill rejected" title="${esc(cats || 'ไม่ระบุเหตุผล')}">ปฏิเสธ ${st.bad}</span>`);
+  if (st.blocked) {
+    out.push(`<button class="btn-light btn-sm" title="โดนปฏิเสธใน ${st.accts} บัญชี — ระบบพักไว้ ไม่หยิบไปใช้อีก กดเพื่อปลด"
+      onclick="event.stopPropagation();creUnblock(${jsStr(kind)},${jsStr(id)})">พักอยู่ ⏻</button>`);
+  }
+  return `<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">${out.join('')}</div>`;
+}
+async function creUnblock(kind, id) {
+  if (!confirm('ปลดพักตัวนี้?\n\nระบบจะกลับไปหยิบไปใช้สร้างแอดอีกครั้ง — ถ้ายังไม่ได้แก้ต้นเหตุ มันจะโดนปฏิเสธซ้ำและถูกพักใหม่')) return;
+  try {
+    const d = await (await fetch('/api/creative-stats/unblock', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind, id }),
+    })).json();
+    if (d.error) throw new Error(d.error);
+  } catch (e) { return toast('ปลดไม่สำเร็จ: ' + e.message); }
+  await fetchCreStats();
+  toast('ปลดพักแล้ว — ระบบจะหยิบไปใช้ได้อีกครั้ง');
+  renderLibrary(); renderCaptions();
+}
+
 async function loadLibrary() {
   const rows = document.getElementById('libRows');
-  rows.innerHTML = '<tr><td colspan="7" class="tbl-msg">กำลังโหลด...</td></tr>';
+  rows.innerHTML = '<tr><td colspan="8" class="tbl-msg">กำลังโหลด...</td></tr>';
   try { await fetchLib(); }
-  catch { rows.innerHTML = '<tr><td colspan="7" class="tbl-msg err">โหลดคลังไม่สำเร็จ — ลองรีเฟรชหน้า</td></tr>'; return; }
+  catch { rows.innerHTML = '<tr><td colspan="8" class="tbl-msg err">โหลดคลังไม่สำเร็จ — ลองรีเฟรชหน้า</td></tr>'; return; }
+  await fetchCreStats();
   renderLibrary();
 }
 
@@ -2578,12 +2615,13 @@ function renderLibrary() {
       <td style="font-weight:600">${esc(it.name)}<div class="res-label">${esc(it.filename || '')}</div></td>
       <td class="num-cell">${libSize(it.size || 0)}</td>
       <td>${(it.usedOn || []).length ? `${(it.usedOn || []).length} บัญชี` : '<span style="color:var(--muted)">ยังไม่เคยใช้</span>'}</td>
+      <td>${creCell('m', it.id)}</td>
       <td style="white-space:nowrap;color:var(--muted);font-size:12.5px">${fmtD(it.ts)}</td>
       <td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
         <button class="icon-btn btn-light" title="ดู/แก้ชื่อ" onclick="openLibModal(${jsStr(it.id)})"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
         <button class="btn-danger-light icon-btn" title="ลบออกจากคลัง" onclick="deleteLib(${jsStr(it.id)})"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
       </td>
-    </tr>`).join('') || `<tr><td colspan="7" class="tbl-msg">${q ? 'ไม่เจอวิดีโอที่ค้นหา' : 'ยังไม่มีวิดีโอในคลัง — ลากไฟล์มาวางด้านบนได้เลย'}</td></tr>`;
+    </tr>`).join('') || `<tr><td colspan="8" class="tbl-msg">${q ? 'ไม่เจอวิดีโอที่ค้นหา' : 'ยังไม่มีวิดีโอในคลัง — ลากไฟล์มาวางด้านบนได้เลย'}</td></tr>`;
 }
 
 // modal รายละเอียด — libModalId คือวิดีโอที่เปิดอยู่ (ใช้จากปุ่มใน modal)
@@ -3538,7 +3576,8 @@ let capSortKey = 'ts', capSortDir = -1;   // เริ่มที่ใหม�
 async function loadCaptions() {
   const box = document.getElementById('capRows');
   try { const d = await (await fetch('/api/captions')).json(); capItems = Array.isArray(d) ? d : []; }
-  catch { box.innerHTML = '<tr><td colspan="6" class="tbl-msg err">โหลดคลังแคปชั่นไม่สำเร็จ</td></tr>'; return; }
+  catch { box.innerHTML = '<tr><td colspan="7" class="tbl-msg err">โหลดคลังแคปชั่นไม่สำเร็จ</td></tr>'; return; }
+  await fetchCreStats();
   renderCaptions();
 }
 function capSortBy(key) {
@@ -3562,12 +3601,13 @@ function renderCaptions() {
       <td><div class="cap-cell">${esc(c.message)}</div></td>
       <td>${c.headline ? esc(c.headline) : '<span style="color:var(--muted)">—</span>'}</td>
       <td class="num-cell">${(c.message || '').length}</td>
+      <td>${creCell('c', c.id)}</td>
       <td style="white-space:nowrap;color:var(--muted);font-size:12.5px">${fmtD(c.ts)}</td>
       <td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
         <button class="icon-btn btn-light" title="แก้ไข" onclick="openCapModal(${jsStr(c.id)})"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
         <button class="btn-danger-light icon-btn" title="ลบแคปชั่นนี้" onclick="deleteCaption(${jsStr(c.id)})"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
       </td>
-    </tr>`).join('') || `<tr><td colspan="6" class="tbl-msg">${q ? 'ไม่เจอแคปชั่นที่ค้นหา' : 'ยังไม่มีแคปชั่น — กด "+ เพิ่มแคปชั่น" มุมขวาบนได้เลย'}</td></tr>`;
+    </tr>`).join('') || `<tr><td colspan="7" class="tbl-msg">${q ? 'ไม่เจอแคปชั่นที่ค้นหา' : 'ยังไม่มีแคปชั่น — กด "+ เพิ่มแคปชั่น" มุมขวาบนได้เลย'}</td></tr>`;
 }
 
 // modal ใช้ร่วมกันทั้งเพิ่มใหม่และแก้ไข — capEditId = null คือเพิ่มใหม่

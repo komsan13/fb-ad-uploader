@@ -455,6 +455,100 @@ function saveCaptions(items) { fs.writeFileSync(CAPTION_PATH, JSON.stringify(ite
 
 app.get('/api/captions', (req, res) => res.json(loadCaptions()));
 
+// ---------- สถิติครีเอทีฟ: คลิป/แคปชั่นตัวไหนผ่านรีวิว ตัวไหนโดนปฏิเสธ ----------
+// เก็บแยกไฟล์ ไม่ปนกับ autopilot-state เพราะ state นั้นมีกลไก merge ที่ tick ต้องแข่งกับดิสก์
+// (เคยเป็นต้นเหตุ P0: counter กับ dedupe หลุดคู่กันจนเกราะ freeze ไม่ทำงาน)
+// ไฟล์นี้เขียนแบบอ่าน-แก้-เขียนทันทีตอนเกิดเหตุ เหมือน landing.json จึงไม่มีปัญหานั้น
+const CRE_PATH = path.join(path.dirname(CONFIG_PATH), 'creative-stats.json');
+const CRE_KEEP_MS = 60 * 24 * 3600 * 1000;
+const CRE_BLOCK_ACCTS = 2;        // โดนปฏิเสธในกี่บัญชีถึงพักตัวนั้นไว้
+function loadCre() {
+  try {
+    const v = JSON.parse(fs.readFileSync(CRE_PATH, 'utf8'));
+    return { ads: v.ads || {}, m: v.m || {}, c: v.c || {} };
+  } catch { return { ads: {}, m: {}, c: {} }; }
+}
+function saveCre(v) {
+  try {
+    const tmp = CRE_PATH + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(v));
+    fs.renameSync(tmp, CRE_PATH);
+  } catch { /* ข้าม — สถิติหายดีกว่าทำ tick ล้ม */ }
+}
+const creEntry = (bag, id) => (bag[id] = bag[id] || { ok: 0, bad: 0, accts: {}, cats: {}, usedOn: [] });
+// โดนปฏิเสธในหลายบัญชี = ปัญหาอยู่ที่ตัวครีเอทีฟเอง ไม่ใช่ที่บัญชี — พักไว้จนกว่าคนจะปลดเอง
+const creBlocked = (st) => !!st && Object.keys(st.accts || {}).length >= CRE_BLOCK_ACCTS;
+// จัดกลุ่มความเสี่ยงแทนการใช้อัตราส่วนดิบ เพื่อไม่ให้ตัวเลขทศนิยมไปสลับลำดับการหมุนเวียนจนมั่ว
+function creRisk(st) {
+  if (!st || !st.bad) return 0;
+  return st.bad / Math.max(1, st.ok + st.bad) >= 0.5 ? 2 : 1;
+}
+// จดว่าแอดตัวนี้ประกอบจากคลิป/แคปชั่นไหน — ไว้ผูกผลรีวิวกลับเข้าคลังตอน FB ตัดสิน
+function creLink(adId, mediaId, capId, acctId) {
+  if (!adId) return;
+  const v = loadCre();
+  v.ads[adId] = { m: mediaId || '', c: capId || '', acct: String(acctId || ''), ts: Date.now() };
+  for (const [bag, id] of [[v.m, mediaId], [v.c, capId]]) {
+    if (!id) continue;
+    const st = creEntry(bag, id);
+    if (!st.usedOn.includes(String(acctId))) st.usedOn.push(String(acctId));
+  }
+  saveCre(v);
+}
+// บันทึกผลรีวิวของแอดเป็นชุด — นับครั้งเดียวต่อแอดตลอดกาล (แอดเดิมวนกลับมาทุกรอบตรวจ)
+// รับทีเดียวทั้งบัญชีเพราะรอบตรวจอ่านแอดได้ครั้งละ 200 ตัว เขียนไฟล์ทีละตัวคือ I/O ฟรีๆ
+function creResults(entries) {
+  const v = loadCre();
+  let n = 0;
+  for (const e of entries || []) {
+    const link = v.ads[e.adId];
+    if (!link || link.done) continue;
+    link.done = e.result;
+    n++;
+    for (const [bag, id] of [[v.m, link.m], [v.c, link.c]]) {
+      if (!id) continue;
+      const st = creEntry(bag, id);
+      if (e.result === 'bad') {
+        st.bad++;
+        st.accts[link.acct] = Date.now();
+        if (e.cat) st.cats[e.cat] = (st.cats[e.cat] || 0) + 1;
+      } else st.ok++;
+    }
+  }
+  if (!n) return 0;
+  for (const [id, a] of Object.entries(v.ads)) {
+    if (!a || Date.now() - (a.ts || 0) > CRE_KEEP_MS) delete v.ads[id];
+  }
+  saveCre(v);
+  return n;
+}
+// หมวดเหตุผลที่ FB ปฏิเสธ — issues_info มักว่าง ตัวจริงอยู่ใน ad_review_feedback.global
+const creRejectCat = (ad) => ((ad.issues_info || [])[0] || {}).error_summary
+  || Object.keys(((ad.ad_review_feedback || {}).global) || {})[0] || '';
+
+app.get('/api/creative-stats', (req, res) => {
+  const v = loadCre();
+  const out = (bag) => Object.fromEntries(Object.entries(bag).map(([id, st]) => [id, {
+    ok: st.ok || 0, bad: st.bad || 0,
+    accts: Object.keys(st.accts || {}).length,
+    cats: st.cats || {}, blocked: creBlocked(st),
+  }]));
+  res.json({ m: out(v.m), c: out(v.c) });
+});
+
+// ปลดพักครีเอทีฟ — เริ่มนับบัญชีที่ปฏิเสธใหม่ ไม่ล้างสถิติผ่าน/ไม่ผ่านทิ้ง (ยังอยากเห็นประวัติ)
+app.post('/api/creative-stats/unblock', (req, res) => {
+  const kind = req.body.kind === 'c' ? 'c' : 'm';
+  const id = String(req.body.id || '');
+  const v = loadCre();
+  const st = (v[kind] || {})[id];
+  if (!st) return res.status(404).json({ error: 'ไม่พบสถิติของตัวนี้' });
+  st.accts = {};
+  st.cleared = Date.now();
+  saveCre(v);
+  res.json({ ok: true });
+});
+
 app.post('/api/captions', (req, res) => {
   const message = String(req.body.message || '').trim();
   if (!message) return res.status(400).json({ error: 'ต้องมีข้อความหลัก' });
@@ -2578,7 +2672,7 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages) {
     }
   }
 
-  // เลือกวิดีโอ+แคปชั่นด้วยตรรกะเดียวกับตัวจัดแผน: เลี่ยงตัวที่บัญชีนี้เคยใช้
+  // เลือกวิดีโอ+แคปชั่น: ตัวที่ผ่านรีวิวมาก่อน → ตัวที่บัญชีนี้ยังไม่เคยใช้ → ตัวใหม่กว่า
   const videos = loadLib();
   const captions = loadCaptions();
   if (!videos.length || !captions.length) {
@@ -2588,9 +2682,30 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages) {
   }
   s.warned['empty:' + acctId] = '';
 
+  // ตัวที่โดนปฏิเสธมาแล้วหลายบัญชีถูกพักไว้ ไม่หยิบมาใช้อีก — เอาไปยิงซ้ำคือเผาครีเอทีฟทิ้ง
+  // และเพิ่มความเสี่ยงโดนมองว่าดันของที่ถูกปฏิเสธแล้ว (ตรรกะเดียวกับ noRotate ระดับบัญชี)
+  const cre = loadCre();
+  const okVideos = videos.filter((v) => !creBlocked(cre.m[v.id]));
+  const okCaps = captions.filter((c) => !creBlocked(cre.c[c.id]));
+  if (!okVideos.length || !okCaps.length) {
+    const what = !okVideos.length ? 'คลิป' : 'แคปชั่น';
+    const m = `🚫 ${a.name}: ไม่เติมแอดให้ — ${what}ในคลังถูกพักเพราะโดนปฏิเสธหลายบัญชีทั้งหมด เติมของใหม่หรือปลดพักเองก่อน`;
+    if (s.warned['blockedcre:' + acctId] !== apToday()) {
+      alerts.push(m); apLog(s, 'blocked', m, acctId); s.warned['blockedcre:' + acctId] = apToday();
+    }
+    return;
+  }
+  s.warned['blockedcre:' + acctId] = '';
+
+  const usedHere = (bag, id) => (((bag[id] || {}).usedOn) || []).includes(String(acctId)) ? 1 : 0;
   const want = testMode ? 1 : Math.min(target - activeCount, room);
-  const ranked = videos.slice().sort((x, y) =>
-    ((x.usedOn || []).includes(acctId) ? 1 : 0) - ((y.usedOn || []).includes(acctId) ? 1 : 0) || y.ts - x.ts);
+  const ranked = okVideos.slice().sort((x, y) =>
+    creRisk(cre.m[x.id]) - creRisk(cre.m[y.id])
+    || ((x.usedOn || []).includes(acctId) ? 1 : 0) - ((y.usedOn || []).includes(acctId) ? 1 : 0)
+    || y.ts - x.ts);
+  const capRanked = okCaps.slice().sort((x, y) =>
+    creRisk(cre.c[x.id]) - creRisk(cre.c[y.id])
+    || usedHere(cre.c, x.id) - usedHere(cre.c, y.id));
   let campaignId;
   try { campaignId = await apGetCampaign(acct, prof.accessToken, s, acctId, d, objInfo, cf); }
   catch (e) {
@@ -2610,13 +2725,14 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages) {
   let ok = 0;
   for (let i = 0; i < want; i++) {
     const v = ranked[i % ranked.length];
-    const cap = captions[(s.capCursor = ((s.capCursor || 0) + 1)) % captions.length];
+    const cap = capRanked[i % capRanked.length];
     const item = { mediaId: v.id, name: `${v.name} - auto`, message: cap.message, headline: cap.headline };
     // บาลานซ์เพจแบบ round-robin: แต่ละแอดหมุนไปเพจถัดไปในพูลของโปรไฟล์นี้ (cursor สะสมข้ามรอบ)
     const pageId = pagePool[(s.pageCursor[prof.id] = (s.pageCursor[prof.id] || 0) + 1) % pagePool.length];
     try {
-      await apCreateOneAd(acct, prof.accessToken, campaignId, pageId, pixelId, d, objInfo, item, testMode,
+      const adId = await apCreateOneAd(acct, prof.accessToken, campaignId, pageId, pixelId, d, objInfo, item, testMode,
         (cfg.beneficiaries || {})[acctId]);
+      creLink(adId, v.id, cap.id, acctId);   // ผูกแอด→ครีเอทีฟ ไว้เอาผลรีวิวกลับเข้าคลังทีหลัง
       markVideoUsed(v.id, acctId);
       s.created[acctId].push(Date.now());
       if (testMode) { s.tested = s.tested || {}; (s.tested[acctId] = s.tested[acctId] || []).push(Date.now()); }
@@ -2907,6 +3023,13 @@ async function autopilotTick(mode = 'full') {
       } catch { continue; }
 
       const rejected = ads.filter((x) => x.effective_status === 'DISAPPROVED');
+
+      // จดผลรีวิวกลับเข้าคลังครีเอทีฟ: ยิงอยู่จริง = ผ่าน / โดนปฏิเสธ = ไม่ผ่าน
+      // ทำก่อนตรรกะ handled ทั้งหมด เพราะสถิติของคลังไม่เกี่ยวกับว่าแอดตัวนั้นถูกจัดการไปหรือยัง
+      creResults(ads.map((x) => (
+        x.effective_status === 'ACTIVE' ? { adId: x.id, result: 'ok' }
+          : x.effective_status === 'DISAPPROVED' ? { adId: x.id, result: 'bad', cat: creRejectCat(x) }
+            : null)).filter(Boolean));
 
       // ห่อทั้งช่วงจัดการแอดโดนปฏิเสธ — error ในบัญชีเดียวห้ามฆ่าทั้ง tick
       // เคยเกิดจริง: TypeError ตรงนี้ทำให้ทุกบัญชีที่เหลือไม่ถูกตรวจ ไม่ save ไม่แจ้งเตือน
