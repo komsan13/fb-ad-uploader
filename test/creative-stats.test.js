@@ -81,7 +81,7 @@ describe('สถิติครีเอทีฟ', () => {
 
   test('คลิปที่ถูกพักต้องไม่ถูกหยิบไปใช้ — ระบบเลือกตัวที่ยังใช้ได้แทน', async (t) => {
     // v1,v2 โดนปฏิเสธมาแล้วคนละ 2 บัญชี = ถูกพัก เหลือ v3 ตัวเดียวที่ใช้ได้
-    const blocked = { ok: 0, bad: 2, accts: { 900: 1, 901: 1 }, cats: {}, usedOn: [] };
+    const blocked = { ok: 0, bad: 2, accts: { 900: Date.now(), 901: Date.now() }, cats: {}, usedOn: [] };
     const { base } = await boot(t, { cre: { ads: {}, m: { v1: blocked, v2: blocked }, c: {} } });
     await runTwice(base);
     const lib = await get(base, '/api/library');
@@ -91,7 +91,7 @@ describe('สถิติครีเอทีฟ', () => {
   });
 
   test('ถ้าคลิปถูกพักหมดคลัง ต้องหยุดเติมแอดและเตือน ไม่ใช่ฝืนใช้ของที่โดนปฏิเสธ', async (t) => {
-    const blocked = { ok: 0, bad: 2, accts: { 900: 1, 901: 1 }, cats: {}, usedOn: [] };
+    const blocked = { ok: 0, bad: 2, accts: { 900: Date.now(), 901: Date.now() }, cats: {}, usedOn: [] };
     const { base, world } = await boot(t, { cre: { ads: {}, m: { v1: blocked, v2: blocked, v3: blocked }, c: {} } });
     await runTwice(base);
     assert.ok(!world.calls.some((c) => c.method === 'POST' && c.path === `act_${ACCT}/ads`),
@@ -110,8 +110,91 @@ describe('สถิติครีเอทีฟ', () => {
     assert.strictEqual(new Set(msgs).size, 3, 'แคปชั่นทั้ง 3 ตัวต้องไม่ซ้ำกัน');
   });
 
+  // รีวิว adversarial จับได้: ถอด capCursor ออกแล้วทุกบัญชีเริ่มที่แคปชั่นตัวแรกเสมอ
+  // = แอดซ้ำเป๊ะข้ามบัญชีในนาทีเดียวกัน ซึ่งเป็นแพทเทิร์นที่ Meta ใช้จับพฤติกรรมยิงประสานกัน
+  test('หลายบัญชีในรอบเดียวกันต้องไม่ได้แคปชั่นตัวเดียวกัน', async (t) => {
+    const accounts = ['111', '222', '333'].map((id) => ({
+      name: `บัญชี ${id}`, account_id: id, account_status: 1, currency: 'THB',
+    }));
+    const { base, world } = await boot(t, {
+      world: freshWorld({ accounts }),
+      config: baseConfig({ autopilot: { enabled: true, minAds: 1 } }),
+      videos: 5, captions: 5,
+    });
+    await runTwice(base);
+    const msgs = world.calls
+      .filter((c) => c.method === 'POST' && /^act_\d+\/adcreatives$/.test(c.path))
+      .map((c) => { try { return JSON.parse(c.params.object_story_spec).video_data.message; } catch { return ''; } });
+    assert.strictEqual(msgs.length, 3, 'ต้องได้แอดบัญชีละตัว');
+    assert.strictEqual(new Set(msgs).size, 3, 'สามบัญชีต้องได้แคปชั่นคนละตัว');
+  });
+
+  test('รอบถัดไปต้องหมุนไปแคปชั่นตัวอื่น ไม่ค้างที่ตัวเดิม', async (t) => {
+    const { base, world } = await boot(t, {
+      config: baseConfig({ autopilot: { enabled: true, minAds: 1 } }), videos: 4, captions: 4,
+    });
+    const seen = [];
+    for (let round = 0; round < 4; round++) {
+      world.ads = [];                       // แอดรอบก่อนหายไป (โดนปิด/ถูกลบ) — ระบบต้องเติมใหม่
+      await runTwice(base);
+      const last = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/adcreatives`).pop();
+      seen.push(JSON.parse(last.params.object_story_spec).video_data.message);
+    }
+    assert.ok(new Set(seen).size >= 3, `แคปชั่นต้องหมุนข้ามรอบ ได้: ${JSON.stringify(seen)}`);
+  });
+
+  test('ผ่านรีวิวไปแล้วโดนปฏิเสธทีหลัง ต้องกลับผลเป็นไม่ผ่าน ไม่ใช่ค้างว่าผ่าน', async (t) => {
+    const { base, world } = await boot(t);
+    await runTwice(base);
+    await post(base, '/api/autopilot/run');            // เห็นแอด ACTIVE ก่อน → จดว่าผ่าน
+    const before = await get(base, '/api/creative-stats');
+    assert.ok(Object.values(before.m).reduce((n, x) => n + x.ok, 0) > 0, 'ต้องจดว่าผ่านก่อน');
+
+    // Meta อนุมัติก่อนแล้วบังคับใช้นโยบายทีหลัง เป็นเรื่องปกติ
+    world.ads.forEach((x) => {
+      x.effective_status = 'DISAPPROVED';
+      x.ad_review_feedback = { global: { 'นโยบายย้อนหลัง': 'โดนทีหลัง' } };
+    });
+    await post(base, '/api/autopilot/run');
+    const after = await get(base, '/api/creative-stats');
+    assert.ok(Object.values(after.m).reduce((n, x) => n + x.bad, 0) > 0, 'ต้องนับเป็นไม่ผ่าน');
+    assert.ok(Object.values(after.m).reduce((n, x) => n + x.ok, 0)
+      < Object.values(before.m).reduce((n, x) => n + x.ok, 0), 'ต้องถอนแต้มผ่านที่เคยให้ไปคืนด้วย');
+  });
+
+  test('ตัวที่พิสูจน์แล้วว่าเคยผ่าน ต้องถูกเลือกก่อนตัวที่ยังไม่เคยถูกทดสอบ', async (t) => {
+    // v1 เป็นตัวเก่าสุด (ปกติจะถูกเลือกท้ายสุด) แต่มีประวัติผ่านรีวิว 3 ครั้ง ไม่เคยโดนปฏิเสธ
+    const proven = { ok: 3, bad: 0, accts: {}, cats: {}, usedOn: [] };
+    const { base } = await boot(t, {
+      config: baseConfig({ autopilot: { enabled: true, minAds: 1 } }),
+      cre: { ads: {}, m: { v1: proven }, c: {} },
+    });
+    await runTwice(base);
+    const lib = await get(base, '/api/library');
+    assert.ok((lib.find((x) => x.id === 'v1').usedOn || []).includes(ACCT),
+      'ตัวที่มีประวัติผ่านรีวิวต้องมาก่อนตัวที่ยังไม่มีข้อมูล');
+  });
+
+  test('การพักต้องหมดอายุตามเวลา ไม่ใช่พักถาวรจากเหตุเมื่อสามเดือนก่อน', async (t) => {
+    const old = Date.now() - 40 * 24 * 3600 * 1000;    // เกินหน้าต่าง 30 วัน
+    const { base } = await boot(t, {
+      cre: { ads: {}, m: { v1: { ok: 0, bad: 2, accts: { 900: old, 901: old }, cats: {}, usedOn: [] } }, c: {} },
+    });
+    assert.strictEqual((await get(base, '/api/creative-stats')).m.v1.blocked, false,
+      'การปฏิเสธที่เก่าเกินหน้าต่างต้องไม่พักตัวนั้นไว้อีก');
+  });
+
+  test('เขียนไฟล์สถิติไม่ได้ ต้องเตือน ไม่ใช่เงียบแล้วใช้แคปชั่นเดิมตลอด', async (t) => {
+    const { base, dir } = await boot(t, { config: baseConfig({ autopilot: { enabled: true, minAds: 1 } }) });
+    fs.mkdirSync(path.join(dir, 'creative-stats.json.tmp'));   // เขียนทับด้วยไฟล์ไม่ได้
+    await runTwice(base);
+    const s = await get(base, '/api/autopilot');
+    assert.ok((s.log || []).some((l) => /เขียนสถิติครีเอทีฟไม่สำเร็จ/.test(l.msg || '')),
+      'ต้องมีคำเตือนในล็อกเมื่อเขียนสถิติไม่ได้');
+  });
+
   test('ปลดพักแล้วต้องกลับมาใช้ได้ และเริ่มนับบัญชีที่ปฏิเสธใหม่', async (t) => {
-    const blocked = { ok: 1, bad: 2, accts: { 900: 1, 901: 1 }, cats: { เหตุผลเดิม: 2 }, usedOn: [] };
+    const blocked = { ok: 1, bad: 2, accts: { 900: Date.now(), 901: Date.now() }, cats: { เหตุผลเดิม: 2 }, usedOn: [] };
     const { base } = await boot(t, { cre: { ads: {}, m: { v1: blocked }, c: {} } });
     assert.strictEqual((await get(base, '/api/creative-stats')).m.v1.blocked, true);
 

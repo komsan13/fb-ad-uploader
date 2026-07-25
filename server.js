@@ -461,31 +461,42 @@ app.get('/api/captions', (req, res) => res.json(loadCaptions()));
 // ไฟล์นี้เขียนแบบอ่าน-แก้-เขียนทันทีตอนเกิดเหตุ เหมือน landing.json จึงไม่มีปัญหานั้น
 const CRE_PATH = path.join(path.dirname(CONFIG_PATH), 'creative-stats.json');
 const CRE_KEEP_MS = 60 * 24 * 3600 * 1000;
-const CRE_BLOCK_ACCTS = 2;        // โดนปฏิเสธในกี่บัญชีถึงพักตัวนั้นไว้
+const CRE_BLOCK_ACCTS = 2;                          // โดนปฏิเสธในกี่บัญชีถึงพักตัวนั้นไว้
+const CRE_BLOCK_WINDOW = 30 * 24 * 3600 * 1000;     // นับเฉพาะที่โดนใน 30 วันล่าสุด
 function loadCre() {
   try {
     const v = JSON.parse(fs.readFileSync(CRE_PATH, 'utf8'));
     return { ads: v.ads || {}, m: v.m || {}, c: v.c || {} };
   } catch { return { ads: {}, m: {}, c: {} }; }
 }
+// คืน false เมื่อเขียนไม่สำเร็จ — ผู้เรียกต้องเตือน ไม่ใช่กลืนเงียบ
+// (เขียนไม่ได้ = usedOn ไม่ถูกจด = การหมุนเวียนครีเอทีฟเพี้ยนโดยไม่มีใครรู้)
 function saveCre(v) {
   try {
     const tmp = CRE_PATH + '.tmp';
     fs.writeFileSync(tmp, JSON.stringify(v));
     fs.renameSync(tmp, CRE_PATH);
-  } catch { /* ข้าม — สถิติหายดีกว่าทำ tick ล้ม */ }
+    return true;
+  } catch { return false; }
 }
 const creEntry = (bag, id) => (bag[id] = bag[id] || { ok: 0, bad: 0, accts: {}, cats: {}, usedOn: [] });
 // โดนปฏิเสธในหลายบัญชี = ปัญหาอยู่ที่ตัวครีเอทีฟเอง ไม่ใช่ที่บัญชี — พักไว้จนกว่าคนจะปลดเอง
-const creBlocked = (st) => !!st && Object.keys(st.accts || {}).length >= CRE_BLOCK_ACCTS;
+// นับเฉพาะการปฏิเสธในช่วง CRE_BLOCK_WINDOW เพราะนโยบายกับตัวครีเอทีฟเปลี่ยนได้
+// ไม่งั้นโดนครั้งเดียวเมื่อสามเดือนก่อนก็พักถาวรทั้งที่แก้ต้นเหตุไปแล้ว
+const creBlocked = (st) => !!st
+  && Object.values(st.accts || {}).filter((t) => Date.now() - (t || 0) < CRE_BLOCK_WINDOW).length >= CRE_BLOCK_ACCTS;
 // จัดกลุ่มความเสี่ยงแทนการใช้อัตราส่วนดิบ เพื่อไม่ให้ตัวเลขทศนิยมไปสลับลำดับการหมุนเวียนจนมั่ว
 function creRisk(st) {
   if (!st || !st.bad) return 0;
   return st.bad / Math.max(1, st.ok + st.bad) >= 0.5 ? 2 : 1;
 }
+// เคยผ่านรีวิวจริงและไม่เคยโดนปฏิเสธ = ได้เปรียบตัวที่ยังไม่เคยถูกทดสอบ
+// แต่ใช้เป็น "ตัวตัดสินลำดับสุดท้าย" เท่านั้น ห้ามอยู่เหนือการเลี่ยงใช้ซ้ำในบัญชีเดียวกัน
+// ไม่งั้นพอมีตัวที่พิสูจน์แล้ว ระบบจะวนใช้ตัวนั้นตัวเดียวตลอด = แอดซ้ำกันเอง
+const creProven = (st) => (st && !st.bad && st.ok ? 0 : 1);
 // จดว่าแอดตัวนี้ประกอบจากคลิป/แคปชั่นไหน — ไว้ผูกผลรีวิวกลับเข้าคลังตอน FB ตัดสิน
 function creLink(adId, mediaId, capId, acctId) {
-  if (!adId) return;
+  if (!adId) return false;
   const v = loadCre();
   v.ads[adId] = { m: mediaId || '', c: capId || '', acct: String(acctId || ''), ts: Date.now() };
   for (const [bag, id] of [[v.m, mediaId], [v.c, capId]]) {
@@ -493,7 +504,16 @@ function creLink(adId, mediaId, capId, acctId) {
     const st = creEntry(bag, id);
     if (!st.usedOn.includes(String(acctId))) st.usedOn.push(String(acctId));
   }
-  saveCre(v);
+  return saveCre(v);
+}
+// แอดที่แก้ข้อความแล้วส่งใหม่ = ครีเอทีฟเดิม ต้องสืบทอดการผูกไปตัวใหม่ ไม่งั้นผลรีวิวรอบสองหายไปเฉยๆ
+function creRelink(oldAdId, newAdId) {
+  if (!oldAdId || !newAdId) return false;
+  const v = loadCre();
+  const old = v.ads[oldAdId];
+  if (!old) return false;
+  v.ads[newAdId] = { m: old.m, c: old.c, acct: old.acct, ts: Date.now() };
+  return saveCre(v);
 }
 // บันทึกผลรีวิวของแอดเป็นชุด — นับครั้งเดียวต่อแอดตลอดกาล (แอดเดิมวนกลับมาทุกรอบตรวจ)
 // รับทีเดียวทั้งบัญชีเพราะรอบตรวจอ่านแอดได้ครั้งละ 200 ตัว เขียนไฟล์ทีละตัวคือ I/O ฟรีๆ
@@ -502,13 +522,19 @@ function creResults(entries) {
   let n = 0;
   for (const e of entries || []) {
     const link = v.ads[e.adId];
-    if (!link || link.done) continue;
+    if (!link) continue;
+    // ผ่านรีวิวแล้วโดนปฏิเสธทีหลังเป็นเรื่องปกติของ Meta (approve ก่อน enforce ทีหลัง)
+    // ต้องกลับผลได้ ไม่งั้นครีเอทีฟที่ผิดนโยบายจะค้างอยู่กลุ่ม "เสี่ยงต่ำสุด" แล้วถูกหยิบใช้เป็นตัวแรกตลอด
+    if (link.done === e.result) continue;
+    if (link.done === 'bad') continue;              // โดนปฏิเสธแล้วถือเป็นผลสุดท้าย
+    const flipping = link.done === 'ok';            // เคยนับว่าผ่าน ต้องถอนคืนก่อน
     link.done = e.result;
     n++;
     for (const [bag, id] of [[v.m, link.m], [v.c, link.c]]) {
       if (!id) continue;
       const st = creEntry(bag, id);
       if (e.result === 'bad') {
+        if (flipping) st.ok = Math.max(0, st.ok - 1);
         st.bad++;
         st.accts[link.acct] = Date.now();
         if (e.cat) st.cats[e.cat] = (st.cats[e.cat] || 0) + 1;
@@ -2699,13 +2725,25 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages) {
 
   const usedHere = (bag, id) => (((bag[id] || {}).usedOn) || []).includes(String(acctId)) ? 1 : 0;
   const want = testMode ? 1 : Math.min(target - activeCount, room);
+  // ลำดับ: เลี่ยงตัวที่เคยโดนปฏิเสธ → เลี่ยงตัวที่บัญชีนี้ใช้ไปแล้ว → ตัวที่พิสูจน์แล้วว่าผ่าน → ตัวใหม่กว่า
   const ranked = okVideos.slice().sort((x, y) =>
     creRisk(cre.m[x.id]) - creRisk(cre.m[y.id])
     || ((x.usedOn || []).includes(acctId) ? 1 : 0) - ((y.usedOn || []).includes(acctId) ? 1 : 0)
+    || creProven(cre.m[x.id]) - creProven(cre.m[y.id])
     || y.ts - x.ts);
   const capRanked = okCaps.slice().sort((x, y) =>
     creRisk(cre.c[x.id]) - creRisk(cre.c[y.id])
-    || usedHere(cre.c, x.id) - usedHere(cre.c, y.id));
+    || usedHere(cre.c, x.id) - usedHere(cre.c, y.id)
+    || creProven(cre.c[x.id]) - creProven(cre.c[y.id]));
+  // cursor สะสมข้ามรอบและข้ามบัญชี — จำเป็น ห้ามถอด
+  // ถ้าเริ่มที่ตัวแรกเสมอ ทุกบัญชีจะได้แคปชั่นเดียวกันในนาทีเดียวกัน (คู่กับคลิปที่เรียงเหมือนกัน
+  // = แอดซ้ำเป๊ะข้ามบัญชี) ซึ่งเป็นแพทเทิร์นที่ Meta ใช้จับพฤติกรรมยิงประสานกัน
+  // จุดเริ่มหมุนอยู่ใน "กลุ่มที่ดีที่สุด" เท่านั้น แล้วค่อยไล่ต่อไปกลุ่มถัดไป — ได้ทั้งหมุนเวียนและเลี่ยงตัวเสี่ยง
+  const capBest = capRanked.filter((c) =>
+    creRisk(cre.c[c.id]) === creRisk(cre.c[capRanked[0].id])
+    && usedHere(cre.c, c.id) === usedHere(cre.c, capRanked[0].id)
+    && creProven(cre.c[c.id]) === creProven(cre.c[capRanked[0].id])).length;
+  const capStart = (s.capCursor = ((s.capCursor || 0) + 1)) % capBest;
   let campaignId;
   try { campaignId = await apGetCampaign(acct, prof.accessToken, s, acctId, d, objInfo, cf); }
   catch (e) {
@@ -2725,14 +2763,18 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages) {
   let ok = 0;
   for (let i = 0; i < want; i++) {
     const v = ranked[i % ranked.length];
-    const cap = capRanked[i % capRanked.length];
+    const cap = capRanked[(capStart + i) % capRanked.length];
     const item = { mediaId: v.id, name: `${v.name} - auto`, message: cap.message, headline: cap.headline };
     // บาลานซ์เพจแบบ round-robin: แต่ละแอดหมุนไปเพจถัดไปในพูลของโปรไฟล์นี้ (cursor สะสมข้ามรอบ)
     const pageId = pagePool[(s.pageCursor[prof.id] = (s.pageCursor[prof.id] || 0) + 1) % pagePool.length];
     try {
       const adId = await apCreateOneAd(acct, prof.accessToken, campaignId, pageId, pixelId, d, objInfo, item, testMode,
         (cfg.beneficiaries || {})[acctId]);
-      creLink(adId, v.id, cap.id, acctId);   // ผูกแอด→ครีเอทีฟ ไว้เอาผลรีวิวกลับเข้าคลังทีหลัง
+      // ผูกแอด→ครีเอทีฟ ไว้เอาผลรีวิวกลับเข้าคลังทีหลัง — เขียนไม่ได้ต้องรู้ ไม่ใช่เงียบ
+      if (!creLink(adId, v.id, cap.id, acctId) && s.warned['crewrite:' + acctId] !== apToday()) {
+        const m = `⚠️ ${a.name}: เขียนสถิติครีเอทีฟไม่สำเร็จ — การหมุนเวียนคลิป/แคปชั่นจะเพี้ยน เช็คพื้นที่ดิสก์/สิทธิ์ไฟล์บนเซิร์ฟเวอร์`;
+        alerts.push(m); apLog(s, 'warn', m, acctId); s.warned['crewrite:' + acctId] = apToday();
+      }
       markVideoUsed(v.id, acctId);
       s.created[acctId].push(Date.now());
       if (testMode) { s.tested = s.tested || {}; (s.tested[acctId] = s.tested[acctId] || []).push(Date.now()); }
@@ -3025,11 +3067,14 @@ async function autopilotTick(mode = 'full') {
       const rejected = ads.filter((x) => x.effective_status === 'DISAPPROVED');
 
       // จดผลรีวิวกลับเข้าคลังครีเอทีฟ: ยิงอยู่จริง = ผ่าน / โดนปฏิเสธ = ไม่ผ่าน
-      // ทำก่อนตรรกะ handled ทั้งหมด เพราะสถิติของคลังไม่เกี่ยวกับว่าแอดตัวนั้นถูกจัดการไปหรือยัง
-      creResults(ads.map((x) => (
-        x.effective_status === 'ACTIVE' ? { adId: x.id, result: 'ok' }
-          : x.effective_status === 'DISAPPROVED' ? { adId: x.id, result: 'bad', cat: creRejectCat(x) }
-            : null)).filter(Boolean));
+      // ไม่เกี่ยวกับตรรกะ handled (สถิติของคลังคนละเรื่องกับว่าแอดตัวนั้นถูกจัดการไปหรือยัง)
+      // ห่อ try เพราะพังตรงนี้ต้องไม่ฆ่าทั้ง tick — บัญชีที่เหลือต้องถูกตรวจต่อและ state ต้องถูก save
+      try {
+        creResults(ads.map((x) => (
+          x.effective_status === 'ACTIVE' ? { adId: x.id, result: 'ok' }
+            : x.effective_status === 'DISAPPROVED' ? { adId: x.id, result: 'bad', cat: creRejectCat(x) }
+              : null)).filter(Boolean));
+      } catch (e) { apLog(s, 'warn', `จดสถิติครีเอทีฟของ ${a.name} ไม่สำเร็จ: ${e.message}`, acctId); }
 
       // ห่อทั้งช่วงจัดการแอดโดนปฏิเสธ — error ในบัญชีเดียวห้ามฆ่าทั้ง tick
       // เคยเกิดจริง: TypeError ตรงนี้ทำให้ทุกบัญชีที่เหลือไม่ถูกตรวจ ไม่ save ไม่แจ้งเตือน
@@ -3183,6 +3228,7 @@ async function autopilotTick(mode = 'full') {
           const newId = await apResubmit(acct, prof.accessToken, ad.creative, ad.adset_id, ad.name, nm, nh || undefined);
           apMark(s.handled, ad.id, 'fixed');
           apMark(s.retryOf, newId, ad.id);
+          creRelink(ad.id, newId);   // แอดใหม่ใช้คลิป/แคปชั่นเดิม ผลรีวิวรอบสองต้องเข้าคลังด้วย
           s.fixes.push(Date.now());
           const m = `🔧 ${a.name}: "${ad.name}" โดนปฏิเสธเพราะ ${dx.violation}\n   → แก้ข้อความแล้วขึ้นใหม่ให้ (ครั้งเดียว ถ้าโดนอีกจะหยุดถาวร)\n   ข้อความใหม่: ${nm.slice(0, 150)}`;
           alerts.push(m); apLog(s, 'fixed', m, acctId);
