@@ -1958,8 +1958,9 @@ function renderHealthPage(results) {
           : '<span class="st-pill issue" title="ยังไม่ได้ฝังในหน้า Landing — แคมเปญของบัญชีนี้จะเห็นคอนเวอร์ชั่นเป็นศูนย์ ระบบผูกให้เองเฉพาะบัญชีที่ใช้งานได้และไม่ถูกซ่อน">ยังไม่ผูก LP</span>'
         } <button class="btn-light btn-sm" title="คัดลอก Pixel ID ${esc(x.id)}" onclick="copyPixel(${jsStr(x.id)});this.textContent='✓ คัดลอกแล้ว';setTimeout(()=>this.textContent='คัดลอก ID',1200)">คัดลอก ID</button></span>`).join(' ')
       : `<button class="btn-primary btn-sm" onclick="createPixelHealth(${jsStr(a.pid)},${jsStr(a.id)},this)">+ สร้าง Pixel เลย</button>`;
+    // บัตรที่ผูกแล้วก็ต้องกดเข้าไปดูได้ — ตรวจยอดค้าง/บัตรหมดอายุต้องเปิดหน้าจ่ายเงินของบัญชีนั้นอยู่ดี
     const card = a.dead ? '<span style="color:var(--muted)">—</span>' : a.funding
-      ? `<span class="st-pill on">✓ ${esc(a.funding)}</span>`
+      ? `<a class="st-pill on" style="display:inline-block;text-decoration:none" target="_blank" title="เปิดหน้าการชำระเงินของบัญชีนี้" href="https://business.facebook.com/billing_hub/payment_settings?asset_id=${a.id}">✓ ${esc(a.funding)} ↗</a>`
       : `<a class="btn-primary btn-sm" style="text-decoration:none;display:inline-block;color:#fff" target="_blank" href="https://business.facebook.com/billing_hub/payment_settings?asset_id=${a.id}">เชื่อมบัตรเลย ↗</a>`;
     const rowStyle = a.hidden ? ' style="opacity:.45"' : a.dead ? ' style="opacity:.6"' : a.missing ? ' style="background:#fffbf3"' : '';
     const icon = a.dead ? ic('skull', { color: 'var(--red,#d93025)' }) + ' '
