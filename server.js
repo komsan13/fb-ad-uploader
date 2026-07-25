@@ -561,8 +561,20 @@ function lpIsOurLanding(link) {
   } catch { return false; }
 }
 
+// ลิงก์ปลายทางของบัญชีหนึ่ง — เป็นหน้า Landing ของเราเมื่อไหร่ให้ติดรหัสบัญชีไปด้วย
+// หน้านั้นจะได้โหลดเฉพาะพิกเซลของบัญชีนี้ ไม่ไปนับคอนเวอร์ชั่นให้บัญชีอื่นที่อยู่หน้าเดียวกัน
+function lpLinkFor(link, acctId) {
+  const id = String(acctId || '').replace(/[^0-9]/g, '');
+  if (!id || !lpIsOurLanding(link)) return link;
+  try {
+    const u = new URL(link);
+    u.searchParams.set('a', id);
+    return u.toString();
+  } catch { return link; }
+}
+
 // ฝังพิกเซลลงหน้า Landing ถ้ายังไม่มี — คืนรายการ id ที่เพิ่งเพิ่มเข้าไป (เขียนไฟล์ครั้งเดียว)
-function lpEnsurePixels(pixelIds) {
+function lpEnsurePixels(pixelIds, acctId) {
   const v = loadLp();
   const have = new Set(v.pixels.filter((p) => p.type === 'meta').map((p) => p.id));
   const added = [];
@@ -570,7 +582,9 @@ function lpEnsurePixels(pixelIds) {
     const id = String(raw || '').replace(/[^A-Za-z0-9-]/g, '');
     if (!id || have.has(id)) continue;
     if (v.pixels.length >= LP_MAX_PIXELS) break;   // เต็มเพดาน — หยุดเพิ่ม ไม่ตัดของเดิมทิ้ง
-    v.pixels.push({ type: 'meta', id });
+    // acct = บัญชีเจ้าของพิกเซล ใช้เรนเดอร์เฉพาะพิกเซลของบัญชีที่พาคนมา (/lp?a=<acct>)
+    // ไม่งั้นคนที่กดจากแอดบัญชีเดียว จะไปนับคอนเวอร์ชั่นให้ทุกบัญชีบนหน้าเดียวกัน
+    v.pixels.push(acctId ? { type: 'meta', id, acct: String(acctId) } : { type: 'meta', id });
     have.add(id);
     added.push(id);
   }
@@ -578,8 +592,8 @@ function lpEnsurePixels(pixelIds) {
   return added;
 }
 // คืน true เมื่อเพิ่งเพิ่มเข้าไป
-function lpEnsurePixel(pixelId) {
-  return lpEnsurePixels([pixelId]).length > 0;
+function lpEnsurePixel(pixelId, acctId) {
+  return lpEnsurePixels([pixelId], acctId).length > 0;
 }
 
 app.post('/api/landing/upload', uploadLpImg.single('file'), (req, res) => {
@@ -601,7 +615,9 @@ const lpSafeUrl = (u) => (/^(https?:\/\/|tel:|mailto:)/i.test(String(u || '').tr
 const lpEsc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-function lpRender(v) {
+// only = บัญชีโฆษณาที่พาคนมาหน้านี้ (จาก ?a=) — โหลดเฉพาะพิกเซลของบัญชีนั้น
+// ไม่ระบุ = โหลดทุกตัวเหมือนเดิม (ลิงก์เก่า/คนเข้าเองต้องไม่พัง)
+function lpRender(v, only) {
   // พื้นหลังเป็นตัวกำหนดชุดสีทั้งหมด — ยกเว้นตอนใช้รูปที่อัปเอง ซึ่งเราไม่รู้ว่ารูปสว่างหรือมืด
   // กรณีนั้นค่อยให้ theme ที่ผู้ใช้เลือกเป็นตัวตัดสิน
   const pal = LP_BGS[v.bg] || LP_BGS[''];
@@ -610,7 +626,8 @@ function lpRender(v) {
     ? (dark ? { card: '#1b1e26', tx: '#eef1f6', mut: '#98a1b3', line: '#2a2f3a' }
             : { card: '#ffffff', tx: '#1a1d23', mut: '#6b7280', line: '#e6e8ec' })
     : pal;
-  const meta = v.pixels.filter((p) => p.type === 'meta');
+  // ระบุบัญชีมาแต่ไม่มีพิกเซลของบัญชีนั้น = ไม่ยิงให้ใครเลย ดีกว่าไปนับให้บัญชีอื่นผิดตัว
+  const meta = v.pixels.filter((p) => p.type === 'meta' && (!only || String(p.acct || '') === only));
   const ga = v.pixels.filter((p) => p.type === 'ga');
   return `<!doctype html>
 <html lang="th"><head>
@@ -699,10 +716,45 @@ app.get(['/lp/admin', '/lp/admin/'], (req, res) => res.redirect('/#landing'));
 
 app.get(['/lp', '/lp/'], (req, res) => {
   res.set('Cache-Control', 'no-store');   // แก้ลิงก์แล้วต้องเห็นผลทันที
-  res.type('html').send(lpRender(loadLp()));
+  res.type('html').send(lpRender(loadLp(), String(req.query.a || '').replace(/[^0-9]/g, '')));
 });
 
 app.get('/api/landing', (req, res) => res.json(loadLp()));
+
+// ล้างพิกเซลที่ไม่มีบัญชีเป็นเจ้าของ + เติมรหัสบัญชีให้ตัวที่ยังไม่มี
+// เปลี่ยนบัญชี FB แล้วพิกเซลชุดเก่าค้างบนหน้า = ยิง event ให้บัญชีที่เลิกใช้ไปแล้วทุกครั้งที่มีคนเข้า
+// และตัวที่ไม่มี acct จะเรนเดอร์แบบเจาะบัญชีไม่ได้ (ต้องมีรหัสบัญชีถึงจะแยกคอนเวอร์ชั่นได้)
+app.post('/api/landing/prune-pixels', async (req, res) => {
+  const cfg = loadConfig();
+  const own = new Map();          // pixelId -> acctId
+  let read = false;
+  for (const prof of cfg.profiles || []) {
+    if (!prof.accessToken) continue;
+    try {
+      const accts = await fbAll('me/adaccounts', { fields: 'account_id,adspixels.limit(25){id}', limit: 100 }, prof.accessToken);
+      read = true;
+      for (const a of accts) {
+        for (const x of ((a.adspixels || {}).data || [])) own.set(String(x.id), String(a.account_id));
+      }
+    } catch { /* โปรไฟล์นี้อ่านไม่ได้ ข้ามไป — ตัวอื่นยังบอกเจ้าของได้ */ }
+  }
+  // อ่านจาก FB ไม่ได้สักโปรไฟล์ = ไม่รู้ว่าอะไรมีเจ้าของ ห้ามลบอะไรทั้งนั้น
+  if (!read) return res.status(400).json({ error: 'อ่านรายการบัญชีจาก Facebook ไม่ได้ — ยังไม่ลบอะไรทั้งนั้น ลองใหม่อีกครั้ง' });
+
+  const cur = loadLp();
+  try { fs.writeFileSync(LP_PATH + '.bak-prune', JSON.stringify(cur)); } catch { /* สำรองไม่ได้ก็ยังทำต่อได้ */ }
+  const removed = [];
+  cur.pixels = cur.pixels
+    .filter((p) => {
+      if (p.type !== 'meta') return true;
+      if (own.has(String(p.id))) return true;
+      removed.push(p.id);
+      return false;
+    })
+    .map((p) => (p.type === 'meta' ? { ...p, acct: own.get(String(p.id)) } : p));
+  saveLp(cur);
+  res.json({ ok: true, removed, kept: cur.pixels.filter((p) => p.type === 'meta').length });
+});
 app.post('/api/landing', (req, res) => {
   const b = req.body || {};
   const cur = loadLp();
@@ -717,10 +769,15 @@ app.post('/api/landing', (req, res) => {
     bg: Object.prototype.hasOwnProperty.call(LP_BGS, b.bg ?? cur.bg) ? (b.bg ?? cur.bg) : '',
     // รับเฉพาะรูปที่อัปผ่านระบบเรา — ลิงก์รูปจากเว็บนอกทำให้หน้าพังเมื่อเว็บนั้นล่ม
     bgImage: /^\/lp-asset\/[0-9a-f-]{36}\.(jpg|png|webp|gif)$/i.test(String(b.bgImage ?? cur.bgImage ?? '')) ? String(b.bgImage ?? cur.bgImage) : '',
-    pixels: (Array.isArray(b.pixels) ? b.pixels : cur.pixels).slice(0, LP_MAX_PIXELS).map((p) => ({
-      type: p.type === 'ga' ? 'ga' : 'meta',
-      id: String(p.id || '').replace(/[^A-Za-z0-9-]/g, '').slice(0, 40),
-    })).filter((p) => p.id),
+    // acct ต้องรอดข้ามการบันทึกจากหน้าเว็บ — หายเมื่อไหร่ = เรนเดอร์แยกรายบัญชีไม่ได้ กลับไปยิงรวมทุกตัว
+    pixels: (Array.isArray(b.pixels) ? b.pixels : cur.pixels).slice(0, LP_MAX_PIXELS).map((p) => {
+      const acct = String(p.acct || '').replace(/[^0-9]/g, '');
+      return {
+        type: p.type === 'ga' ? 'ga' : 'meta',
+        id: String(p.id || '').replace(/[^A-Za-z0-9-]/g, '').slice(0, 40),
+        ...(acct ? { acct } : {}),
+      };
+    }).filter((p) => p.id),
     links: (Array.isArray(b.links) ? b.links : cur.links).slice(0, 30).map((l, i) => ({
       id: String(l.id || `l${i}`).slice(0, 20),
       label: String(l.label || '').slice(0, 60),
@@ -1513,7 +1570,7 @@ app.post('/api/create-pixel', async (req, res) => {
   try {
     const r = await fb(`act_${acctId}/adspixels`, { name }, 'POST', prof.accessToken);
     // สร้างเสร็จผูกเข้าหน้า Landing ให้เลย ไม่ต้องรอรอบ autopilot มาผูกทีหลัง
-    res.json({ ok: true, id: r.id, boundToLp: lpEnsurePixel(r.id) });
+    res.json({ ok: true, id: r.id, boundToLp: lpEnsurePixel(r.id, acctId) });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
@@ -1567,7 +1624,7 @@ app.post('/api/launch', upload.any(), async (req, res) => {
   // แล้วกฎหยุดอัตโนมัติ/ตัวขยายงบก็ตัดสินจากตัวเลขผิด — เช็คแล้วฝังให้เองก่อนขึ้น
   // (ตรรกะเดียวกับตอน autopilot เติมแอด ที่ทำอยู่แล้วใน apRefill)
   if (objInfo.needsPixel && (data.ads || []).some((ad) => lpIsOurLanding(ad && ad.link))) {
-    if (lpEnsurePixel(data.pixelId)) {
+    if (lpEnsurePixel(data.pixelId, acctId)) {
       send({ type: 'progress', msg: `ฝัง Pixel ${data.pixelId} ลงหน้า Landing ให้แล้ว — แคมเปญนี้ถึงจะนับคอนเวอร์ชั่นได้` });
     }
   }
@@ -1771,7 +1828,7 @@ app.post('/api/launch', upload.any(), async (req, res) => {
             video_id: videoId,
             message: ad.message,
             title: ad.headline || undefined,
-            call_to_action: { type: data.cta, value: { link: ad.link } },
+            call_to_action: { type: data.cta, value: { link: lpLinkFor(ad.link, acctId) } },
           };
           if (videoThumbUrl) spec.video_data.image_url = videoThumbUrl;
         } else {
@@ -1780,7 +1837,7 @@ app.post('/api/launch', upload.any(), async (req, res) => {
             message: ad.message,
             name: ad.headline || undefined,
             image_hash: imageHash,
-            call_to_action: { type: data.cta, value: { link: ad.link } },
+            call_to_action: { type: data.cta, value: { link: lpLinkFor(ad.link, acctId) } },
           };
         }
         const creative = await fb(`${acct}/adcreatives`, {
@@ -2380,7 +2437,7 @@ async function apCreateOneAd(acct, token, campaignId, pageId, pixelId, d, objInf
       video_id: videoId,
       message: item.message,
       title: item.headline || undefined,
-      call_to_action: { type: d.cta || 'LEARN_MORE', value: { link: d.link } },
+      call_to_action: { type: d.cta || 'LEARN_MORE', value: { link: lpLinkFor(d.link, acct.replace(/^act_/, '')) } },
     },
   };
   if (thumb) spec.video_data.image_url = thumb;
@@ -2594,7 +2651,7 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz) {
     // ขึ้นกับว่ามีพิกเซลของบัญชีนั้นฝังอยู่ไหม — ขาดไปแคมเปญนั้นจะเห็นผลลัพธ์เป็นศูนย์ตลอด
     // ทั้งที่คนกดจริง แล้วตัวขยายงบ/ปิดตัวขาดทุนก็จะตัดสินจากตัวเลขที่ผิด
     if (lpIsOurLanding(d.link)) {
-      if (lpEnsurePixel(pixelId)) {
+      if (lpEnsurePixel(pixelId, acctId)) {
         const m = `🔗 ${a.name}: ฝัง Pixel ${pixelId} ลงหน้า Landing ให้แล้ว — แคมเปญของบัญชีนี้ถึงจะนับคอนเวอร์ชั่นได้`;
         alerts.push(m); apLog(s, 'info', m, acctId);
       }

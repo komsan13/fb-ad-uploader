@@ -933,16 +933,19 @@
       </div>
 
       <div class="card">
-        <h2>พิกเซล <span class="h-desc" id="lpPixelCount">— ใส่ได้หลายตัว ยิงพร้อมกันทั้งหมด</span>
-          <button class="btn-primary btn-sm" style="margin-left:auto" onclick="openLpPixelModal()">+ เพิ่มพิกเซล</button>
+        <h2>พิกเซล <span class="h-desc" id="lpPixelCount">— ระบบยิงเฉพาะพิกเซลของบัญชีที่พาคนมา</span>
+          <button class="btn-light btn-sm" style="margin-left:auto" onclick="lpPrunePixels(this)">ล้างตัวที่ไม่มีเจ้าของ</button>
+          <button class="btn-primary btn-sm" onclick="openLpPixelModal()">+ เพิ่มพิกเซล</button>
         </h2>
-        <div class="hint" style="margin-bottom:10px">คลิกแถวเพื่อแก้ไข • Meta Pixel ใส่ Pixel ID • Google Analytics ใส่ Measurement ID (G-XXXX)</div>
+        <div class="hint" style="margin-bottom:10px">คลิกแถวเพื่อแก้ไข • Meta Pixel ใส่ Pixel ID • Google Analytics ใส่ Measurement ID (G-XXXX)<br>
+          แอดที่ระบบสร้างจะพาคนไป <code>/lp?a=&lt;บัญชี&gt;</code> ทำให้หน้าโหลดเฉพาะพิกเซลของบัญชีนั้น — คอนเวอร์ชั่นจึงไม่นับข้ามบัญชี</div>
         <div class="tbl-wrap">
           <table>
             <thead><tr>
               <th style="width:36px">#</th>
               <th style="width:190px">ชนิด</th>
               <th>ID</th>
+              <th style="width:150px">บัญชีเจ้าของ</th>
               <th style="width:84px"></th>
             </tr></thead>
             <tbody id="lpPixelRows"></tbody>
@@ -2960,11 +2963,32 @@ function renderLpPixels() {
       <td style="color:var(--muted)">${i + 1}</td>
       <td>${p.type === 'ga' ? 'Google Analytics' : 'Meta Pixel'}</td>
       <td style="font-family:monospace">${esc(p.id) || '<span style="color:var(--muted)">—</span>'}</td>
+      <td>${p.type === 'ga' ? '<span style="color:var(--muted)">ทุกบัญชี</span>'
+        : p.acct ? `<span style="font-family:monospace;font-size:12px">${esc(p.acct)}</span>`
+          : '<span class="st-pill issue" title="ไม่รู้ว่าเป็นของบัญชีไหน — จะยิงเฉพาะตอนเปิด /lp แบบไม่ระบุบัญชี กด &quot;ล้างตัวที่ไม่มีเจ้าของ&quot; เพื่อจัดให้เข้าที่">ไม่ทราบ</span>'}</td>
       <td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
         <button class="icon-btn btn-light" title="แก้ไข" onclick="openLpPixelModal(${i})"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
         <button class="btn-danger-light icon-btn" title="ลบพิกเซลนี้" onclick="lpPixelsData.splice(${i},1);renderLpPixels()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
       </td>
-    </tr>`).join('') || '<tr><td colspan="4" class="tbl-msg">ยังไม่มีพิกเซล — กด "+ เพิ่มพิกเซล" มุมขวาบน</td></tr>';
+    </tr>`).join('') || '<tr><td colspan="5" class="tbl-msg">ยังไม่มีพิกเซล — กด "+ เพิ่มพิกเซล" มุมขวาบน</td></tr>';
+}
+
+// ล้างพิกเซลที่ไม่มีบัญชีไหนเป็นเจ้าของ (ของค้างจากบัญชี FB ชุดเก่า) + เติมรหัสบัญชีให้ตัวที่เหลือ
+async function lpPrunePixels(btn) {
+  if (!confirm('ล้างพิกเซลที่ไม่มีเจ้าของ?
+
+ระบบจะเทียบกับบัญชีโฆษณาจริงบน Facebook แล้วลบเฉพาะตัวที่ไม่มีบัญชีไหนเป็นเจ้าของ
+ตัวที่เหลือจะถูกเติมรหัสบัญชีให้ เพื่อให้แยกคอนเวอร์ชั่นรายบัญชีได้
+
+(สำรองไฟล์เดิมไว้ให้อัตโนมัติก่อนลบ)')) return;
+  btn.disabled = true;
+  try {
+    const d = await (await fetch('/api/landing/prune-pixels', { method: 'POST' })).json();
+    if (d.error) throw new Error(d.error);
+    toast(d.removed.length ? `ลบพิกเซลที่ไม่มีเจ้าของ ${d.removed.length} ตัว — เหลือ ${d.kept} ตัวที่ตรงกับบัญชีจริง` : 'ไม่มีพิกเซลที่ไม่มีเจ้าของ — ทุกตัวตรงกับบัญชีจริงอยู่แล้ว');
+    loadLanding();
+  } catch (e) { toast('ล้างไม่สำเร็จ: ' + e.message); }
+  btn.disabled = false;
 }
 
 // modal ปุ่มลิงก์ — lpLinkEditIdx = null คือเพิ่มใหม่
@@ -3032,7 +3056,7 @@ async function loadLanding() {
   document.getElementById('lpBgImage').value = d.bgImage || '';
   lpBg = d.bg || ''; lpRenderBgs(); lpAvatarPreview();
   lpLinksData = (d.links || []).map(l => ({ icon: l.icon || '', label: l.label || '', url: l.url || '', event: l.event || '' }));
-  lpPixelsData = (d.pixels || []).map(p => ({ type: p.type === 'ga' ? 'ga' : 'meta', id: p.id || '' }));
+  lpPixelsData = (d.pixels || []).map(p => ({ type: p.type === 'ga' ? 'ga' : 'meta', id: p.id || '', acct: p.acct || '' }));
   renderLpLinks();
   renderLpPixels();
 }
@@ -3046,7 +3070,7 @@ function lpCollect() {
     bg: lpBg,
     bgImage: document.getElementById('lpBgImage').value.trim(),
     links: lpLinksData.map((l, i) => ({ id: 'l' + i, icon: l.icon, label: l.label, url: lpFixUrl(l.url), event: l.event })),
-    pixels: lpPixelsData.map(p => ({ type: p.type, id: p.id })),
+    pixels: lpPixelsData.map(p => ({ type: p.type, id: p.id, acct: p.acct || undefined })),
   };
 }
 
