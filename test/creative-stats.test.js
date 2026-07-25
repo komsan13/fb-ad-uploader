@@ -209,3 +209,49 @@ describe('สถิติครีเอทีฟ', () => {
     assert.ok(bad.error, 'ปลดตัวที่ไม่มีสถิติต้องได้ error ไม่ใช่สร้างข้อมูลขึ้นมาเอง');
   });
 });
+
+// ---------- ผู้ลงโฆษณา (DSA) ----------
+// วัดจากบัญชีจริง 25 ก.ค. 2026: dsa_recommendations ว่างทั้ง 17 บัญชี ใช้ไม่ได้
+// แต่ 16/17 บัญชีมี business เจ้าของที่ verified — จึงใช้ตัวนั้นเป็นแหล่งเลือกอัตโนมัติ
+describe('เลือกผู้ลงโฆษณาให้อัตโนมัติ', () => {
+  const withBiz = (bizId) => freshWorld({
+    accounts: [{ name: 'บัญชีเทส', account_id: ACCT, account_status: 1, currency: 'THB', business: { id: bizId, name: 'ธุรกิจเทส' } }],
+    businesses: [{ id: '5001', name: 'ธุรกิจเทส', verification_status: 'verified' },
+      { id: '5002', name: 'ยังไม่ยืนยัน', verification_status: 'pending_submission' }],
+  });
+  const rri = (world) => {
+    const c = world.calls.filter((x) => x.method === 'POST' && x.path === `act_${ACCT}/adsets`).pop();
+    try { return JSON.parse(c.params.regional_regulation_identities); } catch { return null; }
+  };
+
+  test('บัญชีที่มีธุรกิจเจ้าของยืนยันตัวตนแล้ว ต้องถูกตั้งผู้ลงโฆษณาให้เอง', async (t) => {
+    const world = withBiz('5001');
+    const { base } = await boot(t, { world, config: baseConfig({ autopilot: { enabled: true, minAds: 1 } }) });
+    await runTwice(base);
+    assert.deepStrictEqual(rri(world), { universal_beneficiary: '5001', universal_payer: '5001' },
+      'ต้องส่ง id ธุรกิจเจ้าของบัญชีไปกับชุดโฆษณา');
+    const saved = await get(base, '/api/accounts?full=1');
+    assert.strictEqual((saved.adAccounts.find((x) => x.account_id === ACCT) || {}).savedBeneficiaryId, '5001',
+      'ต้องจำลงคอนฟิกให้เห็นในหน้าเว็บและแก้ทับได้');
+  });
+
+  test('ธุรกิจเจ้าของยังไม่ยืนยันตัวตน ต้องข้ามไปโดยไม่ยัดค่ามั่ว แล้วเตือน', async (t) => {
+    const world = withBiz('5002');
+    const { base } = await boot(t, { world, config: baseConfig({ autopilot: { enabled: true, minAds: 1 } }) });
+    await runTwice(base);
+    assert.strictEqual(rri(world), null, 'ห้ามส่งผู้ลงโฆษณาที่ยังไม่ยืนยันตัวตน');
+    const s = await get(base, '/api/autopilot');
+    assert.ok((s.log || []).some((l) => /ผู้ลงโฆษณา/.test(l.msg || '')), 'ต้องเตือนว่าเลือกให้ไม่ได้');
+  });
+
+  test('ค่าที่ผู้ใช้ตั้งเองต้องชนะเสมอ ระบบห้ามเขียนทับ', async (t) => {
+    const world = withBiz('5001');
+    const { base } = await boot(t, {
+      world,
+      config: baseConfig({ autopilot: { enabled: true, minAds: 1 }, beneficiaries: { [ACCT]: '7777' } }),
+    });
+    await runTwice(base);
+    assert.deepStrictEqual(rri(world), { universal_beneficiary: '7777', universal_payer: '7777' },
+      'ต้องใช้ค่าที่คนตั้งไว้ ไม่ใช่ธุรกิจเจ้าของบัญชี');
+  });
+});
