@@ -226,4 +226,38 @@ describe('หน้า Landing', () => {
     assert.ok(!page.includes('pxB'), 'พิกเซลของบัญชีที่ซ่อนต้องไม่ถูกฝัง');
     assert.ok(!page.includes('pxC'), 'พิกเซลของบัญชีที่ถูกปิดต้องไม่ถูกฝัง');
   });
+
+  // พิกเซลหลายตัวบนหน้าเดียว = คนที่กดจากแอดบัญชีเดียว ไปนับคอนเวอร์ชั่นให้ทุกบัญชี
+  // ตัวขยายงบ/ตัวปิดแอดขาดทุนจึงตัดสินจากตัวเลขที่เฟ้อ — ต้องยิงเฉพาะของบัญชีที่พาคนมา
+  test('/lp?a=<บัญชี> ต้องโหลดเฉพาะพิกเซลของบัญชีนั้น', async (t) => {
+    const { base } = await boot(t);
+    await post(base, '/api/landing', {
+      pixels: [
+        { type: 'meta', id: '111111', acct: '900' },
+        { type: 'meta', id: '222222', acct: '901' },
+        { type: 'meta', id: '333333' },
+        { type: 'ga', id: 'G-XYZ' },
+      ],
+    });
+    const one = await (await fetch(base + '/lp?a=900')).text();
+    assert.ok(one.includes("fbq('init','111111')"), 'ต้องมีพิกเซลของบัญชีที่ระบุ');
+    assert.ok(!one.includes('222222'), 'ห้ามมีพิกเซลของบัญชีอื่น');
+    assert.ok(!one.includes('333333'), 'ตัวที่ไม่รู้เจ้าของก็ห้ามยิงตอนระบุบัญชี');
+    assert.ok(one.includes('G-XYZ'), 'GA ยังต้องทำงานทุกกรณี');
+
+    const all = await (await fetch(base + '/lp')).text();
+    ['111111', '222222', '333333'].forEach((id) => assert.ok(all.includes(id), 'ไม่ระบุบัญชี = โหลดทุกตัวเหมือนเดิม'));
+
+    const none = await (await fetch(base + '/lp?a=999')).text();
+    assert.ok(!none.includes("fbq('init'"), 'บัญชีที่ไม่มีพิกเซล ต้องไม่ยิงให้บัญชีอื่นแทน');
+  });
+
+  test('บันทึกจากหน้าเว็บต้องไม่ทำให้บัญชีเจ้าของพิกเซลหาย', async (t) => {
+    const { base } = await boot(t);
+    await post(base, '/api/landing', { pixels: [{ type: 'meta', id: '111111', acct: '900' }] });
+    const saved = await get(base, '/api/landing');
+    await post(base, '/api/landing', { title: 'แก้แค่ชื่อ', pixels: saved.pixels });
+    const after = await get(base, '/api/landing');
+    assert.strictEqual(after.pixels[0].acct, '900', 'acct ต้องรอดข้ามการบันทึก');
+  });
 });

@@ -255,3 +255,25 @@ describe('เลือกผู้ลงโฆษณาให้อัตโน�
       'ต้องใช้ค่าที่คนตั้งไว้ ไม่ใช่ธุรกิจเจ้าของบัญชี');
   });
 });
+
+// ลิงก์ปลายทางต้องพกรหัสบัญชี เพื่อให้หน้า Landing โหลดเฉพาะพิกเซลของบัญชีนั้น
+describe('ลิงก์ปลายทางแยกรายบัญชี', () => {
+  const ctaLink = (world) => {
+    const c = world.calls.filter((x) => x.method === 'POST' && x.path === `act_${ACCT}/adcreatives`).pop();
+    return JSON.parse(c.params.object_story_spec).video_data.call_to_action.value.link;
+  };
+
+  test('แอดที่ชี้มาหน้า Landing ของเรา ต้องติด ?a=<บัญชี> ให้อัตโนมัติ', async (t) => {
+    const { base, world } = await boot(t, { config: baseConfig({ autopilot: { enabled: true, minAds: 1 } }) });
+    await post(base, '/api/launch-defaults', { ...baseConfig().launchDefaults, link: base + '/lp' });
+    await runTwice(base);
+    assert.strictEqual(ctaLink(world), base + '/lp?a=' + ACCT, 'ลิงก์ต้องพกรหัสบัญชีไปด้วย');
+  });
+
+  test('ลิงก์ที่ไม่ใช่หน้า Landing ของเรา ต้องไม่ถูกแตะ', async (t) => {
+    const { base, world } = await boot(t, { config: baseConfig({ autopilot: { enabled: true, minAds: 1 } }) });
+    await post(base, '/api/launch-defaults', { ...baseConfig().launchDefaults, link: 'https://shop.example.com/promo' });
+    await runTwice(base);
+    assert.strictEqual(ctaLink(world), 'https://shop.example.com/promo', 'ลิงก์ภายนอกต้องเหมือนเดิมเป๊ะ');
+  });
+});
