@@ -2423,7 +2423,31 @@ async function apSpendRoom(acct, token, cf) {
   return out;
 }
 
-async function apRefill(cfg, prof, a, ads, s, alerts, livePages) {
+// เลือก "ผู้ลงโฆษณา" (DSA) ให้บัญชีนี้ — คนตั้งเองชนะเสมอ ไม่มีก็ใช้ธุรกิจเจ้าของบัญชีถ้า verified
+// ไม่มีอะไรให้เลือกก็คืนค่าว่าง (ยิงต่อได้ แค่ไม่มีข้อมูลนี้) ไม่ยัดค่ามั่วเด็ดขาด
+function apPickBeneficiary(cfg, a, verifiedBiz, s, alerts) {
+  const acctId = a.account_id;
+  const saved = String((cfg.beneficiaries || {})[acctId] || '');
+  if (saved) return saved;
+  const bizId = a.business ? String(a.business.id || '') : '';
+  if (!bizId || !verifiedBiz || !verifiedBiz.has(bizId)) return '';
+  // จำไว้ในคอนฟิกด้วย เพื่อให้เห็นในหน้าเว็บว่าระบบเลือกอะไรให้ และผู้ใช้แก้ทับได้
+  // โหลดคอนฟิกสดก่อนเขียน — ระหว่างรอบตรวจ (เป็นนาที) อาจมีคนแก้ค่าอื่นเข้ามา
+  try {
+    const cfgNow = loadConfig();
+    cfgNow.beneficiaries = cfgNow.beneficiaries || {};
+    if (!cfgNow.beneficiaries[acctId]) {
+      cfgNow.beneficiaries[acctId] = bizId;
+      saveConfig(cfgNow);
+      cfg.beneficiaries = cfgNow.beneficiaries;
+      const m = `🏷️ ${a.name}: เลือกผู้ลงโฆษณาให้อัตโนมัติ — ${a.business.name || bizId} (ธุรกิจเจ้าของบัญชีที่ยืนยันตัวตนแล้ว) แก้ได้ที่เมนู "ขึ้นแอด"`;
+      alerts.push(m); apLog(s, 'info', m, acctId);
+    }
+  } catch { /* เขียนคอนฟิกไม่ได้ก็ยังใช้ค่าที่หาได้รอบนี้ต่อไป */ }
+  return bizId;
+}
+
+async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz) {
   const ap = cfg.autopilot || {};
   const testMode = !!ap.testMode;
   const target = Math.max(0, Math.min(50, Number(ap.minAds) || 0));
@@ -2489,11 +2513,13 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages) {
     return;
   }
 
-  // ไม่ใช่เหตุให้หยุด แต่ต้องรู้ — แอดที่ไม่มีผู้ลงโฆษณาเสี่ยงโดนปฏิเสธหรือไม่ยิง
-  if (!(cfg.beneficiaries || {})[acctId] && s.warned['dsa:' + acctId] !== apToday()) {
-    const m = `⚠️ ${a.name}: ยังไม่ได้เลือก "ผู้ลงโฆษณา" ให้บัญชีนี้ — แอดที่ระบบสร้างจะไม่มีข้อมูลนี้ เสี่ยงโดนปฏิเสธ ไปตั้งที่เมนู "บัญชี FB"`;
+  // ผู้ลงโฆษณา (DSA): เลือกให้เองถ้ายังไม่ได้ตั้ง — ไม่ใช่เหตุให้หยุด แต่ไม่มีแล้วเสี่ยงโดนปฏิเสธ
+  const beneficiaryId = apPickBeneficiary(cfg, a, verifiedBiz, s, alerts);
+  if (!beneficiaryId && s.warned['dsa:' + acctId] !== apToday()) {
+    const m = `⚠️ ${a.name}: ไม่มี "ผู้ลงโฆษณา" และเลือกให้อัตโนมัติไม่ได้ (ไม่มีธุรกิจเจ้าของบัญชีที่ยืนยันตัวตนแล้ว) — แอดที่ระบบสร้างจะไม่มีข้อมูลนี้ เสี่ยงโดนปฏิเสธ ตั้งเองได้ที่เมนู "ขึ้นแอด"`;
     alerts.push(m); apLog(s, 'warn', m, acctId); s.warned['dsa:' + acctId] = apToday();
   }
+  if (beneficiaryId) s.warned['dsa:' + acctId] = '';
 
   if (problems.length) {
     if (s.warned['setup:' + acctId] !== 'setup') {
@@ -2616,7 +2642,7 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages) {
     const pageId = pagePool[(s.pageCursor[prof.id] = (s.pageCursor[prof.id] || 0) + 1) % pagePool.length];
     try {
       await apCreateOneAd(acct, prof.accessToken, campaignId, pageId, pixelId, d, objInfo, item, testMode,
-        (cfg.beneficiaries || {})[acctId]);
+        beneficiaryId);
       markVideoUsed(v.id, acctId);
       s.created[acctId].push(Date.now());
       if (testMode) { s.tested = s.tested || {}; (s.tested[acctId] = s.tested[acctId] || []).push(Date.now()); }
@@ -2869,7 +2895,8 @@ async function autopilotTick(mode = 'full') {
     if (Date.now() < fbAppBlockedUntil(prof.accessToken)) continue;
     let accts = [];
     // ขอ funding_source_details มาด้วย — apRefill ใช้เช็คว่าบัญชีผูกบัตรแล้วก่อนเติมแอด
-    try { accts = await fbAll('me/adaccounts', { fields: 'name,account_id,account_status,currency,funding_source_details', limit: 100 }, prof.accessToken); fbOk = true; }
+    // business = ธุรกิจเจ้าของบัญชี ใช้เลือก "ผู้ลงโฆษณา" (DSA) ให้เองเมื่อผู้ใช้ยังไม่ได้ตั้ง
+    try { accts = await fbAll('me/adaccounts', { fields: 'name,account_id,account_status,currency,funding_source_details,business{id,name}', limit: 100 }, prof.accessToken); fbOk = true; }
     catch { continue; }
 
     // เพจที่ลงโฆษณาได้ของโปรไฟล์นี้ — โหลดครั้งเดียวต่อรอบ ใช้บาลานซ์เพจตอนเติมแอด (round-robin)
@@ -2880,6 +2907,18 @@ async function autopilotTick(mode = 'full') {
       const hiddenPages = (cfg.hidden || {}).pages || {};
       try { livePages = (await fbPages(prof.accessToken)).filter((p) => p.ok && !hiddenPages[p.id]).map((p) => p.id); }
       catch { livePages = null; }
+    }
+
+    // ธุรกิจที่ยืนยันตัวตนแล้วของโปรไฟล์นี้ — ใช้เลือก "ผู้ลงโฆษณา" ให้บัญชีที่ยังไม่ได้ตั้งเอง
+    // (วัดจากบัญชีจริง 25 ก.ค. 2026: dsa_recommendations ว่างเปล่าทั้ง 17 บัญชี ใช้ไม่ได้
+    //  แต่ 16/17 บัญชีมี business เจ้าของที่ verified อยู่แล้ว = แหล่งที่เชื่อถือได้จริง)
+    // โหลดไม่ได้ = null → apRefill จะไม่เดา ปล่อยเป็นเหมือนเดิม
+    let verifiedBiz = null;
+    if (mode === 'full') {
+      try {
+        const vb = await fbAll('me/businesses', { fields: 'verification_status', limit: 100 }, prof.accessToken);
+        verifiedBiz = new Set(vb.filter((b) => b.verification_status === 'verified').map((b) => String(b.id)));
+      } catch { verifiedBiz = null; }
     }
 
     for (const a of accts.filter((x) => x.account_status === 1)) {
@@ -3079,7 +3118,7 @@ async function autopilotTick(mode = 'full') {
         // ปิดตัวขาดทุนก่อนเติม เพื่อให้ apRefill เห็นช่องว่างจริงแล้วเอาครีเอทีฟใหม่เข้าไปแทนในรอบเดียวกัน
         try { await apPauseLosers(cfg, prof, a, ads, s, alerts); }
         catch (e) { apLog(s, 'warn', `ปิดแอดขาดทุนใน ${a.name} ไม่สำเร็จ: ${e.message}`, acctId); }
-        try { await apRefill(cfg, prof, a, ads, s, alerts, livePages); }
+        try { await apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz); }
         catch (e) { apLog(s, 'warn', `เติมแอดให้ ${a.name} ไม่สำเร็จ: ${e.message}`, acctId); }
         try { await apScale(cfg, prof, a, s, alerts); }
         catch (e) { apLog(s, 'warn', `ขยายงบใน ${a.name} ไม่สำเร็จ: ${e.message}`, acctId); }
