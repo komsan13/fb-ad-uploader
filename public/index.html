@@ -1878,11 +1878,16 @@ async function loadHealthPage(force) {
     try {
       const d = await (await fetch(`/api/health-overview?profile=${p.id}&_=${Date.now()}`, { cache: 'no-store' })).json();
       if (d.error) return { p, error: d.error };
+      // รายชื่อที่เพิ่งถูกผูกเข้าหน้า Landing เป็นข่าวของรอบนี้เท่านั้น — ไม่เก็บลง cache ไม่งั้นเด้งซ้ำทุกครั้งที่เปิดหน้า
+      const boundToLp = d.boundToLp || [];
+      delete d.boundToLp;
       healthCache[p.id] = d;
-      return { p, ...d };
+      return { p, ...d, boundToLp };
     } catch (e) { return { p, error: e.message }; }
   }));
   saveCaches();
+  const nBound = results.reduce((n, r) => n + (r.boundToLp || []).length, 0);
+  if (nBound) toast(`ผูกพิกเซล ${nBound} ตัวเข้าหน้า Landing ให้แล้ว — บัญชีพวกนี้ถึงจะนับคอนเวอร์ชั่นได้`);
   renderHealthPage(results);
 }
 // ปุ่มลูกตา: ซ่อน/โชว์จากทุกหน้า (จัดการที่หน้าสุขภาพที่เดียว) — ซ่อนคือเรื่องการแสดงผลเท่านั้น
@@ -1948,7 +1953,10 @@ function renderHealthPage(results) {
     // บัญชีใช้งานได้ที่ถูกซ่อน: autopilot เลิกดูแลแล้ว แต่แอดที่เปิดค้างยังวิ่งเองได้ — ต้องมีป้ายย้ำ
     const apTag = a.hidden && a.status === 1 ? ` <span class="st-pill rejected" title="autopilot ไม่เติมแอด/ไม่ขยายงบ/ไม่แก้แอดให้บัญชีนี้แล้ว — แอดที่ยังเปิดอยู่จะวิ่งต่อเองโดยไม่มีระบบดูแล ปิดแอดเองถ้าไม่ต้องการ">${ic('ban', { size: 12 })} autopilot ไม่ดูแล (ถูกซ่อน)</span>` : '';
     const px = a.dead ? '<span style="color:var(--muted)">—</span>' : a.pixels.length
-      ? a.pixels.map(x => `<span style="white-space:nowrap"><span class="st-pill on" title="Pixel ID: ${esc(x.id)}">✓ ${esc(x.name)}</span> <button class="btn-light btn-sm" title="คัดลอก Pixel ID ${esc(x.id)}" onclick="copyPixel(${jsStr(x.id)});this.textContent='✓ คัดลอกแล้ว';setTimeout(()=>this.textContent='คัดลอก ID',1200)">คัดลอก ID</button></span>`).join(' ')
+      ? a.pixels.map(x => `<span style="white-space:nowrap"><span class="st-pill on" title="Pixel ID: ${esc(x.id)}">✓ ${esc(x.name)}</span> ${x.onLp
+          ? '<span class="st-pill on" title="ฝังอยู่ในหน้า Landing แล้ว — คอนเวอร์ชั่นของบัญชีนี้ถึงจะถูกนับ">LP ✓</span>'
+          : '<span class="st-pill issue" title="ยังไม่ได้ฝังในหน้า Landing — แคมเปญของบัญชีนี้จะเห็นคอนเวอร์ชั่นเป็นศูนย์ ระบบผูกให้เองเฉพาะบัญชีที่ใช้งานได้และไม่ถูกซ่อน">ยังไม่ผูก LP</span>'
+        } <button class="btn-light btn-sm" title="คัดลอก Pixel ID ${esc(x.id)}" onclick="copyPixel(${jsStr(x.id)});this.textContent='✓ คัดลอกแล้ว';setTimeout(()=>this.textContent='คัดลอก ID',1200)">คัดลอก ID</button></span>`).join(' ')
       : `<button class="btn-primary btn-sm" onclick="createPixelHealth(${jsStr(a.pid)},${jsStr(a.id)},this)">+ สร้าง Pixel เลย</button>`;
     const card = a.dead ? '<span style="color:var(--muted)">—</span>' : a.funding
       ? `<span class="st-pill on">✓ ${esc(a.funding)}</span>`

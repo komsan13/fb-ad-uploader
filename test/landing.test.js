@@ -164,6 +164,20 @@ describe('หน้า Landing', () => {
     assert.ok(page.includes(up.url), 'รูปต้องถูกใช้เป็นพื้นหลัง');
   });
 
+  // 1 บัญชี = 1 พิกเซล ระบบฝังให้เองเรื่อยๆ ตอนขึ้นแอด/เติมแอด เพดานเดิม 30 จึงต่ำกว่าของจริง
+  // ผลคือกดบันทึกหน้า Landing ครั้งเดียว พิกเซลท้ายๆ หายเงียบ บัญชีนั้นเห็นคอนเวอร์ชั่นเป็น 0 ทั้งที่คนกดจริง
+  test('บันทึกหน้า Landing ต้องไม่ตัดพิกเซลของบัญชีทิ้ง', async (t) => {
+    const { base } = await boot(t);
+    const many = Array.from({ length: 40 }, (_, i) => ({ type: 'meta', id: String(100000 + i) }));
+    const saved = await post(base, '/api/landing', { pixels: many });
+    assert.strictEqual(saved.landing.pixels.length, 40, 'พิกเซลเกิน 30 ต้องไม่ถูกตัดทิ้ง');
+    // แก้แค่ชื่อร้าน (หน้าเว็บส่งค่าเดิมกลับมาทั้งก้อน) พิกเซลต้องอยู่ครบเหมือนเดิม
+    const again = await post(base, '/api/landing', { title: 'แก้แค่ชื่อ', pixels: many });
+    assert.strictEqual(again.landing.pixels.length, 40, 'บันทึกซ้ำต้องไม่ทำให้พิกเซลหาย');
+    const page = await html(base);
+    assert.ok(page.includes("fbq('init','100039')"), 'พิกเซลตัวท้ายต้องยังอยู่บนหน้าจริง');
+  });
+
   test('ค่าที่บันทึกต้องอยู่รอดข้ามการอ่านใหม่', async (t) => {
     const { base } = await boot(t);
     await post(base, '/api/landing', { title: 'ก่อนแก้', links: [{ label: 'ก', url: 'https://ok.test/a' }] });
@@ -171,5 +185,45 @@ describe('หน้า Landing', () => {
     const d = await get(base, '/api/landing');
     assert.strictEqual(d.title, 'หลังแก้');
     assert.strictEqual(d.links.length, 1, 'แก้เฉพาะชื่อ ปุ่มเดิมต้องไม่หาย');
+  });
+
+  // เดิมพิกเซลถูกผูกเข้าหน้า Landing เฉพาะตอนขึ้นแอดเอง/autopilot เติมแอด
+  // บัญชีที่ยังไม่ถึงคิวจึงค้างไม่ผูก = ยิงแอดไปแล้วแต่คอนเวอร์ชั่นขึ้นศูนย์
+  test('หน้าสุขภาพต้องผูกพิกเซลที่ยังไม่ผูกเข้าหน้า Landing ให้เอง', async (t) => {
+    const fb = await makeFakeFb({
+      accounts: [
+        { name: 'ใช้งานได้', account_id: '111', account_status: 1, adspixels: { data: [{ id: 'pxA', name: 'A' }] } },
+        { name: 'ถูกซ่อน', account_id: '222', account_status: 1, adspixels: { data: [{ id: 'pxB', name: 'B' }] } },
+        { name: 'ถูกปิด', account_id: '333', account_status: 2, adspixels: { data: [{ id: 'pxC', name: 'C' }] } },
+      ],
+      pages: [],
+    });
+    const dir = tmpDir();
+    seed(dir, {
+      config: {
+        profiles: [{ id: 'p1', label: 'เทส', accessToken: 'tok' }],
+        activeProfileId: 'p1',
+        hidden: { accounts: { 222: true } },
+      },
+    });
+    const srv = await startServer(dir, fb.port);
+    t.after(() => { srv.stop(); fb.server.close(); });
+
+    const d = await get(srv.base, '/api/health-overview?profile=p1');
+    assert.deepStrictEqual(d.boundToLp, ['pxA'], 'ผูกให้เฉพาะบัญชีที่ใช้งานได้และไม่ถูกซ่อน');
+    const lp = await get(srv.base, '/api/landing');
+    assert.deepStrictEqual(lp.pixels.map((p) => p.id), ['pxA']);
+
+    const onLp = Object.fromEntries(d.accounts.flatMap((a) => a.pixels.map((x) => [x.id, x.onLp])));
+    assert.strictEqual(onLp.pxA, true, 'ต้องบอกหน้าเว็บว่าผูกแล้ว');
+    assert.strictEqual(onLp.pxB, false, 'บัญชีที่ซ่อนต้องขึ้นว่ายังไม่ผูก');
+
+    const again = await get(srv.base, '/api/health-overview?profile=p1');
+    assert.deepStrictEqual(again.boundToLp, [], 'เปิดหน้าซ้ำต้องไม่ผูกซ้ำ');
+
+    const page = await html(srv.base);
+    assert.ok(page.includes("fbq('init','pxA')"), 'พิกเซลที่ผูกต้องขึ้นบนหน้าจริง');
+    assert.ok(!page.includes('pxB'), 'พิกเซลของบัญชีที่ซ่อนต้องไม่ถูกฝัง');
+    assert.ok(!page.includes('pxC'), 'พิกเซลของบัญชีที่ถูกปิดต้องไม่ถูกฝัง');
   });
 });
