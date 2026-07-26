@@ -67,7 +67,7 @@ $('save').addEventListener('click', async () => {
 $('profile').addEventListener('change', () => chrome.storage.local.set({ profile: $('profile').value }));
 
 $('now').addEventListener('click', async () => {
-  show({ text: 'กำลังดึง token...', at: Date.now() });
+  show({ text: 'กำลังอ่านวงเงิน...', at: Date.now() });
   const s = await chrome.runtime.sendMessage({ type: 'pull' });
   show(s);
 });

@@ -34,10 +34,12 @@ describe('ส่วนขยาย: การดึง token ออกจาก�
 });
 
 // โหลด background.js จริงเข้า vm พร้อมของปลอมเท่าที่ service worker ต้องใช้
-function loadWorker({ fbHtml, store = {} }) {
+// graph = สิ่งที่ Graph API ตอบกลับ (ปลอม) เพราะ Graph ตัวจริงต้องยิงจากเบราว์เซอร์ผู้ใช้เท่านั้น
+function loadWorker({ fbHtml, store = {}, graph, graphCalls = [] }) {
   const ctx = {
     console,
     URL,
+    URLSearchParams,
     btoa: (s) => Buffer.from(s, 'binary').toString('base64'),
     // ให้ importScripts รัน extract.js ตัวจริงในคอนเท็กซ์เดียวกัน เหมือนที่ Chrome ทำ
     importScripts: (f) => vm.runInContext(fs.readFileSync(path.join(EXT, f), 'utf8'), ctx),
@@ -45,6 +47,10 @@ function loadWorker({ fbHtml, store = {} }) {
       if (String(url).startsWith('https://adsmanager.facebook.com')) {
         if (fbHtml === null) throw new Error('net::ERR_FAILED');
         return { ok: true, status: 200, text: async () => fbHtml };
+      }
+      if (String(url).startsWith('https://graph.facebook.com')) {
+        graphCalls.push(String(url));
+        return { ok: true, status: 200, json: async () => graph };
       }
       return globalThis.fetch(url, opts);   // ยิงเข้า server.js จริง
     },
@@ -79,51 +85,92 @@ async function bootApp(t) {
   return { ...srv, dir };
 }
 
-const readAmToken = (dir) => JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8')).profiles[0].amToken;
+const readCfg = (dir) => JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8')).profiles[0];
+const GRAPH_OK = {
+  data: [
+    { account_id: '111', adtrust_dsl: 1688.29, adspaymentcycle: { data: [{ threshold_amount: '11500' }] } },
+    { account_id: '999', adtrust_dsl: -1 },
+  ],
+};
 
-describe('ส่วนขยาย: ส่ง token เข้าหน้าเว็บจริง', () => {
-  test('ดึงจากหน้า Ads Manager แล้วส่งถึงหน้าเว็บ — token ต้องลงไปถึง config จริง', async (t) => {
+describe('ส่วนขยาย: อ่านวงเงินในเบราว์เซอร์แล้วส่งเข้าหน้าเว็บจริง', () => {
+  test('อ่าน Graph เองแล้วส่งแค่ตัวเลข — ต้องลงถึง config จริงและหน้าสุขภาพเห็นเลย', async (t) => {
     const app = await bootApp(t);
+    const graphCalls = [];
     const { ctx, store } = loadWorker({
       fbHtml: `<script>window.__accessToken="${TOKEN}"</script>`,
-      store: { appUrl: app.base, profile: 'p1' },
+      store: { appUrl: app.base, profile: 'p1' }, graph: GRAPH_OK, graphCalls,
     });
-    const s = await ctx.pullAndPush('เทส');
+    const s = await ctx.refresh('เทส');
     assert.strictEqual(s.ok, true, 'ต้องรายงานว่าสำเร็จ: ' + s.text);
-    assert.strictEqual(readAmToken(app.dir), TOKEN, 'token ต้องถูกบันทึกลง config ของหน้าเว็บจริง');
     assert.strictEqual(store.status.ok, true, 'สถานะล่าสุดต้องถูกเก็บไว้ให้ป๊อปอัปอ่าน');
-    // ต่อครบเส้น: หน้าสุขภาพต้องอ่านวงเงินได้ทันทีโดยผู้ใช้ไม่ต้องทำอะไรอีก
+    assert.match(graphCalls[0] || '', /me\/adaccounts\?.*adtrust_dsl/, 'ต้องยิง Graph เองจากในเบราว์เซอร์');
     const h = await get(app.base, '/api/health-overview?profile=p1');
-    assert.strictEqual(h.accounts[0].dsl, 1688.29, 'พอมี token แล้ววงเงิน/วันต้องขึ้นเลย');
+    assert.strictEqual(h.accounts[0].dsl, 1688.29, 'วงเงิน/วันต้องขึ้นบนหน้าสุขภาพ');
+    assert.strictEqual(h.accounts[0].threshold, 11500);
+    assert.ok(h.limitsAt > 0, 'ต้องบอกได้ว่าอัปเดตเมื่อไหร่ ไม่ให้เข้าใจผิดว่าเป็นค่าสด');
+  });
+
+  test('token ต้องไม่ถูกส่งออกไปไหนเลย — ทั้งใน request และใน config', async (t) => {
+    const app = await bootApp(t);
+    const bodies = [];
+    const { ctx } = loadWorker({
+      fbHtml: `<script>window.__accessToken="${TOKEN}"</script>`,
+      store: { appUrl: app.base, profile: 'p1' }, graph: GRAPH_OK,
+    });
+    const realFetch = ctx.fetch;
+    ctx.fetch = async (url, opts) => {
+      if (String(url).startsWith(app.base)) bodies.push(String((opts || {}).body || ''));
+      return realFetch(url, opts);
+    };
+    await ctx.refresh('เทส');
+    assert.ok(bodies.length, 'ต้องมีการยิงเข้าหน้าเว็บ');
+    for (const b of bodies) assert.ok(!b.includes(TOKEN), 'ห้ามมี token อยู่ใน request ที่ส่งออกจากเบราว์เซอร์');
+    assert.ok(!JSON.stringify(readCfg(app.dir)).includes(TOKEN), 'ห้ามมี token ค้างใน config ของเซิร์ฟเวอร์');
   });
 
   test('ยังไม่ได้ตั้งค่า = ต้องไม่ยิงอะไรออกไป และบอกให้ไปตั้งค่า', async (t) => {
     const app = await bootApp(t);
-    const { ctx } = loadWorker({ fbHtml: `<script>window.__accessToken="${TOKEN}"</script>`, store: {} });
-    const s = await ctx.pullAndPush('เทส');
+    const { ctx } = loadWorker({
+      fbHtml: `<script>window.__accessToken="${TOKEN}"</script>`, store: {}, graph: GRAPH_OK,
+    });
+    const s = await ctx.refresh('เทส');
     assert.strictEqual(s.ok, false);
     assert.match(s.text, /ตั้งค่า/);
-    assert.strictEqual(readAmToken(app.dir), undefined, 'ต้องไม่มีอะไรถูกเขียนลง config');
+    assert.strictEqual(readCfg(app.dir).amLimits, undefined, 'ต้องไม่มีอะไรถูกเขียนลง config');
   });
 
-  test('ล็อกเอาต์อยู่ (หน้าไม่มี token) ต้องบอกให้ล็อกอิน ไม่ใช่ส่งค่าว่างไปล้าง token เดิมทิ้ง', async (t) => {
+  test('ล็อกเอาต์อยู่ (หน้าไม่มี token) ต้องบอกให้ล็อกอิน ไม่ใช่ส่งของว่างไปทับของเดิม', async (t) => {
     const app = await bootApp(t);
     const { ctx } = loadWorker({
       fbHtml: '<html><body>Log into Facebook</body></html>',
-      store: { appUrl: app.base, profile: 'p1' },
+      store: { appUrl: app.base, profile: 'p1' }, graph: GRAPH_OK,
     });
-    const s = await ctx.pullAndPush('เทส');
+    const s = await ctx.refresh('เทส');
     assert.strictEqual(s.ok, false);
     assert.match(s.text, /ล็อกอิน/);
-    assert.strictEqual(readAmToken(app.dir), undefined, 'หา token ไม่เจอต้องไม่ไปแตะของเดิมเลย');
+    assert.strictEqual(readCfg(app.dir).amLimits, undefined, 'หา token ไม่เจอต้องไม่ไปแตะของเดิมเลย');
+  });
+
+  test('Graph ตอบ error ต้องรายงานสาเหตุ และไม่ส่งของว่างไปทับตัวเลขเดิม', async (t) => {
+    const app = await bootApp(t);
+    const { ctx } = loadWorker({
+      fbHtml: `<script>window.__accessToken="${TOKEN}"</script>`,
+      store: { appUrl: app.base, profile: 'p1' },
+      graph: { error: { message: 'Session has expired', code: 190 } },
+    });
+    const s = await ctx.refresh('เทส');
+    assert.strictEqual(s.ok, false);
+    assert.match(s.text, /Session has expired/);
+    assert.strictEqual(readCfg(app.dir).amLimits, undefined);
   });
 
   test('ต่อเน็ตไม่ได้ ต้องรายงานสาเหตุ ไม่ใช่เงียบ', async (t) => {
     const app = await bootApp(t);
-    const { ctx } = loadWorker({ fbHtml: null, store: { appUrl: app.base, profile: 'p1' } });
-    const s = await ctx.pullAndPush('เทส');
+    const { ctx } = loadWorker({ fbHtml: null, store: { appUrl: app.base, profile: 'p1' }, graph: GRAPH_OK });
+    const s = await ctx.refresh('เทส');
     assert.strictEqual(s.ok, false);
-    assert.match(s.text, /ดึงหน้า Ads Manager ไม่ได้/);
+    assert.match(s.text, /เปิดหน้า Ads Manager ไม่ได้/);
   });
 
   test('ตั้งชื่อผู้ใช้/รหัสไว้ ต้องแนบ Authorization ไปด้วย (หน้าเว็บจริงอยู่หลัง basic auth)', async (t) => {
@@ -131,14 +178,14 @@ describe('ส่วนขยาย: ส่ง token เข้าหน้าเ�
     let seenAuth = null;
     const { ctx } = loadWorker({
       fbHtml: `{"access_token":"${TOKEN}"}`,
-      store: { appUrl: app.base, profile: 'p1', user: 'admin', pass: 'ลับ' },
+      store: { appUrl: app.base, profile: 'p1', user: 'admin', pass: 'ลับ' }, graph: GRAPH_OK,
     });
     const realFetch = ctx.fetch;
     ctx.fetch = async (url, opts) => {
-      if (!String(url).startsWith('https://adsmanager')) seenAuth = (opts.headers || {}).Authorization;
+      if (String(url).startsWith(app.base)) seenAuth = (opts.headers || {}).Authorization;
       return realFetch(url, opts);
     };
-    const s = await ctx.pullAndPush('เทส');
+    const s = await ctx.refresh('เทส');
     assert.strictEqual(s.ok, true, s.text);
     assert.strictEqual(seenAuth, 'Basic ' + Buffer.from('admin:ลับ', 'binary').toString('base64'));
   });

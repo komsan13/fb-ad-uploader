@@ -1924,9 +1924,9 @@ async function toggleHidden(kind, id, hide, btn) {
   loadHealthPage();
 }
 // ---------- วงเงิน/วัน ที่ Meta กำหนด (adtrust_dsl) ----------
-// field นี้ไม่มีในเอกสาร Marketing API — token ของแอปเราอ่านไม่ได้ ต้องใช้ token ของ Ads Manager
-// คำสั่งนี้คือวิธีดึง token ออกจากหน้า Ads Manager (แกะจาก extension ตระกูล Ads Check ที่ทำแบบเดียวกัน)
-const AM_SNIPPET = 'copy(document.documentElement.innerHTML.match(/"access_token":"(EAA[A-Za-z0-9_-]{20,})"/)[1])';
+// ตัวเลขพวกนี้ส่วนขยาย Chrome เป็นคนยิง Graph API เองในเบราว์เซอร์ผู้ใช้แล้วส่งมาเก็บไว้
+// หน้านี้จึงโชว์ "ค่าที่บันทึกไว้ล่าสุด" ไม่ใช่ค่าสด — เซิร์ฟเวอร์ยิงเองไม่ได้ ดูเหตุผลใน server.js
+// ที่ /api/am-limits (เคยลองแล้ว Meta สั่ง checkpoint ทั้งบัญชี)
 
 // โชว์ค่าดิบใน tooltip ด้วย เพราะหน่วยของ adtrust_dsl ยังไม่ได้เทียบกับหน้า Billing ด้วยตาตัวเอง
 // (เชื่อว่าเป็นบาท ส่วน threshold_amount เป็นสตางค์) ถ้าหน่วยผิดจะเห็นตั้งแต่ครั้งแรกที่เปิด
@@ -1949,48 +1949,26 @@ function limitCell(a) {
   return `<div style="display:flex;align-items:center;gap:6px">${val}${refresh}</div>${th}`;
 }
 
-// แถบสถานะ token ด้านบนตาราง — บอกตรงๆ ว่าอ่านวงเงินได้หรือไม่ได้ ไม่ปล่อยให้คอลัมน์ว่างแบบไม่มีเหตุผล
+// แถบสถานะด้านบนตาราง — บอกว่าตัวเลขวงเงินเก่าแค่ไหน ไม่ปล่อยให้เข้าใจผิดว่าเป็นค่าสด
 function renderAmBar(results) {
   const rows = results.filter(r => !r.error).map(r => {
-    const btn = (txt) => `<button class="btn-light btn-sm" onclick="setAmToken(${jsStr(r.p.id)})">${txt}</button>`;
-    if (!r.hasAmToken) return `<span class="muted">${esc(r.p.label)}: ยังไม่ได้วาง Ads Manager token — คอลัมน์ "วงเงิน/วัน" จะว่าง</span> ${btn('วาง token')}`;
-    if (r.dslError) return `<span style="color:var(--red,#d93025)">⚠ ${esc(r.p.label)}: ${esc(r.dslError)}</span> ${btn('วางใหม่')}`;
-    return `<span class="muted">${esc(r.p.label)}: อ่านวงเงินสดจาก Meta แล้ว ✓</span> ${btn('เปลี่ยน token')}`;
+    if (!r.limitsAt) return `<span class="muted">${esc(r.p.label)}: ยังไม่เคยได้ตัวเลขวงเงิน — ติดตั้งส่วนขยายแล้วเปิดหน้า Ads Manager สักครั้ง</span>`;
+    const t = new Date(r.limitsAt).toLocaleString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    return `<span class="muted">${esc(r.p.label)}: วงเงินอัปเดตล่าสุด ${t}</span>`;
   });
   document.getElementById('healthAmBar').innerHTML =
     rows.map(l => `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">${l}</div>`).join('')
-    + '<details><summary class="muted" style="cursor:pointer;font-size:12.5px">วิธีเอา Ads Manager token</summary>'
+    + '<details><summary class="muted" style="cursor:pointer;font-size:12.5px">วงเงิน/วัน มาจากไหน</summary>'
     + '<div class="res-label" style="margin-top:8px;line-height:1.9">'
-    + '<b>วิธีที่แนะนำ — ให้ส่วนขยายทำให้เอง (ตั้งครั้งเดียว)</b><br>'
-    + '1. เปิด Chrome → <code>chrome://extensions</code> → เปิด <b>โหมดนักพัฒนาซอฟต์แวร์</b> มุมขวาบน<br>'
-    + '2. กด <b>โหลดส่วนขยายที่แตกไฟล์แล้ว</b> → เลือกโฟลเดอร์ <code>extension</code> ในโปรเจกต์<br>'
-    + '3. กดไอคอนส่วนขยาย → ใส่ที่อยู่หน้าเว็บนี้ + ชื่อผู้ใช้/รหัสผ่าน → เลือกบัญชี → บันทึก<br>'
-    + 'จากนั้นมันจะดึง token ให้เองทุก 30 นาที และทุกครั้งที่คุณเปิดหน้า Ads Manager<br><br>'
-    + '<b>วิธีสำรอง — ทำมือ</b><br>'
-    + '1. เปิด <b>adsmanager.facebook.com</b> ในเบราว์เซอร์ที่ล็อกอิน FB อยู่<br>'
-    + '2. กด F12 → แท็บ Console → วางคำสั่งนี้แล้ว Enter (มันจะก๊อป token ใส่คลิปบอร์ดให้เอง)<br>'
-    + `<code style="display:block;margin:6px 0;padding:8px;background:var(--bg,#f5f6f7);border-radius:6px;word-break:break-all;font-size:11.5px">${esc(AM_SNIPPET)}</code>`
-    + '3. กดปุ่ม "วาง token" ข้างบน แล้ว Ctrl+V<br>'
-    + '<span style="color:var(--red,#d93025)">token นี้อายุสั้น (ราว 1–2 ชม.) หมดแล้วต้องทำใหม่ • การเอา token ของ Ads Manager ไปใช้นอกเบราว์เซอร์ผิด Platform Terms ของ Meta — ใช้อ่านอย่างเดียว ระบบไม่เอา token ตัวนี้ไปยิงแอด</span>'
+    + 'Meta ไม่เปิด API ให้อ่านวงเงินนี้ด้วย token ของแอปเรา ต้องใช้ session ของ Ads Manager<br>'
+    + 'ส่วนขยาย Chrome (โฟลเดอร์ <code>extension</code> ในโปรเจกต์) จึงเป็นตัวอ่านให้ <b>ในเบราว์เซอร์ของคุณเอง</b> แล้วส่งมาแค่ตัวเลข<br><br>'
+    + '<b>ติดตั้งครั้งเดียว</b><br>'
+    + '1. Chrome → <code>chrome://extensions</code> → เปิด <b>โหมดนักพัฒนาซอฟต์แวร์</b><br>'
+    + '2. <b>โหลดส่วนขยายที่แตกไฟล์แล้ว</b> → เลือกโฟลเดอร์ <code>extension</code><br>'
+    + '3. กดไอคอนส่วนขยาย → เลือกบัญชี → บันทึก<br>'
+    + 'จากนั้นตัวเลขจะอัปเดตเองทุก 30 นาที และทุกครั้งที่เปิดหน้า Ads Manager (กดปุ่ม ↗ ในตารางได้เลย)<br><br>'
+    + '<span style="color:var(--red,#d93025)">ระบบจงใจไม่เก็บ token ของ Ads Manager ไว้บนเซิร์ฟเวอร์ — เคยเก็บแล้วโดน Meta สั่ง checkpoint ทั้งบัญชี เพราะ session ถูกใช้จาก IP ของเซิร์ฟเวอร์</span>'
     + '</div></details>';
-}
-
-async function setAmToken(pid) {
-  const v = prompt('วาง Ads Manager token ที่ก๊อปมา (ปล่อยว่างแล้วกด OK = ลบ token ทิ้ง)', '');
-  if (v === null) return;
-  const t = v.trim();
-  if (t && !t.startsWith('EAA')) return toast('ไม่ใช่ token ของ Ads Manager — ต้องขึ้นต้นด้วย EAA');
-  try {
-    const d = await (await fetch('/api/am-token', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ profile: pid, token: t }),
-    })).json();
-    if (d.error) throw new Error(d.error);
-  } catch (e) { return toast('บันทึกไม่สำเร็จ: ' + e.message); }
-  const p = profiles.find(x => x.id === pid);
-  if (p) p.hasAmToken = !!t;
-  toast(t ? 'บันทึก token แล้ว — กำลังอ่านวงเงิน' : 'ลบ token แล้ว');
-  loadHealthPage(true);
 }
 
 function renderHealthPage(results) {

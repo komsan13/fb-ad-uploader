@@ -48,6 +48,12 @@ function loadConfig() {
     cfg = { profiles, activeProfileId: profiles.length ? profiles[0].id : null };
     saveConfig(cfg);
   }
+  // เกราะกันพลาดซ้ำ: token ของ Ads Manager (session ในเบราว์เซอร์ผู้ใช้) ห้ามค้างอยู่ในเซิร์ฟเวอร์
+  // ใช้จาก IP เซิร์ฟเวอร์เมื่อไหร่ Meta สั่ง checkpoint ทั้งบัญชี ทำให้ autopilot ล่มไปด้วย
+  // (เจอของจริง 26 ก.ค. 2026 — ดูคอมเมนต์ที่ /api/am-limits) ล้างทิ้งทุกครั้งที่โหลด config
+  let stripped = false;
+  for (const p of cfg.profiles || []) if (p.amToken !== undefined) { delete p.amToken; stripped = true; }
+  if (stripped) saveConfig(cfg);   // ลบออกจากไฟล์ด้วย ไม่ใช่แค่ในหน่วยความจำ
   return cfg;
 }
 function saveConfig(cfg) {
@@ -83,7 +89,6 @@ function publicProfiles(cfg) {
     profiles: cfg.profiles.map((p) => ({
       id: p.id, label: p.label, adAccountId: p.adAccountId, pageId: p.pageId,
       hasToken: !!p.accessToken, appId: p.appId || '', hasSecret: !!p.appSecret,
-      hasAmToken: !!p.amToken,
     })),
   };
 }
@@ -1497,62 +1502,31 @@ app.get('/api/account-health', async (req, res) => {
 // ---------- วงเงินใช้จ่ายต่อวันที่ Meta กำหนดเอง (adtrust_dsl) ----------
 // field นี้ไม่มีในเอกสาร Marketing API และ token ของแอปเราอ่านไม่ได้ — พิสูจน์กับบัญชีจริงแล้ว
 // ตอบ "(#100) Tried accessing nonexisting field (adtrust_dsl)" ทุกเวอร์ชันตั้งแต่ v18 ถึง v23
-// อ่านได้เฉพาะ token ของ Ads Manager (แอป first-party ของ Meta) ที่ผู้ใช้ก๊อปมาวางเอง
+// อ่านได้เฉพาะ token ของ Ads Manager ซึ่งเป็น session ของแอป first-party ในเบราว์เซอร์ผู้ใช้
 //
-// จงใจไม่เรียกผ่าน fb() สองเหตุผล:
-//  1. token คนละแอป ถ้ามันโดน throttle/บล็อก ต้องไม่ไปสั่งพัก autopilot ทั้งระบบ (fb() มีสวิตช์พักกลาง)
-//  2. token ตัวนี้อายุสั้นและหมดบ่อย — retry ซ้ำๆ ของ fb() ไม่ช่วยอะไร มีแต่ยิงถี่เปล่าๆ
-async function fetchDailyLimits(acctIds, amToken) {
-  const limits = {};
-  let error = null;
-  for (let i = 0; i < acctIds.length; i += 50) {
-    const chunk = acctIds.slice(i, i + 50);
-    const qs = new URLSearchParams({
-      ids: chunk.map((id) => `act_${id}`).join(','),
-      fields: 'adtrust_dsl,adspaymentcycle{threshold_amount}',
-      access_token: amToken,
-    });
-    let json;
-    try {
-      const r = await fetch(`${API}/?${qs}`);
-      json = JSON.parse(await r.text());
-    } catch (e) {
-      error = `อ่านวงเงินไม่สำเร็จ: ${e.message}`;
-      break;
-    }
-    if (json.error) {
-      // 190 = token หมดอายุ/ถูกเพิกถอน คือเคสปกติของ token ตัวนี้ ไม่ใช่ของพัง
-      error = json.error.code === 190
-        ? 'Ads Manager token หมดอายุแล้ว — ก๊อปมาวางใหม่'
-        : `อ่านวงเงินไม่สำเร็จ: ${json.error.message}`;
-      break;
-    }
-    for (const id of chunk) {
-      const d = json[`act_${id}`];
-      if (!d) continue;
-      limits[id] = {
-        // ค่าดิบจาก FB — หน่วยต่างกัน: adtrust_dsl เป็นบาท, threshold_amount เป็นสตางค์
-        // (อ่านจากโค้ด extension ตระกูลเดียวกัน ยังไม่ได้เทียบกับหน้า Billing ด้วยตาตัวเอง
-        //  หน้าเว็บจึงโชว์ค่าดิบใน tooltip ไว้ด้วย ถ้าหน่วยผิดจะเห็นทันทีตั้งแต่ครั้งแรก)
-        dsl: d.adtrust_dsl === undefined ? null : Number(d.adtrust_dsl),
-        threshold: ((d.adspaymentcycle || {}).data || [])[0]
-          ? Number(d.adspaymentcycle.data[0].threshold_amount)
-          : null,
-      };
-    }
-  }
-  return { limits, error };
-}
-
-// วาง/ล้าง Ads Manager token ของ profile — ส่งค่าว่างมา = ล้างทิ้ง (ต่างจาก /api/profiles/update
-// ที่ค่าว่างแปลว่า "ไม่เปลี่ยน") token ตัวนี้หมดอายุเร็ว ผู้ใช้ต้องวางใหม่บ่อย จึงแยกเส้นมาให้กดจากหน้าสุขภาพได้เลย
-app.post('/api/am-token', (req, res) => {
+// ⛔ ห้ามให้เซิร์ฟเวอร์ถือหรือใช้ token ตัวนั้นเด็ดขาด — เคยทำแล้วพังของจริง 26 ก.ค. 2026
+//    ก๊อป token จากเบราว์เซอร์มายิง Graph จาก IP ศูนย์ข้อมูล → (#1) Invalid request → (#190)
+//    "the session has been invalidated ... for security reason" → สุดท้ายบัญชี FB ของผู้ใช้
+//    โดน checkpoint ทั้งบัญชี (190/459) ซึ่งทำให้ token ของ autopilot ใช้ไม่ได้ไปด้วยทั้งระบบ
+//    เหตุผลคือ session token โผล่จากคนละเครื่องคนละ IP = ลายเซ็นของการขโมยบัญชีในสายตา Meta
+//
+// ทางที่ถูกคือส่วนขยาย Chrome (โฟลเดอร์ extension/) ยิง Graph เองในเบราว์เซอร์ผู้ใช้
+// แล้วส่งมาแค่ "ตัวเลข" ผ่านเส้นนี้ — token ไม่เคยออกจากเครื่องผู้ใช้เลย
+app.post('/api/am-limits', (req, res) => {
   const cfg = loadConfig();
   const prof = getProfile(cfg, req.body.profile);
   if (!prof) return res.status(404).json({ error: 'ไม่พบบัญชีนี้' });
-  prof.amToken = String(req.body.token || '').trim();
+  if (!Array.isArray(req.body.limits)) return res.status(400).json({ error: 'limits ต้องเป็น array' });
+  const num = (v) => (v === undefined || v === null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
+  const byAcct = {};
+  for (const it of req.body.limits) {
+    const id = String((it && it.id) || '').replace(/[^0-9]/g, '');
+    if (!id) continue;
+    byAcct[id] = { dsl: num(it.dsl), threshold: num(it.threshold) };
+  }
+  prof.amLimits = { at: Date.now(), byAcct };
   saveConfig(cfg);
-  res.json({ ok: true, hasAmToken: !!prof.amToken });
+  res.json({ ok: true, saved: Object.keys(byAcct).length });
 });
 
 // ภาพรวมสุขภาพ: บัญชีโฆษณา (สถานะ/Pixel/บัตร) + เพจ (เผยแพร่/สิทธิ์ลงโฆษณา) ของ profile เดียว
@@ -1584,21 +1558,16 @@ app.get('/api/health-overview', async (req, res) => {
     );
     const onLp = new Set(loadLp().pixels.filter((p) => p.type === 'meta').map((p) => p.id));
     for (const a of accounts) for (const x of a.pixels) x.onLp = onLp.has(String(x.id));
-    // วงเงิน/วัน อ่านได้ก็ต่อเมื่อผู้ใช้วาง Ads Manager token ไว้ — อ่านไม่ได้ต้องไม่ทำให้หน้าสุขภาพพัง
-    let dslError = null;
-    if (prof.amToken) {
-      const r = await fetchDailyLimits(accounts.map((a) => a.id), prof.amToken);
-      dslError = r.error;
-      for (const a of accounts) {
-        const v = r.limits[a.id];
-        if (v) { a.dsl = v.dsl; a.threshold = v.threshold; }
-      }
+    // วงเงิน/วัน = ตัวเลขที่ส่วนขยายส่งมาเก็บไว้ ไม่ได้อ่านสดตรงนี้ (เซิร์ฟเวอร์ยิงเองไม่ได้ ดู /api/am-limits)
+    const stored = prof.amLimits || {};
+    for (const a of accounts) {
+      const v = (stored.byAcct || {})[a.id];
+      if (v) { a.dsl = v.dsl; a.threshold = v.threshold; }
     }
     res.json({
       accounts,
       boundToLp,
-      hasAmToken: !!prof.amToken,
-      dslError,
+      limitsAt: stored.at || null,
       pages: (pages || []).map((p) => ({
         id: p.id, name: p.name, published: !!p.is_published,
         eligible: !!p.promotion_eligible, reason: p.promotion_ineligible_reason || null,

@@ -674,52 +674,55 @@ describe('ซ่อนบัญชี/เพจจากหน้าสุขภ
     assert.strictEqual(h.pages[0].hidden, true);
   });
 
-  test('วงเงิน/วัน: ไม่ได้วาง Ads Manager token = ไม่ยิงถาม FB เลย และหน้าสุขภาพยังทำงานปกติ', async (t) => {
+  test('วงเงิน/วัน: ยังไม่เคยได้ตัวเลข = หน้าสุขภาพยังทำงานปกติ และไม่ยิงถาม FB เรื่องวงเงินเลย', async (t) => {
     const { base, world } = await boot(t);
     const h = await get(base, '/api/health-overview?profile=p1');
-    assert.strictEqual(h.hasAmToken, false, 'ต้องบอกหน้าเว็บว่ายังไม่มี token');
-    assert.strictEqual(h.accounts[0].dsl, undefined, 'ไม่มี token = ต้องไม่มีตัวเลขวงเงินมั่วๆ');
-    assert.strictEqual(world.calls.filter((c) => c.params.ids).length, 0, 'ไม่มี token ต้องไม่ยิงถามวงเงินเปล่าๆ');
+    assert.strictEqual(h.limitsAt, null, 'ต้องบอกว่ายังไม่เคยอัปเดต');
+    assert.strictEqual(h.accounts[0].dsl, undefined, 'ยังไม่มีข้อมูล = ต้องไม่มีตัวเลขมั่วๆ');
+    assert.strictEqual(world.calls.filter((c) => c.params.ids).length, 0, 'เซิร์ฟเวอร์ต้องไม่ยิงถามวงเงินเอง');
   });
 
-  test('วงเงิน/วัน: วาง token แล้วต้องอ่าน adtrust_dsl มาได้ และต้องใช้ token ตัวนั้น ไม่ใช่ token ของ autopilot', async (t) => {
-    const world = freshWorld({
-      accounts: [{ name: 'บัญชีเทส', account_id: ACCT, account_status: 1, currency: 'THB', adtrust_dsl: 1688.29, threshold_amount: '11500' }],
+  test('วงเงิน/วัน: ส่วนขยายส่งตัวเลขมาแล้ว หน้าสุขภาพต้องโชว์ และเซิร์ฟเวอร์ต้องไม่ยิง FB เพิ่ม', async (t) => {
+    const { base, world } = await boot(t);
+    const r = await post(base, '/api/am-limits', {
+      profile: 'p1',
+      limits: [{ id: ACCT, dsl: 1688.29, threshold: '11500' }, { id: '999', dsl: -1, threshold: null }],
     });
-    const { base } = await boot(t, { world });
-    await post(base, '/api/am-token', { profile: 'p1', token: 'EAAamtok' });
+    assert.strictEqual(r.saved, 2);
+    const before = world.calls.length;
     const h = await get(base, '/api/health-overview?profile=p1');
-    assert.strictEqual(h.hasAmToken, true);
-    assert.strictEqual(h.dslError, null, 'อ่านสำเร็จต้องไม่มี error');
-    assert.strictEqual(h.accounts[0].dsl, 1688.29, 'ต้องได้วงเงิน/วันของบัญชีนั้น');
-    assert.strictEqual(h.accounts[0].threshold, 11500, 'ต้องได้ยอดเรียกเก็บ (สตางค์) มาด้วย');
-    const call = world.calls.find((c) => c.params.ids === `act_${ACCT}`);
-    assert.ok(call, 'ต้องยิงถามแบบรวม ids ครั้งเดียว ไม่ใช่ยิงทีละบัญชี');
-    assert.strictEqual(call.params.access_token, 'EAAamtok', 'ต้องใช้ Ads Manager token');
-    assert.match(call.params.fields, /adtrust_dsl/);
+    assert.strictEqual(h.accounts[0].dsl, 1688.29);
+    assert.strictEqual(h.accounts[0].threshold, 11500, 'ตัวเลขที่มาเป็นสตริงต้องถูกแปลงเป็นตัวเลข');
+    assert.ok(h.limitsAt > 0, 'ต้องบอกเวลาที่อัปเดตล่าสุด');
+    const askedLimits = world.calls.slice(before).filter((c) => c.params.fields && /adtrust_dsl/.test(c.params.fields));
+    assert.strictEqual(askedLimits.length, 0, 'ห้ามเซิร์ฟเวอร์ยิงถาม adtrust_dsl เองเด็ดขาด');
   });
 
-  test('วงเงิน/วัน: token หมดอายุ (error 190) ต้องบอกให้วางใหม่ ไม่ทำให้หน้าสุขภาพพังทั้งหน้า', async (t) => {
-    const world = freshWorld();
-    world.route = (method, path, params) =>
-      (params.ids ? { error: 'Session has expired', errorCode: 190 } : null);
-    const { base } = await boot(t, { world });
-    await post(base, '/api/am-token', { profile: 'p1', token: 'EAAold' });
-    const h = await get(base, '/api/health-overview?profile=p1');
-    assert.match(h.dslError || '', /หมดอายุ/, 'ต้องบอกตรงๆ ว่า token หมดอายุ');
-    assert.strictEqual(h.accounts.length, 1, 'ข้อมูลสุขภาพส่วนอื่นต้องยังมาครบ');
-    assert.strictEqual(h.accounts[0].dsl, undefined, 'อ่านไม่ได้ต้องไม่มีตัวเลขค้างมา');
-  });
-
-  test('วงเงิน/วัน: token ต้องไม่หลุดออกทาง /api/profiles และล้างทิ้งได้', async (t) => {
+  test('วงเงิน/วัน: ข้อมูลเพี้ยนต้องกลายเป็น null ไม่ใช่ NaN ไปโผล่บนจอ', async (t) => {
     const { base } = await boot(t);
-    await post(base, '/api/am-token', { profile: 'p1', token: 'EAAsecret' });
+    await post(base, '/api/am-limits', { profile: 'p1', limits: [{ id: ACCT, dsl: 'ไม่ใช่ตัวเลข', threshold: '' }] });
+    const h = await get(base, '/api/health-overview?profile=p1');
+    assert.strictEqual(h.accounts[0].dsl, null);
+    assert.strictEqual(h.accounts[0].threshold, null);
+  });
+
+  // เกราะหลักหลังเหตุการณ์ 26 ก.ค. 2026 — Meta สั่ง checkpoint ทั้งบัญชีเพราะเซิร์ฟเวอร์ถือ token ของเบราว์เซอร์
+  test('วงเงิน/วัน: เซิร์ฟเวอร์ต้องเก็บ Ads Manager token ไม่ได้อีกเลย', async (t) => {
+    const config = baseConfig();
+    config.profiles[0].amToken = 'EAAtokenเก่าที่ค้างอยู่';
+    const { base, dir } = await boot(t, { config });
+    // เส้นที่เคยรับ token ต้องไม่มีอยู่แล้ว
+    const res = await fetch(base + '/api/am-token', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ profile: 'p1', token: 'EAAใหม่' }),
+    });
+    assert.strictEqual(res.status, 404, 'เส้นรับ token ต้องถูกถอดออก');
+    // token ที่ค้างอยู่ใน config เดิมต้องถูกล้างทิ้งเอง
+    await get(base, '/api/profiles');
+    const saved = JSON.parse(require('fs').readFileSync(require('path').join(dir, 'config.json'), 'utf8'));
+    assert.strictEqual(saved.profiles[0].amToken, undefined, 'token เก่าที่ค้างต้องถูกล้างทิ้ง');
     const p = await get(base, '/api/profiles');
-    assert.strictEqual(p.profiles[0].hasAmToken, true, 'บอกได้แค่ว่ามีหรือไม่มี');
-    assert.ok(!JSON.stringify(p).includes('EAAsecret'), 'ห้ามส่งตัว token กลับไปหน้าเว็บ');
-    await post(base, '/api/am-token', { profile: 'p1', token: '' });
-    const after = await get(base, '/api/profiles');
-    assert.strictEqual(after.profiles[0].hasAmToken, false, 'ส่งค่าว่าง = ล้าง token ทิ้ง');
+    assert.ok(!JSON.stringify(p).includes('EAAtoken'), 'ห้ามส่ง token ออกไปหน้าเว็บ');
   });
 
   test('ซ่อนบัญชี = autopilot ไม่แตะบัญชีนั้นเลย (ไม่สร้างแคมเปญ/ไม่เติมแอด)', async (t) => {

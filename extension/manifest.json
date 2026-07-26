@@ -1,12 +1,14 @@
 {
   "manifest_version": 3,
   "name": "ส่ง Ads Manager token เข้าระบบยิงแอด",
-  "version": "1.0.0",
-  "description": "ดึง access token ของ Ads Manager แล้วส่งเข้าหน้าสุขภาพบัญชีให้เอง ไม่ต้องเปิด Console ก๊อปเอง",
+  "version": "2.0.0",
+  "version_name": "2.0.0 — อ่านวงเงินในเบราว์เซอร์ ไม่ส่ง token ออกไปข้างนอก",
+  "description": "อ่านวงเงินใช้จ่ายต่อวันของทุกบัญชีโฆษณาในเบราว์เซอร์นี้ แล้วส่งเข้าหน้าสุขภาพบัญชีให้เอง",
   "permissions": ["storage", "alarms"],
   "host_permissions": [
     "https://adsmanager.facebook.com/*",
     "https://business.facebook.com/*",
+    "https://graph.facebook.com/*",
     "https://ad.senball.com/*"
   ],
   "optional_host_permissions": ["*://*/*"],
