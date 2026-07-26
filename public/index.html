@@ -68,6 +68,9 @@
   /* ---------- stat tiles ---------- */
   .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(178px, 1fr)); gap: 10px; margin-bottom: 10px; }
   .tile { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 13px 15px; }
+  /* ไทล์ที่อยู่ในการ์ดแล้วไม่ต้องมีขอบของตัวเอง — กล่องซ้อนกล่องคือสิ่งที่ทำให้ดูรุงรัง
+     ใช้พื้นอ่อนแทน จะอ่านเป็น "แผงสถิติหนึ่งอัน" ไม่ใช่ "ห้ากล่องซ้อนกัน" */
+  .card .tile { border: none; background: #f8f9fc; }
   .tile .t-label { font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
   .t-ic { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .t-ic svg { width: 14px; height: 14px; }
@@ -301,8 +304,8 @@
   .tbl-wrap { overflow-x: auto; margin: 0 -14px -14px; border-radius: 0 0 var(--r-lg) var(--r-lg); }
   table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 960px; }
   /* เส้นแบ่งคอลัมน์คือสิ่งที่ทำให้อ่านเป็น "ตาราง" ไม่ใช่ "รายการลอยๆ" */
-  thead th + th, tbody td + td { border-left: 1px solid #eef0f4; }
-  thead th { background: #f7f8fa; }
+  thead th + th, tbody td + td { border-left: 1px solid #f4f5f8; }
+  thead th { background: #f8f9fb; }
   thead th { text-align: left; color: #59616f; font-size: 12px; font-weight: 700; padding: 10px 13px; background: #f8f9fb; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); white-space: nowrap; position: sticky; top: 0; z-index: 2; }
   th:first-child, td:first-child { padding-left: 20px; }
   th:last-child, td:last-child { padding-right: 20px; }
@@ -331,7 +334,8 @@
   /* ---------- ชั้นตารางแบบคอนโซลปฏิบัติการ: เรียงคอลัมน์ / ค้นหา / แบ่งหน้า ---------- */
   thead th.srt { cursor: pointer; user-select: none; }
   thead th.srt:hover { color: var(--text); background: #f1f4f9; }
-  thead th.srt::after { content: '↕'; margin-left: 5px; opacity: .32; font-size: 10px; }
+  thead th.srt::after { content: '↕'; margin-left: 5px; opacity: 0; font-size: 10px; transition: opacity 120ms var(--ease); }
+  thead th.srt:hover::after { opacity: .45; }
   thead th.srt.asc::after { content: '↑'; opacity: 1; color: var(--brand); }
   thead th.srt.desc::after { content: '↓'; opacity: 1; color: var(--brand); }
   /* แถบเครื่องมือเต็มแถวเหนือตาราง — กินขอบเท่าตาราง มีพื้นและเส้นคั่น จึงอ่านเป็นส่วนหนึ่งของกริด */
@@ -347,6 +351,7 @@
   .tbl-bar .tb-count { margin-left: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
   /* ช่องติ๊กหน้าแถว */
+  th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
   th.tb-ck, td.tb-ck { width: 38px; padding-left: 13px; padding-right: 0; border-left: none !important; }
   th.tb-ck input, td.tb-ck input { width: 15px; height: 15px; padding: 0; margin: 0; accent-color: var(--brand); cursor: pointer; vertical-align: middle; }
   tbody tr.tb-on td { background: var(--brand-soft) !important; }
@@ -4349,6 +4354,30 @@ async function launch() {
 // ไม่ต้องแก้ทั้ง 11 ตาราง แล้วเราค่อยจัดเรียง/กรอง/ตัดหน้าให้หลังจากนั้น
 // แถวข้อความสถานะ (.tbl-msg เช่น "กำลังโหลด" / "ไม่พบข้อมูล") ต้องโชว์เสมอ ห้ามถูกกรองหรือถูกตัดหน้า
 const TBL_PAGE = 50;
+const TBL_BAR_MIN = 8;      // ต่ำกว่านี้ไม่ต้องมีช่องค้นหา หาด้วยตาเร็วกว่า
+
+// คอลัมน์ที่ค่าเป็นตัวเลขล้วนต้องชิดขวา ไม่งั้นตัวเลขคนละหลักอ่านเทียบกันไม่ได้และดูรุงรัง
+// ตรวจจากข้อมูลจริงในตาราง จึงไม่ต้องไปประกาศทีละคอลัมน์ใน 11 ตาราง
+function tblAlignNums(t, rows) {
+  if (!t.tHead || !rows.length) return;
+  const ths = Array.from(t.tHead.rows[0].cells);
+  ths.forEach((th, i) => {
+    if (th.classList.contains('tb-ck')) return;
+    let nums = 0;
+    let other = 0;
+    for (const r of rows) {
+      const c = r.cells[i];
+      if (!c) continue;
+      const txt = c.innerText.replace(/\s+/g, ' ').trim();
+      if (txt === '' || txt === '—' || txt === '-') continue;
+      if (c.querySelector('button, a, input, .st-pill')) { other++; continue; }  // ปุ่ม/ป้ายสถานะไม่ใช่ตัวเลข
+      if (typeof tblCellVal(r, i) === 'number') nums++; else other++;
+    }
+    const isNum = nums > 0 && other === 0;
+    th.classList.toggle('num', isNum);
+    for (const r of rows) if (r.cells[i]) r.cells[i].classList.toggle('num', isNum);
+  });
+}
 const tblState = new WeakMap();   // table -> {q, sort:{i,dir}, page}
 
 const tblRows = (t) => Array.from(t.tBodies[0] ? t.tBodies[0].rows : [])
@@ -4390,9 +4419,14 @@ function tblApply(t) {
   for (const r of rows) r.style.display = 'none';
   hit.slice(from, from + TBL_PAGE).forEach((r) => { r.style.display = ''; });
 
+  // แถบค้นหาบนตาราง 3 แถว (หรือตารางว่าง) คือสิ่งรบกวน ไม่ใช่เครื่องมือ — โชว์เมื่อของเยอะพอจะหาไม่เจอ
   const bar = st.bar;
-  if (bar) bar.querySelector('.tb-count').textContent =
-    q ? `ตรงกับที่ค้น ${hit.length} จาก ${rows.length}` : `ทั้งหมด ${rows.length}`;
+  if (bar) {
+    bar.style.display = (rows.length > TBL_BAR_MIN || st.q || tblSelectable(t)) ? '' : 'none';
+    bar.querySelector('.tb-count').textContent =
+      q ? `ตรงกับที่ค้น ${hit.length} จาก ${rows.length}` : `ทั้งหมด ${rows.length}`;
+  }
+  tblAlignNums(t, hit);
   const foot = st.foot;
   if (foot) {
     foot.style.display = hit.length > TBL_PAGE ? '' : 'none';
