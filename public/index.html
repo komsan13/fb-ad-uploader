@@ -1951,6 +1951,12 @@ function renderAmBar(results) {
     rows.map(l => `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">${l}</div>`).join('')
     + '<details><summary class="muted" style="cursor:pointer;font-size:12.5px">วิธีเอา Ads Manager token</summary>'
     + '<div class="res-label" style="margin-top:8px;line-height:1.9">'
+    + '<b>วิธีที่แนะนำ — ให้ส่วนขยายทำให้เอง (ตั้งครั้งเดียว)</b><br>'
+    + '1. เปิด Chrome → <code>chrome://extensions</code> → เปิด <b>โหมดนักพัฒนาซอฟต์แวร์</b> มุมขวาบน<br>'
+    + '2. กด <b>โหลดส่วนขยายที่แตกไฟล์แล้ว</b> → เลือกโฟลเดอร์ <code>extension</code> ในโปรเจกต์<br>'
+    + '3. กดไอคอนส่วนขยาย → ใส่ที่อยู่หน้าเว็บนี้ + ชื่อผู้ใช้/รหัสผ่าน → เลือกบัญชี → บันทึก<br>'
+    + 'จากนั้นมันจะดึง token ให้เองทุก 30 นาที และทุกครั้งที่คุณเปิดหน้า Ads Manager<br><br>'
+    + '<b>วิธีสำรอง — ทำมือ</b><br>'
     + '1. เปิด <b>adsmanager.facebook.com</b> ในเบราว์เซอร์ที่ล็อกอิน FB อยู่<br>'
     + '2. กด F12 → แท็บ Console → วางคำสั่งนี้แล้ว Enter (มันจะก๊อป token ใส่คลิปบอร์ดให้เอง)<br>'
     + `<code style="display:block;margin:6px 0;padding:8px;background:var(--bg,#f5f6f7);border-radius:6px;word-break:break-all;font-size:11.5px">${esc(AM_SNIPPET)}</code>`

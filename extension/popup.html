@@ -1,0 +1,35 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  body { font-family: 'Segoe UI', sans-serif; width: 320px; padding: 14px; margin: 0; color: #1c1e21; font-size: 13px }
+  h1 { font-size: 14px; margin: 0 0 10px }
+  label { display: block; margin: 9px 0 3px; color: #65676b; font-size: 12px }
+  input, select { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid #ccd0d5; border-radius: 6px; font-size: 13px }
+  button { margin-top: 12px; width: 100%; padding: 8px; border: 0; border-radius: 6px; background: #0e9268; color: #fff; font-size: 13px; cursor: pointer }
+  button.light { background: #e4e6eb; color: #1c1e21; margin-top: 6px }
+  #status { margin-top: 12px; padding: 8px; border-radius: 6px; background: #f0f2f5; font-size: 12px; line-height: 1.5; white-space: pre-wrap }
+  #status.ok { background: #e6f4ee; color: #0e7a58 }
+  #status.bad { background: #fdeceb; color: #b3261e }
+  .hint { color: #8a8d91; font-size: 11px; margin-top: 8px; line-height: 1.5 }
+</style>
+<h1>ส่ง Ads Manager token เข้าระบบ</h1>
+
+<label>ที่อยู่หน้าเว็บ</label>
+<input id="appUrl" placeholder="https://ตัวอย่าง.com">
+
+<label>ชื่อผู้ใช้ (basic auth)</label>
+<input id="user" autocomplete="off">
+
+<label>รหัสผ่าน (basic auth)</label>
+<input id="pass" type="password" autocomplete="off">
+
+<label>ส่งเข้าบัญชี FB ไหน</label>
+<select id="profile"><option value="">— กดบันทึกก่อนเพื่อโหลดรายชื่อ —</option></select>
+
+<button id="save">บันทึกการตั้งค่า</button>
+<button id="now" class="light">ดึง token แล้วส่งเดี๋ยวนี้</button>
+
+<div id="status">ยังไม่เคยส่ง</div>
+<div class="hint">ส่วนขยายจะดึง token ให้เองทุก 30 นาที และทุกครั้งที่เปิดหน้า Ads Manager</div>
+
+<script src="popup.js"></script>

@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "ส่ง Ads Manager token เข้าระบบยิงแอด",
+  "version": "1.0.0",
+  "description": "ดึง access token ของ Ads Manager แล้วส่งเข้าหน้าสุขภาพบัญชีให้เอง ไม่ต้องเปิด Console ก๊อปเอง",
+  "permissions": ["storage", "alarms"],
+  "host_permissions": [
+    "https://adsmanager.facebook.com/*",
+    "https://business.facebook.com/*"
+  ],
+  "optional_host_permissions": ["*://*/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_popup": "popup.html", "default_title": "ส่ง Ads Manager token" },
+  "content_scripts": [
+    {
+      "matches": ["https://adsmanager.facebook.com/*", "https://business.facebook.com/*"],
+      "js": ["extract.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
