@@ -991,7 +991,7 @@ describe('สถิติครีเอทีฟจากผลรีวิว�
     let s = readState(dir);
     const links = Object.entries(s.creative || {});
     assert.ok(links.length >= 2, `ต้องจดว่าแอดไหนใช้คลิป/แคปชั่นอะไร (ได้ ${links.length})`);
-    for (const [, l] of links) assert.ok(l.v && l.c, 'ต้องจดทั้งคลิปและแคปชั่น');
+    for (const [, l] of links) { assert.ok(l.v, 'ต้องจดคลิป'); assert.match(String(l.c), /^c:/, 'แคปชั่นต้องจดเป็นคีย์ตามเนื้อหา ไม่ใช่ id'); }
 
     // แอดตัวแรกโดนปฏิเสธ ที่เหลือผ่าน — รอบตรวจถัดไปต้องแยกแยะได้
     const [badId, badLink] = links[0];
@@ -999,7 +999,7 @@ describe('สถิติครีเอทีฟจากผลรีวิว�
     await post(base, '/api/autopilot/run');
     s = readState(dir);
     assert.strictEqual((s.libStats[`v:${badLink.v}`] || {}).bad, 1, 'คลิปของแอดที่โดนปฏิเสธต้องได้ bad');
-    assert.strictEqual((s.libStats[`c:${badLink.c}`] || {}).bad, 1, 'แคปชั่นของแอดนั้นต้องได้ bad ด้วย');
+    assert.strictEqual((s.libStats[badLink.c] || {}).bad, 1, 'แคปชั่นของแอดนั้นต้องได้ bad ด้วย');
     const okLink = links.find(([id]) => id !== badId)[1];
     assert.strictEqual((s.libStats[`v:${okLink.v}`] || {}).ok >= 1, true, 'คลิปที่ผ่านต้องได้ ok');
   });

@@ -812,7 +812,7 @@ app.post('/api/autoplan', (req, res) => {
 
   // ใช้สถิติชุดเดียวกับ autopilot — ขึ้นแอดด้วยมือกับให้ระบบเติมเองต้องเลือกครีเอทีฟด้วยเกณฑ์เดียวกัน
   const apState = loadAp();
-  const rankedCaps = apRankCaptions(apState, captions);
+  const rankedCaps = apRotation(apState, captions, apCapKey);
 
   const plan = accounts.map((acct) => {
     const acctId = String(acct.acctId || '');
@@ -2148,7 +2148,21 @@ function apEase(s, key) {
   const bad = Number(st.bad) || 0;
   return (ok + 1) / (ok + bad + 2);
 }
-const apProven = (s, key) => (Number(apStat(s, key).ok) || 0) >= AP_PROVEN_OK && !(Number(apStat(s, key).bad) || 0);
+// everBad = เคยโดนปฏิเสธไหม (ตัวนับที่ไม่มีวันถูกหักลบ) ต่างจาก bad ที่เป็นสถานะปัจจุบัน
+// จำเป็นเพราะแอดที่โดนปฏิเสธแล้วกลับมาผ่าน (แก้ข้อความยิงใหม่ / Meta ทบทวนใหม่) จะหัก bad ลงเป็น 0
+// แล้วครีเอทีฟที่ Meta เคยปฏิเสธจะกลายเป็น "ของดีจริง" ได้ ทั้งที่กติกาคือเคยโดนแม้ครั้งเดียวก็ไม่ใช่
+const apProven = (s, key) => (Number(apStat(s, key).ok) || 0) >= AP_PROVEN_OK
+  && !(Number(apStat(s, key).bad) || 0) && !(Number(apStat(s, key).everBad) || 0);
+
+// แคปชั่นแก้ข้อความได้โดย id ไม่เปลี่ยน (/api/captions/update) — ถ้าคีย์ด้วย id สถิติของข้อความเก่า
+// จะติดมาให้ข้อความใหม่ทั้งดุ้น จึงคีย์ด้วยเนื้อหา แก้ข้อความเมื่อไหร่ = เริ่มนับใหม่เองโดยไม่ต้องมี
+// ใครไปล้างสถิติ (การล้างจะกลายเป็นตัวเขียน libStats ตัวที่สอง ซึ่งกติกา merge ตอนนี้ยังไม่รองรับ)
+function apCapKey(cap) {
+  const src = String((cap && cap.message) || '') + '\u0000' + String((cap && cap.headline) || '');
+  let h = 5381;
+  for (let i = 0; i < src.length; i++) h = ((h * 33) ^ src.charCodeAt(i)) >>> 0;
+  return 'c:' + h.toString(36);
+}
 const apSeen = (s, key) => (Number(apStat(s, key).ok) || 0) + (Number(apStat(s, key).bad) || 0) > 0;
 // พิสูจน์แล้วว่าแย่: โดนปฏิเสธตั้งแต่ 2 ครั้งและมากกว่าที่ผ่าน — ตัวพวกนี้ต้องออกจากพูลปกติ
 // ปล่อยให้อยู่ต่อ = ป้อนของที่รู้อยู่แล้วว่าไม่ผ่านเข้ารีวิวเรื่อยๆ จนตัวนับ freeze เต็มแล้วบัญชีถูกหยุด
@@ -2161,11 +2175,11 @@ const apBadCreative = (s, key) => {
 // ลิสต์หมุนแบบถ่วงน้ำหนัก — ตัวที่ขึ้นง่ายกว่าโผล่ในลิสต์บ่อยกว่า แต่ตัวที่ยังไม่พิสูจน์ว่าแย่ยังได้โอกาส
 // จำเป็นเพราะ cursor ที่เดินทีละ 1 แล้ว mod ความยาว จะไล่ครบทุก index เท่ากันหมด
 // (รีวิว 26 ก.ค. 2026 วัดได้ว่าแคปชั่นที่โดนปฏิเสธ 21/21 ครั้ง ยังถูกหยิบบ่อยเท่าตัวอื่นเป๊ะ = จัดอันดับแล้วทิ้ง)
-function apRotation(s, items, prefix) {
-  const alive = items.filter((x) => !apBadCreative(s, prefix + x.id));
+function apRotation(s, items, keyOf) {
+  const alive = items.filter((x) => !apBadCreative(s, keyOf(x)));
   const pool = (alive.length ? alive : items).slice()      // แย่หมดทั้งคลัง ก็ยังต้องมีของให้ยิง
-    .sort((x, y) => apEase(s, prefix + y.id) - apEase(s, prefix + x.id));
-  const weight = (x) => Math.max(1, Math.round(apEase(s, prefix + x.id) * 4));
+    .sort((x, y) => apEase(s, keyOf(y)) - apEase(s, keyOf(x)));
+  const weight = (x) => Math.max(1, Math.round(apEase(s, keyOf(x)) * 4));
   const maxW = pool.reduce((m, x) => Math.max(m, weight(x)), 1);
   const out = [];
   for (let pass = 1; pass <= maxW; pass++) for (const x of pool) if (weight(x) >= pass) out.push(x);
@@ -2204,12 +2218,15 @@ function apScoreCreatives(s, ads) {
     if (!outcome) continue;
     const prev = ((s.adScore || {})[ad.id] || {}).v;
     if (prev === outcome) continue;
-    for (const key of [`v:${link.v}`, link.c ? `c:${link.c}` : null]) {
+    // link.c เก็บคีย์เต็ม (ขึ้นต้น 'c:') ตั้งแต่เวอร์ชันที่คีย์แคปชั่นด้วยเนื้อหา — ของเก่าเก็บเป็น id เปล่า
+    const capKey = link.c ? (String(link.c).startsWith('c:') ? String(link.c) : `c:${link.c}`) : null;
+    for (const key of [`v:${link.v}`, capKey]) {
       if (!key) continue;
       const st = apStat(s, key);
-      const next = { ok: Number(st.ok) || 0, bad: Number(st.bad) || 0 };
+      const next = { ok: Number(st.ok) || 0, bad: Number(st.bad) || 0, everBad: Number(st.everBad) || 0 };
       if (prev) next[prev] = Math.max(0, next[prev] - 1);   // ผ่านแล้วโดนถอดทีหลัง = ย้ายฝั่ง ไม่ใช่นับสองเด้ง
       next[outcome] += 1;
+      if (outcome === 'bad') next.everBad = 1;              // ประวัติการโดนปฏิเสธ ห้ามลบทิ้งตอนย้ายฝั่ง
       // เพดานกันตัวนับโตไม่สิ้นสุด (ok=30/0 ภายใน 10 วันเกิดขึ้นได้จริง) — เกิน 20 ครั้งหารครึ่งทั้งคู่
       // คงสัดส่วนเดิมไว้ แต่ทำให้ผลรีวิวใหม่ยังขยับสถิติได้ ไม่ใช่ถูกของเก่ากลบจนขยับไม่ไหว
       if (next.ok + next.bad > 20) { next.ok = Math.round(next.ok / 2); next.bad = Math.round(next.bad / 2); }
@@ -2278,8 +2295,13 @@ function apSnapshot(s) {
     frozen: objCopy(s.frozen), noRotate: objCopy(s.noRotate),
     counted: objCopy(s.counted), reasonCounted: objCopy(s.reasonCounted),
     warned: objCopy(s.warned),
-    // creative↔adScore↔libStats เป็นชุดเดียวกัน (ผูกแอด → ผลรีวิว → ตัวนับ) ต้องใช้กติกา merge เดียวกัน
+    // creative↔adScore↔libStats เป็นชุดเดียวกัน (ผูกแอด → ผลรีวิว → ตัวนับ) ต้องรอด/หายพร้อมกัน
     // ไม่งั้นจะซ้ำรอยบทเรียนของ counted/rejections: mark ว่านับแล้วรอด แต่ตัวนับหาย
+    //
+    // ⚠️ libStats เป็นตัวนับสะสมแต่ merge แบบ "ทับค่าเต็ม" (ไม่ใช่ append delta แบบ rejections/reasons)
+    // ใช้ได้เพราะตอนนี้มีตัวเขียนเดียวคือ tick ซึ่ง apRunning กันไม่ให้ซ้อนกันอยู่แล้ว
+    // ถ้าวันหนึ่งมีทางเขียน libStats ตัวที่สอง (เช่นให้เส้นทางขึ้นแอดด้วยมือให้คะแนนได้)
+    // ต้องเปลี่ยนมาเป็น merge แบบ delta ก่อน ไม่งั้นค่าที่อีกฝั่งเพิ่งเพิ่มจะหายเงียบ
     creative: objCopy(s.creative), adScore: objCopy(s.adScore), libStats: objCopy(s.libStats),
     rejections: arrCopy(s.rejections), reasons: arrCopy(s.reasons),
     logSeen: new Set(s.log || []),
@@ -2806,7 +2828,7 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz, ta
   // taken = คลิปที่บัญชีก่อนหน้าในรอบตรวจเดียวกันหยิบไปแล้ว — ไม่ส่งมาแปลว่าทุกบัญชีได้คลิปเดียวกันหมด
   // ซึ่งทำให้คลิปนั้นได้ ok เท่าจำนวนบัญชีในรอบเดียว = ผ่านบาร์ "ของดีจริง" ตั้งแต่วันแรก (รีวิว 26 ก.ค. 2026)
   const ranked = apRankVideos(s, videos, acctId, taken);
-  const capRotation = apRotation(s, captions, 'c:');
+  const capRotation = apRotation(s, captions, apCapKey);
   const unseen = ranked.filter((v) => !apSeen(s, 'v:' + v.id));
   const usedHere = new Set();
   // ทุกช่องที่ 3 กันไว้ให้คลิปที่ยังไม่มีข้อมูล — ไม่งั้นตัวที่ขึ้นนำจะยึดทุกช่องของทุกบัญชีตลอดไป
@@ -2848,7 +2870,7 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz, ta
       // จดว่าแอดตัวนี้ใช้คลิป+แคปชั่นไหน ไว้ให้รอบตรวจให้คะแนนย้อนกลับเมื่อรู้ผลรีวิว
       // โหมดทดสอบไม่จด: แอดถูกสร้างเป็น PAUSED ไม่เคยผ่านรีวิว จะนับเป็น "ผ่าน" ไม่ได้
       // (s.creative = s.creative || {}) — state บนดิสก์รุ่นเก่าไม่มีคีย์นี้ ถ้าอ่านตรงๆ จะ TypeError ฆ่าทั้งรอบ
-      if (adId && !testMode) (s.creative = s.creative || {})[adId] = { v: v.id, c: cap.id, ts: Date.now() };
+      if (adId && !testMode) (s.creative = s.creative || {})[adId] = { v: v.id, c: apCapKey(cap), ts: Date.now() };
       markVideoUsed(v.id, acctId);
       s.created[acctId].push(Date.now());
       if (testMode) { s.tested = s.tested || {}; (s.tested[acctId] = s.tested[acctId] || []).push(Date.now()); }
@@ -3957,5 +3979,5 @@ if (require.main === module) {
     console.log('');
   });
 } else {
-  module.exports = { app, curFactor, apPrune, apMark, apRecent, apFence, resultSpec, pickResult, loadAp, saveAp, apLimits, apParseLimit, AP_LIMIT_SPEC, apSnapshot, saveApMerged, tgChunks, apEase, apProven, apSeen, apBadCreative, apRankVideos, apRankCaptions, apRotation, apScoreCreatives };
+  module.exports = { app, curFactor, apPrune, apMark, apRecent, apFence, resultSpec, pickResult, loadAp, saveAp, apLimits, apParseLimit, AP_LIMIT_SPEC, apSnapshot, saveApMerged, tgChunks, apEase, apProven, apSeen, apBadCreative, apRankVideos, apRankCaptions, apRotation, apScoreCreatives, apCapKey };
 }

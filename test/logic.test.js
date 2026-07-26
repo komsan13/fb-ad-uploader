@@ -250,18 +250,18 @@ test('apRankCaptions: เรียงตามคะแนนล้วน ไม
 test('apScoreCreatives: ผ่าน/โดนปฏิเสธต้องเข้าคลิปและแคปชั่นที่ใช้จริง และนับครั้งเดียว', () => {
   const s = st({ creative: { ad1: { v: 'V1', c: 'C1', ts: Date.now() } } });
   apScoreCreatives(s, [{ id: 'ad1', effective_status: 'ACTIVE' }]);
-  assert.deepStrictEqual(s.libStats['v:V1'], { ok: 1, bad: 0 });
-  assert.deepStrictEqual(s.libStats['c:C1'], { ok: 1, bad: 0 });
+  assert.deepStrictEqual(s.libStats['v:V1'], { ok: 1, bad: 0, everBad: 0 });
+  assert.deepStrictEqual(s.libStats['c:C1'], { ok: 1, bad: 0, everBad: 0 });
   apScoreCreatives(s, [{ id: 'ad1', effective_status: 'ACTIVE' }]);   // รอบตรวจถัดไปเจอแอดเดิมอีก
-  assert.deepStrictEqual(s.libStats['v:V1'], { ok: 1, bad: 0 }, 'แอดเดิมต้องไม่ถูกนับซ้ำทุกรอบ');
+  assert.deepStrictEqual(s.libStats['v:V1'], { ok: 1, bad: 0, everBad: 0 }, 'แอดเดิมต้องไม่ถูกนับซ้ำทุกรอบ');
 });
 
 test('apScoreCreatives: ผ่านแล้วโดนถอดทีหลัง ต้องย้ายฝั่ง ไม่ใช่นับสองเด้ง', () => {
   const s = st({ creative: { ad1: { v: 'V1', c: 'C1', ts: Date.now() } } });
   apScoreCreatives(s, [{ id: 'ad1', effective_status: 'ACTIVE' }]);
   apScoreCreatives(s, [{ id: 'ad1', effective_status: 'DISAPPROVED' }]);
-  assert.deepStrictEqual(s.libStats['v:V1'], { ok: 0, bad: 1 });
-  assert.deepStrictEqual(s.libStats['c:C1'], { ok: 0, bad: 1 });
+  assert.deepStrictEqual(s.libStats['v:V1'], { ok: 0, bad: 1, everBad: 1 });
+  assert.deepStrictEqual(s.libStats['c:C1'], { ok: 0, bad: 1, everBad: 1 });
 });
 
 test('apScoreCreatives: สถานะที่ยังไม่รู้ผลรีวิวต้องไม่ถูกนับ และแอดที่ไม่รู้ที่มาต้องไม่ทำพัง', () => {
@@ -279,7 +279,7 @@ test('apScoreCreatives: ต้องแทนที่ object ทุกครั
   s.creative.ad2 = { v: 'V1', c: 'C2', ts: Date.now() };
   apScoreCreatives(s, [{ id: 'ad2', effective_status: 'ACTIVE' }]);
   assert.notStrictEqual(s.libStats['v:V1'], before, 'ต้องเป็น object คนละตัว (ref ต่าง) ไม่ใช่แก้ค่าในตัวเดิม');
-  assert.deepStrictEqual(s.libStats['v:V1'], { ok: 2, bad: 0 });
+  assert.deepStrictEqual(s.libStats['v:V1'], { ok: 2, bad: 0, everBad: 0 });
 });
 
 // ---------- ผลจากรีวิว adversarial 26 ก.ค. 2026 ----------
@@ -294,7 +294,7 @@ test('apBadCreative: ตัวที่โดนปฏิเสธมากก�
 
 test('apRotation: ตัวที่พิสูจน์แล้วว่าแย่ต้องหลุดออกจากพูล (เดิมยังถูกหยิบบ่อยเท่าตัวอื่น)', () => {
   const s = st({ libStats: { 'c:แย่': { ok: 0, bad: 5 }, 'c:ดี': { ok: 5, bad: 0 } } });
-  const rot = apRotation(s, [{ id: 'แย่' }, { id: 'ดี' }, { id: 'ใหม่' }], 'c:').map((x) => x.id);
+  const rot = apRotation(s, [{ id: 'แย่' }, { id: 'ดี' }, { id: 'ใหม่' }], (x) => 'c:' + x.id).map((x) => x.id);
   assert.ok(!rot.includes('แย่'), 'แคปชั่นที่โดนปฏิเสธซ้ำๆ ต้องไม่ถูกป้อนเข้ารีวิวอีก');
   assert.ok(rot.filter((x) => x === 'ดี').length > rot.filter((x) => x === 'ใหม่').length,
     'ตัวที่ขึ้นง่ายกว่าต้องอยู่ในลิสต์หมุนบ่อยกว่า ไม่ใช่เท่ากันหมด');
@@ -302,10 +302,10 @@ test('apRotation: ตัวที่พิสูจน์แล้วว่า�
 
 test('apRotation: ทุกตัวที่ยังไม่พิสูจน์ว่าแย่ต้องยังได้โอกาส และแย่หมดคลังก็ต้องยังมีของให้ยิง', () => {
   const s = st({ libStats: { 'c:ดี': { ok: 9, bad: 0 } } });
-  const rot = apRotation(s, [{ id: 'ดี' }, { id: 'ใหม่' }], 'c:').map((x) => x.id);
+  const rot = apRotation(s, [{ id: 'ดี' }, { id: 'ใหม่' }], (x) => 'c:' + x.id).map((x) => x.id);
   assert.ok(rot.includes('ใหม่'), 'ตัวที่ยังไม่มีข้อมูลต้องไม่ถูกตัดทิ้ง ไม่งั้นไม่มีวันได้ข้อมูล');
   const allBad = st({ libStats: { 'c:a': { ok: 0, bad: 9 }, 'c:b': { ok: 0, bad: 9 } } });
-  assert.strictEqual(apRotation(allBad, [{ id: 'a' }, { id: 'b' }], 'c:').length > 0, true, 'แย่หมดก็ต้องไม่คืนลิสต์ว่าง');
+  assert.strictEqual(apRotation(allBad, [{ id: 'a' }, { id: 'b' }], (x) => 'c:' + x.id).length > 0, true, 'แย่หมดก็ต้องไม่คืนลิสต์ว่าง');
 });
 
 test('apSeen: แยกตัวที่ยังไม่เคยมีผลรีวิวออกจากตัวที่มีข้อมูลแล้ว', () => {
@@ -332,5 +332,24 @@ test('apScoreCreatives: PAUSED ต้องไม่ถูกนับเป็�
   apScoreCreatives(s, [{ id: 'ad1', effective_status: 'CAMPAIGN_PAUSED' }]);
   assert.strictEqual(s.libStats['v:V1'], undefined);
   apScoreCreatives(s, [{ id: 'ad1', effective_status: 'ACTIVE' }]);
-  assert.deepStrictEqual(s.libStats['v:V1'], { ok: 1, bad: 0 });
+  assert.deepStrictEqual(s.libStats['v:V1'], { ok: 1, bad: 0, everBad: 0 });
+});
+
+test('apProven: เคยโดนปฏิเสธแล้วกลับมาผ่าน ต้องไม่กลายเป็น "ของดีจริง" (ประวัติห้ามถูกลบ)', () => {
+  const s = st({ creative: {} });
+  const mk = (id, status) => { s.creative[id] = { v: 'V1', c: 'c:X', ts: Date.now() }; apScoreCreatives(s, [{ id, effective_status: status }]); };
+  mk('ad1', 'DISAPPROVED');
+  apScoreCreatives(s, [{ id: 'ad1', effective_status: 'ACTIVE' }]);   // แก้ข้อความยิงใหม่แล้วผ่าน
+  assert.strictEqual(s.libStats['v:V1'].bad, 0, 'สถานะปัจจุบันไม่ใช่โดนปฏิเสธแล้ว');
+  mk('ad2', 'ACTIVE'); mk('ad3', 'ACTIVE');
+  assert.ok(s.libStats['v:V1'].ok >= 3, 'ผ่านครบ 3 แล้ว');
+  assert.strictEqual(apProven(s, 'v:V1'), false, 'แต่ต้องไม่ได้สิทธิ์ยิงซ้ำบัญชีเดิม เพราะ Meta เคยปฏิเสธมาแล้ว');
+});
+
+test('apCapKey: แก้ข้อความแคปชั่นแล้วสถิติเก่าต้องไม่ติดมา (id เดิมแต่เนื้อหาใหม่)', () => {
+  const { apCapKey } = require('../server.js');
+  const before = apCapKey({ id: 'c1', message: 'ข้อความเดิม', headline: 'หัว' });
+  const after = apCapKey({ id: 'c1', message: 'ข้อความใหม่', headline: 'หัว' });
+  assert.notStrictEqual(before, after, 'แก้ข้อความ = คีย์ใหม่ = เริ่มนับใหม่');
+  assert.strictEqual(before, apCapKey({ id: 'ไอดีอื่น', message: 'ข้อความเดิม', headline: 'หัว' }), 'เนื้อหาเดียวกันต้องได้คีย์เดียวกัน');
 });
