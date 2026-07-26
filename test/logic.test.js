@@ -281,3 +281,56 @@ test('apScoreCreatives: ต้องแทนที่ object ทุกครั
   assert.notStrictEqual(s.libStats['v:V1'], before, 'ต้องเป็น object คนละตัว (ref ต่าง) ไม่ใช่แก้ค่าในตัวเดิม');
   assert.deepStrictEqual(s.libStats['v:V1'], { ok: 2, bad: 0 });
 });
+
+// ---------- ผลจากรีวิว adversarial 26 ก.ค. 2026 ----------
+const { apSeen, apBadCreative, apRotation } = require('../server.js');
+
+test('apBadCreative: ตัวที่โดนปฏิเสธมากกว่าผ่านและมีข้อมูลพอ ต้องถือว่าแย่', () => {
+  assert.strictEqual(apBadCreative(st({ libStats: { k: { ok: 0, bad: 2 } } }), 'k'), true);
+  assert.strictEqual(apBadCreative(st({ libStats: { k: { ok: 0, bad: 1 } } }), 'k'), false, 'ครั้งเดียวยังไม่พอตัดสิน');
+  assert.strictEqual(apBadCreative(st({ libStats: { k: { ok: 3, bad: 2 } } }), 'k'), false, 'ผ่านมากกว่าตกก็ยังใช้ได้');
+  assert.strictEqual(apBadCreative(st(), 'k'), false);
+});
+
+test('apRotation: ตัวที่พิสูจน์แล้วว่าแย่ต้องหลุดออกจากพูล (เดิมยังถูกหยิบบ่อยเท่าตัวอื่น)', () => {
+  const s = st({ libStats: { 'c:แย่': { ok: 0, bad: 5 }, 'c:ดี': { ok: 5, bad: 0 } } });
+  const rot = apRotation(s, [{ id: 'แย่' }, { id: 'ดี' }, { id: 'ใหม่' }], 'c:').map((x) => x.id);
+  assert.ok(!rot.includes('แย่'), 'แคปชั่นที่โดนปฏิเสธซ้ำๆ ต้องไม่ถูกป้อนเข้ารีวิวอีก');
+  assert.ok(rot.filter((x) => x === 'ดี').length > rot.filter((x) => x === 'ใหม่').length,
+    'ตัวที่ขึ้นง่ายกว่าต้องอยู่ในลิสต์หมุนบ่อยกว่า ไม่ใช่เท่ากันหมด');
+});
+
+test('apRotation: ทุกตัวที่ยังไม่พิสูจน์ว่าแย่ต้องยังได้โอกาส และแย่หมดคลังก็ต้องยังมีของให้ยิง', () => {
+  const s = st({ libStats: { 'c:ดี': { ok: 9, bad: 0 } } });
+  const rot = apRotation(s, [{ id: 'ดี' }, { id: 'ใหม่' }], 'c:').map((x) => x.id);
+  assert.ok(rot.includes('ใหม่'), 'ตัวที่ยังไม่มีข้อมูลต้องไม่ถูกตัดทิ้ง ไม่งั้นไม่มีวันได้ข้อมูล');
+  const allBad = st({ libStats: { 'c:a': { ok: 0, bad: 9 }, 'c:b': { ok: 0, bad: 9 } } });
+  assert.strictEqual(apRotation(allBad, [{ id: 'a' }, { id: 'b' }], 'c:').length > 0, true, 'แย่หมดก็ต้องไม่คืนลิสต์ว่าง');
+});
+
+test('apSeen: แยกตัวที่ยังไม่เคยมีผลรีวิวออกจากตัวที่มีข้อมูลแล้ว', () => {
+  assert.strictEqual(apSeen(st(), 'k'), false);
+  assert.strictEqual(apSeen(st({ libStats: { k: { ok: 0, bad: 1 } } }), 'k'), true);
+  assert.strictEqual(apSeen(st({ libStats: { k: { ok: 1, bad: 0 } } }), 'k'), true);
+});
+
+test('apScoreCreatives: ตัวนับต้องไม่โตไม่สิ้นสุด (ok=30/0 ใน 10 วันเกิดขึ้นได้จริง)', () => {
+  const s = st();
+  for (let i = 0; i < 40; i++) {
+    s.creative['ad' + i] = { v: 'V1', c: 'C1', ts: Date.now() };
+    apScoreCreatives(s, [{ id: 'ad' + i, effective_status: 'ACTIVE' }]);
+  }
+  const st1 = s.libStats['v:V1'];
+  assert.ok(st1.ok + st1.bad <= 21, `ตัวนับต้องถูกจำกัด ได้ ${st1.ok + st1.bad}`);
+  assert.ok(apProven(s, 'v:V1'), 'หารครึ่งแล้วต้องยังนับว่าเป็นของดีจริงอยู่ (สัดส่วนไม่เปลี่ยน)');
+});
+
+test('apScoreCreatives: PAUSED ต้องไม่ถูกนับเป็นผ่านรีวิว (กันได้ ok ฟรีตอนผู้ใช้ปิดแคมเปญ)', () => {
+  const s = st({ creative: { ad1: { v: 'V1', c: 'C1', ts: Date.now() } } });
+  apScoreCreatives(s, [{ id: 'ad1', effective_status: 'PAUSED' }]);
+  assert.strictEqual(s.libStats['v:V1'], undefined);
+  apScoreCreatives(s, [{ id: 'ad1', effective_status: 'CAMPAIGN_PAUSED' }]);
+  assert.strictEqual(s.libStats['v:V1'], undefined);
+  apScoreCreatives(s, [{ id: 'ad1', effective_status: 'ACTIVE' }]);
+  assert.deepStrictEqual(s.libStats['v:V1'], { ok: 1, bad: 0 });
+});

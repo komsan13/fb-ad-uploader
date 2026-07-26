@@ -2149,6 +2149,28 @@ function apEase(s, key) {
   return (ok + 1) / (ok + bad + 2);
 }
 const apProven = (s, key) => (Number(apStat(s, key).ok) || 0) >= AP_PROVEN_OK && !(Number(apStat(s, key).bad) || 0);
+const apSeen = (s, key) => (Number(apStat(s, key).ok) || 0) + (Number(apStat(s, key).bad) || 0) > 0;
+// พิสูจน์แล้วว่าแย่: โดนปฏิเสธตั้งแต่ 2 ครั้งและมากกว่าที่ผ่าน — ตัวพวกนี้ต้องออกจากพูลปกติ
+// ปล่อยให้อยู่ต่อ = ป้อนของที่รู้อยู่แล้วว่าไม่ผ่านเข้ารีวิวเรื่อยๆ จนตัวนับ freeze เต็มแล้วบัญชีถูกหยุด
+const apBadCreative = (s, key) => {
+  const ok = Number(apStat(s, key).ok) || 0;
+  const bad = Number(apStat(s, key).bad) || 0;
+  return bad >= 2 && bad > ok;
+};
+
+// ลิสต์หมุนแบบถ่วงน้ำหนัก — ตัวที่ขึ้นง่ายกว่าโผล่ในลิสต์บ่อยกว่า แต่ตัวที่ยังไม่พิสูจน์ว่าแย่ยังได้โอกาส
+// จำเป็นเพราะ cursor ที่เดินทีละ 1 แล้ว mod ความยาว จะไล่ครบทุก index เท่ากันหมด
+// (รีวิว 26 ก.ค. 2026 วัดได้ว่าแคปชั่นที่โดนปฏิเสธ 21/21 ครั้ง ยังถูกหยิบบ่อยเท่าตัวอื่นเป๊ะ = จัดอันดับแล้วทิ้ง)
+function apRotation(s, items, prefix) {
+  const alive = items.filter((x) => !apBadCreative(s, prefix + x.id));
+  const pool = (alive.length ? alive : items).slice()      // แย่หมดทั้งคลัง ก็ยังต้องมีของให้ยิง
+    .sort((x, y) => apEase(s, prefix + y.id) - apEase(s, prefix + x.id));
+  const weight = (x) => Math.max(1, Math.round(apEase(s, prefix + x.id) * 4));
+  const maxW = pool.reduce((m, x) => Math.max(m, weight(x)), 1);
+  const out = [];
+  for (let pass = 1; pass <= maxW; pass++) for (const x of pool) if (weight(x) >= pass) out.push(x);
+  return out;
+}
 
 // เรียงคลิป: ขึ้นง่ายที่สุดมาก่อน แต่ตัวที่ยังพิสูจน์ตัวเองไม่พอจะถูกดันลงถ้าบัญชีนี้เคยใช้ไปแล้ว
 // (ยิงครีเอทีฟเดิมซ้ำบัญชีเดิมคือสิ่งที่ Meta จับเป็น spam ได้ — ยอมซ้ำเฉพาะตัวที่ผ่านมาแล้วจริงๆ)
@@ -2166,7 +2188,12 @@ const apRankCaptions = (s, captions) =>
 
 // อ่านผลรีวิวของแอดที่ระบบสร้างเอง แล้วให้คะแนนย้อนกลับไปที่คลิป+แคปชั่น
 // สถานะที่ยังไม่รู้ผล (PENDING_REVIEW/IN_PROCESS) ต้องไม่นับ ไม่งั้นของใหม่จะดูดีเกินจริงทันทีที่สร้าง
-const AP_OK_STATUS = new Set(['ACTIVE', 'PAUSED', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED']);
+// นับ ok เฉพาะ ACTIVE = ผ่านรีวิวแล้วยิงอยู่จริง
+// เดิมนับ PAUSED/CAMPAIGN_PAUSED/ADSET_PAUSED ด้วย ซึ่งเสี่ยง: ถ้าผู้ใช้ปิดแคมเปญตอนแอดยังรอรีวิว
+// แล้ว FB คืนสถานะพวกนั้นทับ ครีเอทีฟจะได้ ok ฟรีทั้งที่ไม่เคยผ่านรีวิว ครบ 3 ครั้งก็กลายเป็น "ของดีจริง"
+// แล้วถูกยิงซ้ำทุกบัญชี — ยังพิสูจน์ไม่ได้ว่า FB ทับสถานะแบบนั้นจริงไหม แต่ต้นทุนของการเดาผิดสูงเกินจะเสี่ยง
+// แอดที่ผ่านรีวิวแล้วถูกปิดทีหลังถูกนับไปแล้วตั้งแต่ตอนยัง ACTIVE
+const AP_OK_STATUS = new Set(['ACTIVE']);
 const AP_BAD_STATUS = new Set(['DISAPPROVED', 'WITH_ISSUES']);
 function apScoreCreatives(s, ads) {
   for (const ad of ads || []) {
@@ -2183,6 +2210,9 @@ function apScoreCreatives(s, ads) {
       const next = { ok: Number(st.ok) || 0, bad: Number(st.bad) || 0 };
       if (prev) next[prev] = Math.max(0, next[prev] - 1);   // ผ่านแล้วโดนถอดทีหลัง = ย้ายฝั่ง ไม่ใช่นับสองเด้ง
       next[outcome] += 1;
+      // เพดานกันตัวนับโตไม่สิ้นสุด (ok=30/0 ภายใน 10 วันเกิดขึ้นได้จริง) — เกิน 20 ครั้งหารครึ่งทั้งคู่
+      // คงสัดส่วนเดิมไว้ แต่ทำให้ผลรีวิวใหม่ยังขยับสถิติได้ ไม่ใช่ถูกของเก่ากลบจนขยับไม่ไหว
+      if (next.ok + next.bad > 20) { next.ok = Math.round(next.ok / 2); next.bad = Math.round(next.bad / 2); }
       (s.libStats = s.libStats || {})[key] = next;          // แทนที่ทั้ง object เสมอ ให้ตัว merge จับได้ว่า tick นี้เขียน
     }
     apMark(s.adScore = s.adScore || {}, ad.id, outcome);
@@ -2605,7 +2635,7 @@ function apPickBeneficiary(cfg, a, verifiedBiz, s, alerts) {
   return bizId;
 }
 
-async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz) {
+async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz, taken) {
   const ap = cfg.autopilot || {};
   const testMode = !!ap.testMode;
   const target = Math.max(0, Math.min(50, Number(ap.minAds) || 0));
@@ -2773,8 +2803,19 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz) {
   s.warned['empty:' + acctId] = '';
 
   const want = testMode ? 1 : Math.min(target - activeCount, room);
-  const ranked = apRankVideos(s, videos, acctId);
-  const rankedCaps = apRankCaptions(s, captions);
+  // taken = คลิปที่บัญชีก่อนหน้าในรอบตรวจเดียวกันหยิบไปแล้ว — ไม่ส่งมาแปลว่าทุกบัญชีได้คลิปเดียวกันหมด
+  // ซึ่งทำให้คลิปนั้นได้ ok เท่าจำนวนบัญชีในรอบเดียว = ผ่านบาร์ "ของดีจริง" ตั้งแต่วันแรก (รีวิว 26 ก.ค. 2026)
+  const ranked = apRankVideos(s, videos, acctId, taken);
+  const capRotation = apRotation(s, captions, 'c:');
+  const unseen = ranked.filter((v) => !apSeen(s, 'v:' + v.id));
+  const usedHere = new Set();
+  // ทุกช่องที่ 3 กันไว้ให้คลิปที่ยังไม่มีข้อมูล — ไม่งั้นตัวที่ขึ้นนำจะยึดทุกช่องของทุกบัญชีตลอดไป
+  // แล้วคลิปที่เพิ่งอัปเข้าคลังไม่มีวันได้ออกอากาศ (จำลองแล้ว: 7 ใน 10 คลิปไม่เคยถูกแตะเลยใน 10 วัน)
+  const pickVideo = (i) => {
+    const lists = (unseen.length && i % 3 === 2) ? [unseen, ranked] : [ranked, unseen];
+    for (const list of lists) for (const v of list) if (!usedHere.has(v.id)) return v;
+    return ranked[i % ranked.length];   // คลังเล็กกว่าจำนวนแอดที่ต้องเติม — ยอมซ้ำในรอบเดียว
+  };
   let campaignId;
   try { campaignId = await apGetCampaign(acct, prof.accessToken, s, acctId, d, objInfo, cf); }
   catch (e) {
@@ -2793,9 +2834,11 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz) {
 
   let ok = 0;
   for (let i = 0; i < want; i++) {
-    const v = ranked[i % ranked.length];
-    // cursor เดิมยังทำหน้าที่วนเหมือนเดิม แต่วนไล่ตามลำดับ "ขึ้นง่าย" แทนลำดับในคลัง
-    const cap = rankedCaps[(s.capCursor = ((s.capCursor || 0) + 1)) % rankedCaps.length];
+    const v = pickVideo(i);
+    usedHere.add(v.id);
+    if (taken) taken.add(v.id);
+    // cursor เดินบนลิสต์ถ่วงน้ำหนัก — ยังวนครบทุกตัวเหมือนเดิม แต่ตัวที่ขึ้นง่ายกว่าถูกหยิบบ่อยกว่า
+    const cap = capRotation[(s.capCursor = ((s.capCursor || 0) + 1)) % capRotation.length];
     const item = { mediaId: v.id, name: `${v.name} - auto`, message: cap.message, headline: cap.headline };
     // บาลานซ์เพจแบบ round-robin: แต่ละแอดหมุนไปเพจถัดไปในพูลของโปรไฟล์นี้ (cursor สะสมข้ามรอบ)
     const pageId = pagePool[(s.pageCursor[prof.id] = (s.pageCursor[prof.id] || 0) + 1) % pagePool.length];
@@ -3018,6 +3061,9 @@ async function autopilotTick(mode = 'full') {
   const s = loadAp();
   if (s.killSwitch) return;
   apPrune(s);
+  // คลิปที่ถูกหยิบไปแล้วในรอบตรวจนี้ — ใช้ร่วมกันข้ามบัญชี ไม่ให้ทุกบัญชีได้คลิปเดียวกันหมดในรอบเดียว
+  // (นอกจากซ้ำจนเสี่ยงโดนจับเป็น spam แล้ว ยังทำให้คลิปนั้นได้ ok เท่าจำนวนบัญชีรวดเดียว)
+  const takenThisTick = new Set();
 
   // อยู่ในช่วงพัก (ลิมิต API หรือแอปโดนบล็อกครบทุกโปรไฟล์) — ข้ามรอบนี้ทั้งรอบ
   // เตือนครั้งเดียวต่อรอบพักด้วยธง paused ส่วนประกาศ "กลับมาแล้ว" อยู่ท้าย tick และต้องมี call
@@ -3108,16 +3154,17 @@ async function autopilotTick(mode = 'full') {
         }, prof.accessToken);
       } catch { continue; }
 
-      // ให้คะแนนคลิป/แคปชั่นจากผลรีวิวจริงก่อนอย่างอื่น — ทำทุกรอบรวมถึงรอบ baseline
-      // เพราะข้อมูลนี้ใช้เลือกครีเอทีฟรอบหน้า ไม่เกี่ยวกับการตัดสินใจลงมือกับแอดที่โดนปฏิเสธ
-      apScoreCreatives(s, ads);
-
       const rejected = ads.filter((x) => x.effective_status === 'DISAPPROVED');
 
       // ห่อทั้งช่วงจัดการแอดโดนปฏิเสธ — error ในบัญชีเดียวห้ามฆ่าทั้ง tick
       // เคยเกิดจริง: TypeError ตรงนี้ทำให้ทุกบัญชีที่เหลือไม่ถูกตรวจ ไม่ save ไม่แจ้งเตือน
       // และวนพังซ้ำทุกรอบเงียบๆ ขณะที่ตัวขยายงบของบัญชีก่อนหน้ายิงจริงแต่ cooldown ไม่ถูกจำ
       try {
+      // ให้คะแนนคลิป/แคปชั่นจากผลรีวิวจริงก่อนอย่างอื่น — ทำทุกรอบรวมถึงรอบ baseline
+      // เพราะข้อมูลนี้ใช้เลือกครีเอทีฟรอบหน้า ไม่เกี่ยวกับการตัดสินใจลงมือกับแอดที่โดนปฏิเสธ
+      // ต้องอยู่ในบล็อก try นี้: ถ้าโยน exception ออกไป จะไม่ถึง saveApMerged ท้าย tick = state ทั้งรอบหาย
+      apScoreCreatives(s, ads);
+
       // รอบแรกของบัญชีนี้ = จดไว้เฉยๆ ไม่ลงมือ กันไปไล่แก้ของเก่าที่ค้างมานานรวดเดียว
       if (!s.baselined[acctId]) {
         rejected.forEach((x) => apMark(s.handled, x.id, 'baseline'));
@@ -3285,7 +3332,7 @@ async function autopilotTick(mode = 'full') {
         // ปิดตัวขาดทุนก่อนเติม เพื่อให้ apRefill เห็นช่องว่างจริงแล้วเอาครีเอทีฟใหม่เข้าไปแทนในรอบเดียวกัน
         try { await apPauseLosers(cfg, prof, a, ads, s, alerts); }
         catch (e) { apLog(s, 'warn', `ปิดแอดขาดทุนใน ${a.name} ไม่สำเร็จ: ${e.message}`, acctId); }
-        try { await apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz); }
+        try { await apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz, takenThisTick); }
         catch (e) { apLog(s, 'warn', `เติมแอดให้ ${a.name} ไม่สำเร็จ: ${e.message}`, acctId); }
         try { await apScale(cfg, prof, a, s, alerts); }
         catch (e) { apLog(s, 'warn', `ขยายงบใน ${a.name} ไม่สำเร็จ: ${e.message}`, acctId); }
@@ -3910,5 +3957,5 @@ if (require.main === module) {
     console.log('');
   });
 } else {
-  module.exports = { app, curFactor, apPrune, apMark, apRecent, apFence, resultSpec, pickResult, loadAp, saveAp, apLimits, apParseLimit, AP_LIMIT_SPEC, apSnapshot, saveApMerged, tgChunks, apEase, apProven, apRankVideos, apRankCaptions, apScoreCreatives };
+  module.exports = { app, curFactor, apPrune, apMark, apRecent, apFence, resultSpec, pickResult, loadAp, saveAp, apLimits, apParseLimit, AP_LIMIT_SPEC, apSnapshot, saveApMerged, tgChunks, apEase, apProven, apSeen, apBadCreative, apRankVideos, apRankCaptions, apRotation, apScoreCreatives };
 }

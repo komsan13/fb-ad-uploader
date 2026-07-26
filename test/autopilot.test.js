@@ -1027,3 +1027,48 @@ describe('สถิติครีเอทีฟจากผลรีวิว�
     assert.deepStrictEqual(s.libStats || {}, {}, 'แอดทดสอบต้องไม่ทำให้คลิปไหนดูดีขึ้นลอยๆ');
   });
 });
+
+// ---------- ผลจากรีวิว adversarial 26 ก.ค. 2026 ----------
+describe('การหมุนครีเอทีฟต้องไม่ติดหล่มอยู่กับตัวเดิม', () => {
+  test('คลิปในคลังต้องได้ออกอากาศหลายตัว ไม่ใช่ตัวเดิมยึดทุกช่องตลอดไป', async (t) => {
+    const world = freshWorld({
+      accounts: [
+        { name: 'บช 1', account_id: '111', account_status: 1, currency: 'THB' },
+        { name: 'บช 2', account_id: '222', account_status: 1, currency: 'THB' },
+      ],
+    });
+    const config = baseConfig();
+    config.autopilot.minAds = 3;
+    const { base, dir } = await boot(t, { world, config, videos: 6, captions: 4 });
+    for (let i = 0; i < 4; i++) await post(base, '/api/autopilot/run');
+    const s = readState(dir);
+    const links = Object.values(s.creative || {});
+    const vids = new Set(links.map((l) => l.v));
+    assert.ok(links.length >= 6, `ต้องมีแอดถูกสร้างพอสมควร (ได้ ${links.length})`);
+    assert.ok(vids.size >= 4, `คลัง 6 คลิปต้องได้ใช้อย่างน้อย 4 ตัว ไม่ใช่ยึดอยู่ไม่กี่ตัว (ได้ ${vids.size})`);
+  });
+
+  test('บัญชีต่างกันในรอบตรวจเดียวกันต้องไม่ได้คลิปชุดเดียวกันเป๊ะ', async (t) => {
+    const world = freshWorld({
+      accounts: [
+        { name: 'บช 1', account_id: '111', account_status: 1, currency: 'THB' },
+        { name: 'บช 2', account_id: '222', account_status: 1, currency: 'THB' },
+      ],
+    });
+    const { base, dir, world: w } = await boot(t, { world, videos: 6, captions: 4 });
+    await runTwice(base);
+    const s = readState(dir);
+    const byAcct = {};
+    for (const [adId, l] of Object.entries(s.creative || {})) {
+      const ad = w.ads.find((x) => x.id === adId);
+      if (ad) (byAcct[ad.acct] = byAcct[ad.acct] || new Set()).add(l.v);
+    }
+    const sets = Object.values(byAcct);
+    if (sets.length >= 2) {
+      const [a, b] = sets;
+      const same = [...a].filter((v) => b.has(v)).length;
+      assert.ok(same < Math.min(a.size, b.size) || a.size === 0,
+        `สองบัญชีในรอบเดียวกันได้คลิปซ้ำกันทั้งหมด (${same} ตัว) — taken ไม่ทำงาน`);
+    }
+  });
+});
