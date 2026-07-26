@@ -83,6 +83,7 @@ function publicProfiles(cfg) {
     profiles: cfg.profiles.map((p) => ({
       id: p.id, label: p.label, adAccountId: p.adAccountId, pageId: p.pageId,
       hasToken: !!p.accessToken, appId: p.appId || '', hasSecret: !!p.appSecret,
+      hasAmToken: !!p.amToken,
     })),
   };
 }
@@ -1493,6 +1494,67 @@ app.get('/api/account-health', async (req, res) => {
   }
 });
 
+// ---------- วงเงินใช้จ่ายต่อวันที่ Meta กำหนดเอง (adtrust_dsl) ----------
+// field นี้ไม่มีในเอกสาร Marketing API และ token ของแอปเราอ่านไม่ได้ — พิสูจน์กับบัญชีจริงแล้ว
+// ตอบ "(#100) Tried accessing nonexisting field (adtrust_dsl)" ทุกเวอร์ชันตั้งแต่ v18 ถึง v23
+// อ่านได้เฉพาะ token ของ Ads Manager (แอป first-party ของ Meta) ที่ผู้ใช้ก๊อปมาวางเอง
+//
+// จงใจไม่เรียกผ่าน fb() สองเหตุผล:
+//  1. token คนละแอป ถ้ามันโดน throttle/บล็อก ต้องไม่ไปสั่งพัก autopilot ทั้งระบบ (fb() มีสวิตช์พักกลาง)
+//  2. token ตัวนี้อายุสั้นและหมดบ่อย — retry ซ้ำๆ ของ fb() ไม่ช่วยอะไร มีแต่ยิงถี่เปล่าๆ
+async function fetchDailyLimits(acctIds, amToken) {
+  const limits = {};
+  let error = null;
+  for (let i = 0; i < acctIds.length; i += 50) {
+    const chunk = acctIds.slice(i, i + 50);
+    const qs = new URLSearchParams({
+      ids: chunk.map((id) => `act_${id}`).join(','),
+      fields: 'adtrust_dsl,adspaymentcycle{threshold_amount}',
+      access_token: amToken,
+    });
+    let json;
+    try {
+      const r = await fetch(`${API}/?${qs}`);
+      json = JSON.parse(await r.text());
+    } catch (e) {
+      error = `อ่านวงเงินไม่สำเร็จ: ${e.message}`;
+      break;
+    }
+    if (json.error) {
+      // 190 = token หมดอายุ/ถูกเพิกถอน คือเคสปกติของ token ตัวนี้ ไม่ใช่ของพัง
+      error = json.error.code === 190
+        ? 'Ads Manager token หมดอายุแล้ว — ก๊อปมาวางใหม่'
+        : `อ่านวงเงินไม่สำเร็จ: ${json.error.message}`;
+      break;
+    }
+    for (const id of chunk) {
+      const d = json[`act_${id}`];
+      if (!d) continue;
+      limits[id] = {
+        // ค่าดิบจาก FB — หน่วยต่างกัน: adtrust_dsl เป็นบาท, threshold_amount เป็นสตางค์
+        // (อ่านจากโค้ด extension ตระกูลเดียวกัน ยังไม่ได้เทียบกับหน้า Billing ด้วยตาตัวเอง
+        //  หน้าเว็บจึงโชว์ค่าดิบใน tooltip ไว้ด้วย ถ้าหน่วยผิดจะเห็นทันทีตั้งแต่ครั้งแรก)
+        dsl: d.adtrust_dsl === undefined ? null : Number(d.adtrust_dsl),
+        threshold: ((d.adspaymentcycle || {}).data || [])[0]
+          ? Number(d.adspaymentcycle.data[0].threshold_amount)
+          : null,
+      };
+    }
+  }
+  return { limits, error };
+}
+
+// วาง/ล้าง Ads Manager token ของ profile — ส่งค่าว่างมา = ล้างทิ้ง (ต่างจาก /api/profiles/update
+// ที่ค่าว่างแปลว่า "ไม่เปลี่ยน") token ตัวนี้หมดอายุเร็ว ผู้ใช้ต้องวางใหม่บ่อย จึงแยกเส้นมาให้กดจากหน้าสุขภาพได้เลย
+app.post('/api/am-token', (req, res) => {
+  const cfg = loadConfig();
+  const prof = getProfile(cfg, req.body.profile);
+  if (!prof) return res.status(404).json({ error: 'ไม่พบบัญชีนี้' });
+  prof.amToken = String(req.body.token || '').trim();
+  saveConfig(cfg);
+  res.json({ ok: true, hasAmToken: !!prof.amToken });
+});
+
 // ภาพรวมสุขภาพ: บัญชีโฆษณา (สถานะ/Pixel/บัตร) + เพจ (เผยแพร่/สิทธิ์ลงโฆษณา) ของ profile เดียว
 // promotion_eligible = FB บอกตรงๆ ว่าเพจนี้ใช้ลงโฆษณา/บูสต์ได้ไหม (พิสูจน์กับบัญชีจริงแล้ว: เพจบิน = false)
 app.get('/api/health-overview', async (req, res) => {
@@ -1522,9 +1584,21 @@ app.get('/api/health-overview', async (req, res) => {
     );
     const onLp = new Set(loadLp().pixels.filter((p) => p.type === 'meta').map((p) => p.id));
     for (const a of accounts) for (const x of a.pixels) x.onLp = onLp.has(String(x.id));
+    // วงเงิน/วัน อ่านได้ก็ต่อเมื่อผู้ใช้วาง Ads Manager token ไว้ — อ่านไม่ได้ต้องไม่ทำให้หน้าสุขภาพพัง
+    let dslError = null;
+    if (prof.amToken) {
+      const r = await fetchDailyLimits(accounts.map((a) => a.id), prof.amToken);
+      dslError = r.error;
+      for (const a of accounts) {
+        const v = r.limits[a.id];
+        if (v) { a.dsl = v.dsl; a.threshold = v.threshold; }
+      }
+    }
     res.json({
       accounts,
       boundToLp,
+      hasAmToken: !!prof.amToken,
+      dslError,
       pages: (pages || []).map((p) => ({
         id: p.id, name: p.name, published: !!p.is_published,
         eligible: !!p.promotion_eligible, reason: p.promotion_ineligible_reason || null,

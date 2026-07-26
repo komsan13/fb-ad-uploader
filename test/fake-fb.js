@@ -30,6 +30,19 @@ function makeFakeFb(world) {
 
       // ---- อ่าน ----
       if (req.method === 'GET') {
+        // อ่านหลาย node พร้อมกัน (?ids=act_1,act_2) — ใช้ดึงวงเงิน/วันด้วย Ads Manager token
+        // ตั้งค่าในบัญชีของ world: adtrust_dsl (วงเงิน/วัน) และ threshold_amount (ยอดเรียกเก็บ)
+        if (path === '' && params.ids) {
+          const out = {};
+          for (const key of params.ids.split(',')) {
+            const a = (world.accounts || []).find((x) => x.account_id === key.replace(/^act_/, ''));
+            if (!a) continue;
+            out[key] = { id: key };
+            if ('adtrust_dsl' in a) out[key].adtrust_dsl = a.adtrust_dsl;
+            if ('threshold_amount' in a) out[key].adspaymentcycle = { data: [{ threshold_amount: a.threshold_amount }] };
+          }
+          return send(out);
+        }
         if (path === 'me/adaccounts') {
           // บัญชีเทสถือว่าผูกบัตรแล้วโดยปริยาย (เหมือนบัญชีจริงส่วนใหญ่) — เทสที่อยากจำลอง
           // "ยังไม่เชื่อมบัตร" ให้ประกาศ funding_source_details: null ในบัญชีนั้นตรงๆ
