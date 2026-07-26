@@ -199,3 +199,85 @@ test('tgChunks: ตัดข้อความยาวตามขอบบร�
   assert.ok(giant.length >= 3 && giant.every((c) => c.length <= 3900));
   assert.strictEqual(giant.join(''), 'ก'.repeat(9000));
 });
+
+// ---------- เลือกครีเอทีฟที่ "ขึ้นง่าย" ก่อน ----------
+const { apEase, apProven, apRankVideos, apRankCaptions, apScoreCreatives } = require('../server.js');
+
+const vid = (id, over = {}) => ({ id, name: id, ts: 1000, usedOn: [], ...over });
+const st = (over = {}) => ({ creative: {}, adScore: {}, libStats: {}, ...over });
+
+test('apEase: ข้อมูลมากกว่าและผ่านหมด ต้องชนะข้อมูลน้อย และตัวไม่มีข้อมูลอยู่กลางๆ', () => {
+  const s = st({ libStats: { 'v:มาก': { ok: 5, bad: 0 }, 'v:น้อย': { ok: 1, bad: 0 }, 'v:แย่': { ok: 0, bad: 2 } } });
+  assert.ok(apEase(s, 'v:มาก') > apEase(s, 'v:น้อย'), 'ผ่าน 5/5 ต้องชนะผ่าน 1/1');
+  assert.ok(apEase(s, 'v:น้อย') > apEase(s, 'v:ไม่มีข้อมูล'), 'มีข้อมูลดีต้องชนะไม่มีข้อมูล');
+  assert.ok(apEase(s, 'v:ไม่มีข้อมูล') > apEase(s, 'v:แย่'), 'ไม่มีข้อมูลต้องมาก่อนตัวที่เคยโดนปฏิเสธ');
+});
+
+test('apProven: ต้องผ่านครบ 3 ครั้งและไม่เคยโดนปฏิเสธเลย', () => {
+  assert.strictEqual(apProven(st({ libStats: { k: { ok: 3, bad: 0 } } }), 'k'), true);
+  assert.strictEqual(apProven(st({ libStats: { k: { ok: 2, bad: 0 } } }), 'k'), false, 'ผ่าน 2 ครั้งยังไม่พอ');
+  assert.strictEqual(apProven(st({ libStats: { k: { ok: 9, bad: 1 } } }), 'k'), false, 'เคยโดนปฏิเสธแม้ครั้งเดียวก็ไม่ใช่ของดีจริง');
+  assert.strictEqual(apProven(st(), 'k'), false, 'ไม่มีข้อมูล = ยังไม่พิสูจน์');
+});
+
+test('apRankVideos: เรียงตามคะแนนขึ้นง่าย และของดีจริงยอมให้ซ้ำบัญชีเดิมได้', () => {
+  const s = st({ libStats: { 'v:A': { ok: 5, bad: 0 }, 'v:D': { ok: 2, bad: 1 }, 'v:C': { ok: 0, bad: 2 } } });
+  const videos = [vid('C'), vid('B'), vid('A', { usedOn: ['acct1'] }), vid('D')];
+  const order = apRankVideos(s, videos, 'acct1').map((v) => v.id);
+  assert.deepStrictEqual(order, ['A', 'D', 'B', 'C'],
+    'A ผ่าน 5/5 แม้บัญชีนี้เคยใช้ก็ต้องมาก่อน → D มีข้อมูลดีรองลงมา → B ยังไม่มีข้อมูล → C เคยโดนปฏิเสธ');
+});
+
+test('apRankVideos: ตัวที่ยังพิสูจน์ตัวเองไม่พอ ถ้าบัญชีนี้เคยใช้แล้วต้องถูกดันลงท้าย', () => {
+  const s = st({ libStats: { 'v:A': { ok: 2, bad: 0 } } });   // ดีแต่ยังไม่ครบ 3 = ยังไม่ proven
+  const videos = [vid('A', { usedOn: ['acct1'] }), vid('B')];
+  assert.deepStrictEqual(apRankVideos(s, videos, 'acct1').map((v) => v.id), ['B', 'A']);
+  assert.deepStrictEqual(apRankVideos(s, videos, 'acctอื่น').map((v) => v.id), ['A', 'B'], 'บัญชีอื่นยังหยิบ A ได้ปกติ');
+});
+
+test('apRankVideos: ตัวที่ถูกจองไปแล้วในรอบเดียวกันต้องถูกดันลง (กันแผนซ้ำข้ามบัญชี)', () => {
+  const s = st();
+  const videos = [vid('A'), vid('B')];
+  assert.deepStrictEqual(apRankVideos(s, videos, 'acct1', new Set(['A'])).map((v) => v.id), ['B', 'A']);
+});
+
+test('apRankCaptions: เรียงตามคะแนนล้วน ไม่มีเรื่องบัญชีมาเกี่ยว', () => {
+  const s = st({ libStats: { 'c:ดี': { ok: 4, bad: 0 }, 'c:แย่': { ok: 0, bad: 3 } } });
+  const order = apRankCaptions(s, [{ id: 'แย่' }, { id: 'ยังไม่รู้' }, { id: 'ดี' }]).map((c) => c.id);
+  assert.deepStrictEqual(order, ['ดี', 'ยังไม่รู้', 'แย่']);
+});
+
+test('apScoreCreatives: ผ่าน/โดนปฏิเสธต้องเข้าคลิปและแคปชั่นที่ใช้จริง และนับครั้งเดียว', () => {
+  const s = st({ creative: { ad1: { v: 'V1', c: 'C1', ts: Date.now() } } });
+  apScoreCreatives(s, [{ id: 'ad1', effective_status: 'ACTIVE' }]);
+  assert.deepStrictEqual(s.libStats['v:V1'], { ok: 1, bad: 0 });
+  assert.deepStrictEqual(s.libStats['c:C1'], { ok: 1, bad: 0 });
+  apScoreCreatives(s, [{ id: 'ad1', effective_status: 'ACTIVE' }]);   // รอบตรวจถัดไปเจอแอดเดิมอีก
+  assert.deepStrictEqual(s.libStats['v:V1'], { ok: 1, bad: 0 }, 'แอดเดิมต้องไม่ถูกนับซ้ำทุกรอบ');
+});
+
+test('apScoreCreatives: ผ่านแล้วโดนถอดทีหลัง ต้องย้ายฝั่ง ไม่ใช่นับสองเด้ง', () => {
+  const s = st({ creative: { ad1: { v: 'V1', c: 'C1', ts: Date.now() } } });
+  apScoreCreatives(s, [{ id: 'ad1', effective_status: 'ACTIVE' }]);
+  apScoreCreatives(s, [{ id: 'ad1', effective_status: 'DISAPPROVED' }]);
+  assert.deepStrictEqual(s.libStats['v:V1'], { ok: 0, bad: 1 });
+  assert.deepStrictEqual(s.libStats['c:C1'], { ok: 0, bad: 1 });
+});
+
+test('apScoreCreatives: สถานะที่ยังไม่รู้ผลรีวิวต้องไม่ถูกนับ และแอดที่ไม่รู้ที่มาต้องไม่ทำพัง', () => {
+  const s = st({ creative: { ad1: { v: 'V1', c: 'C1', ts: Date.now() } } });
+  apScoreCreatives(s, [{ id: 'ad1', effective_status: 'PENDING_REVIEW' }, { id: 'ad1', effective_status: 'IN_PROCESS' }]);
+  assert.strictEqual(s.libStats['v:V1'], undefined, 'ยังไม่รู้ผล = ยังไม่มีคะแนน');
+  apScoreCreatives(s, [{ id: 'แอดที่คนสร้างเอง', effective_status: 'ACTIVE' }]);
+  assert.deepStrictEqual(s.libStats, {}, 'แอดที่ระบบไม่ได้สร้างต้องไม่ถูกนับให้ครีเอทีฟใคร');
+});
+
+test('apScoreCreatives: ต้องแทนที่ object ทุกครั้ง ไม่งั้นตัว merge ตอน save จะมองไม่เห็นว่ามีการเขียน', () => {
+  const s = st({ creative: { ad1: { v: 'V1', c: 'C1', ts: Date.now() } } });
+  apScoreCreatives(s, [{ id: 'ad1', effective_status: 'ACTIVE' }]);
+  const before = s.libStats['v:V1'];
+  s.creative.ad2 = { v: 'V1', c: 'C2', ts: Date.now() };
+  apScoreCreatives(s, [{ id: 'ad2', effective_status: 'ACTIVE' }]);
+  assert.notStrictEqual(s.libStats['v:V1'], before, 'ต้องเป็น object คนละตัว (ref ต่าง) ไม่ใช่แก้ค่าในตัวเดิม');
+  assert.deepStrictEqual(s.libStats['v:V1'], { ok: 2, bad: 0 });
+});

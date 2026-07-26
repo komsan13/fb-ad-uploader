@@ -982,3 +982,48 @@ describe('เกราะ Meta block API', () => {
       'advideos คือ call ที่หนักสุด — เจอ 200 ต้องตั้ง appBlock ไม่ใช่มองไม่เห็นเกราะ');
   });
 });
+
+// ---------- เลือกครีเอทีฟที่ "ขึ้นง่าย" ก่อน ----------
+describe('สถิติครีเอทีฟจากผลรีวิวจริง', () => {
+  test('แอดที่ระบบสร้างต้องถูกผูกกับคลิป+แคปชั่น แล้วให้คะแนนตามสถานะที่ FB ตอบกลับ', async (t) => {
+    const { base, dir, world } = await boot(t, { videos: 3, captions: 3 });
+    await runTwice(base);
+    let s = readState(dir);
+    const links = Object.entries(s.creative || {});
+    assert.ok(links.length >= 2, `ต้องจดว่าแอดไหนใช้คลิป/แคปชั่นอะไร (ได้ ${links.length})`);
+    for (const [, l] of links) assert.ok(l.v && l.c, 'ต้องจดทั้งคลิปและแคปชั่น');
+
+    // แอดตัวแรกโดนปฏิเสธ ที่เหลือผ่าน — รอบตรวจถัดไปต้องแยกแยะได้
+    const [badId, badLink] = links[0];
+    world.ads.find((x) => x.id === badId).effective_status = 'DISAPPROVED';
+    await post(base, '/api/autopilot/run');
+    s = readState(dir);
+    assert.strictEqual((s.libStats[`v:${badLink.v}`] || {}).bad, 1, 'คลิปของแอดที่โดนปฏิเสธต้องได้ bad');
+    assert.strictEqual((s.libStats[`c:${badLink.c}`] || {}).bad, 1, 'แคปชั่นของแอดนั้นต้องได้ bad ด้วย');
+    const okLink = links.find(([id]) => id !== badId)[1];
+    assert.strictEqual((s.libStats[`v:${okLink.v}`] || {}).ok >= 1, true, 'คลิปที่ผ่านต้องได้ ok');
+  });
+
+  test('สถิติต้องรอดข้ามรอบ ไม่ถูกตัว merge ตอน save กลืนหาย', async (t) => {
+    const { base, dir, world } = await boot(t, { videos: 3, captions: 3 });
+    await runTwice(base);
+    const first = Object.entries(readState(dir).creative || {})[0];
+    world.ads.find((x) => x.id === first[0]).effective_status = 'DISAPPROVED';
+    await post(base, '/api/autopilot/run');
+    const after1 = readState(dir).libStats[`v:${first[1].v}`];
+    await post(base, '/api/autopilot/run');
+    const after2 = readState(dir).libStats[`v:${first[1].v}`];
+    assert.deepStrictEqual(after2, after1, 'รอบถัดไปต้องไม่นับซ้ำและต้องไม่ทำของเดิมหาย');
+    assert.strictEqual(after2.bad, 1);
+  });
+
+  test('โหมดทดสอบต้องไม่จดสถิติ — แอดถูกสร้างเป็น PAUSED ไม่เคยผ่านรีวิวจริง', async (t) => {
+    const config = baseConfig();
+    config.autopilot.testMode = true;
+    const { base, dir } = await boot(t, { config, videos: 3, captions: 3 });
+    await runTwice(base);
+    const s = readState(dir);
+    assert.deepStrictEqual(s.creative || {}, {}, 'แอดทดสอบต้องไม่ถูกผูกกับครีเอทีฟ');
+    assert.deepStrictEqual(s.libStats || {}, {}, 'แอดทดสอบต้องไม่ทำให้คลิปไหนดูดีขึ้นลอยๆ');
+  });
+});

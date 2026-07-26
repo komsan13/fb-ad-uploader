@@ -810,13 +810,14 @@ app.post('/api/autoplan', (req, res) => {
   let captionCursor = 0;
   const warnings = [];
 
+  // ใช้สถิติชุดเดียวกับ autopilot — ขึ้นแอดด้วยมือกับให้ระบบเติมเองต้องเลือกครีเอทีฟด้วยเกณฑ์เดียวกัน
+  const apState = loadAp();
+  const rankedCaps = apRankCaptions(apState, captions);
+
   const plan = accounts.map((acct) => {
     const acctId = String(acct.acctId || '');
-    // เรียงลำดับความน่าหยิบ: ยังไม่เคยใช้กับบัญชีนี้ และยังไม่ถูกจองในรอบนี้ มาก่อน
-    const ranked = videos.slice().sort((a, b) => {
-      const score = (v) => (v.usedOn && v.usedOn.includes(acctId) ? 2 : 0) + (usedThisRound.has(v.id) ? 1 : 0);
-      return score(a) - score(b) || b.ts - a.ts;
-    });
+    // เรียงตามคะแนน "ขึ้นง่าย" โดยดันตัวที่บัญชีนี้เคยใช้/ถูกจองไปแล้วในรอบนี้ลงท้าย
+    const ranked = apRankVideos(apState, videos, acctId, usedThisRound);
     const picked = ranked.slice(0, perAccount);
     // เตือนก่อนที่ usedThisRound จะถูกอัปเดต ไม่งั้นจะนับตัวของตัวเองเป็นตัวซ้ำ
     const label = acct.name || acctId;
@@ -838,7 +839,7 @@ app.post('/api/autoplan', (req, res) => {
       acctId,
       name: acct.name,
       ads: picked.map((v) => {
-        const cap = captions[captionCursor++ % captions.length];
+        const cap = rankedCaps[captionCursor++ % rankedCaps.length];
         return {
           mediaId: v.id,
           videoName: v.name,
@@ -2129,7 +2130,64 @@ const AP_DEFAULTS = () => ({
   frozen: {}, handled: {}, retryOf: {}, rejections: {}, fixes: [], log: [],
   baselined: {}, created: {}, warned: {}, campaign: {}, scaled: {}, retries: {}, counted: {},
   owned: [], paused: {}, pausedLog: [], reasons: {}, noRotate: {}, reasonCounted: {},
+  // creative: adId -> {v: mediaId, c: capId, ts} ผูกแอดกลับไปหาคลิป+แคปชั่นที่ใช้สร้างมัน
+  // adScore: adId -> {v:'ok'|'bad', ts} ผลรีวิวที่นับไปแล้ว (กันนับซ้ำ และรองรับกรณีผ่านแล้วโดนถอดทีหลัง)
+  // libStats: 'v:<id>'|'c:<id>' -> {ok, bad} ตัวนับสะสมว่าครีเอทีฟชิ้นนั้นขึ้นง่ายแค่ไหน
+  creative: {}, adScore: {}, libStats: {},
 });
+
+// ---------- คะแนน "ขึ้นง่าย" ของคลิป/แคปชั่น ----------
+// ผ่านครบ 3 ครั้งขึ้นไปโดยไม่เคยโดนปฏิเสธ = พิสูจน์ตัวเองแล้ว ยอมให้ใช้ซ้ำกับบัญชีเดิมได้
+const AP_PROVEN_OK = 3;
+const apStat = (s, key) => (s.libStats || {})[key] || {};
+// Laplace smoothing: ผ่าน 5/5 ต้องชนะผ่าน 1/1 — ข้อมูลมากกว่าน่าเชื่อกว่า
+// ตัวที่ยังไม่มีข้อมูลได้ 0.5 คือกลางๆ อยู่หลังตัวที่พิสูจน์แล้วว่าดี แต่มาก่อนตัวที่เคยโดนปฏิเสธ
+function apEase(s, key) {
+  const st = apStat(s, key);
+  const ok = Number(st.ok) || 0;
+  const bad = Number(st.bad) || 0;
+  return (ok + 1) / (ok + bad + 2);
+}
+const apProven = (s, key) => (Number(apStat(s, key).ok) || 0) >= AP_PROVEN_OK && !(Number(apStat(s, key).bad) || 0);
+
+// เรียงคลิป: ขึ้นง่ายที่สุดมาก่อน แต่ตัวที่ยังพิสูจน์ตัวเองไม่พอจะถูกดันลงถ้าบัญชีนี้เคยใช้ไปแล้ว
+// (ยิงครีเอทีฟเดิมซ้ำบัญชีเดิมคือสิ่งที่ Meta จับเป็น spam ได้ — ยอมซ้ำเฉพาะตัวที่ผ่านมาแล้วจริงๆ)
+function apRankVideos(s, videos, acctId, taken) {
+  const pen = (v) => (
+    ((v.usedOn || []).includes(acctId) && !apProven(s, 'v:' + v.id) ? 2 : 0)
+    + (taken && taken.has(v.id) ? 1 : 0)
+  );
+  return videos.slice().sort((x, y) =>
+    pen(x) - pen(y) || apEase(s, 'v:' + y.id) - apEase(s, 'v:' + x.id) || y.ts - x.ts);
+}
+// แคปชั่นไม่มีแนวคิด "เคยใช้กับบัญชีไหน" — เรียงตามคะแนนล้วน แล้วให้ cursor เดิมวนไล่ตามลำดับนั้น
+const apRankCaptions = (s, captions) =>
+  captions.slice().sort((x, y) => apEase(s, 'c:' + y.id) - apEase(s, 'c:' + x.id));
+
+// อ่านผลรีวิวของแอดที่ระบบสร้างเอง แล้วให้คะแนนย้อนกลับไปที่คลิป+แคปชั่น
+// สถานะที่ยังไม่รู้ผล (PENDING_REVIEW/IN_PROCESS) ต้องไม่นับ ไม่งั้นของใหม่จะดูดีเกินจริงทันทีที่สร้าง
+const AP_OK_STATUS = new Set(['ACTIVE', 'PAUSED', 'CAMPAIGN_PAUSED', 'ADSET_PAUSED']);
+const AP_BAD_STATUS = new Set(['DISAPPROVED', 'WITH_ISSUES']);
+function apScoreCreatives(s, ads) {
+  for (const ad of ads || []) {
+    const link = (s.creative || {})[ad.id];
+    if (!link || !link.v) continue;
+    const outcome = AP_BAD_STATUS.has(ad.effective_status) ? 'bad'
+      : AP_OK_STATUS.has(ad.effective_status) ? 'ok' : null;
+    if (!outcome) continue;
+    const prev = ((s.adScore || {})[ad.id] || {}).v;
+    if (prev === outcome) continue;
+    for (const key of [`v:${link.v}`, link.c ? `c:${link.c}` : null]) {
+      if (!key) continue;
+      const st = apStat(s, key);
+      const next = { ok: Number(st.ok) || 0, bad: Number(st.bad) || 0 };
+      if (prev) next[prev] = Math.max(0, next[prev] - 1);   // ผ่านแล้วโดนถอดทีหลัง = ย้ายฝั่ง ไม่ใช่นับสองเด้ง
+      next[outcome] += 1;
+      (s.libStats = s.libStats || {})[key] = next;          // แทนที่ทั้ง object เสมอ ให้ตัว merge จับได้ว่า tick นี้เขียน
+    }
+    apMark(s.adScore = s.adScore || {}, ad.id, outcome);
+  }
+}
 function loadAp() {
   try {
     const s = JSON.parse(fs.readFileSync(AP_PATH, 'utf8'));
@@ -2144,7 +2202,7 @@ function loadAp() {
 const AP_KEEP_MS = 60 * 24 * 3600 * 1000;     // เก็บประวัติ 60 วันพอ
 const apMark = (obj, id, v) => { obj[id] = { v, ts: Date.now() }; };
 function apPrune(s) {
-  for (const key of ['handled', 'retryOf', 'retries', 'counted', 'paused', 'reasonCounted']) {
+  for (const key of ['handled', 'retryOf', 'retries', 'counted', 'paused', 'reasonCounted', 'creative', 'adScore']) {
     const bag = s[key] || {};
     for (const id of Object.keys(bag)) {
       const e = bag[id];
@@ -2190,6 +2248,9 @@ function apSnapshot(s) {
     frozen: objCopy(s.frozen), noRotate: objCopy(s.noRotate),
     counted: objCopy(s.counted), reasonCounted: objCopy(s.reasonCounted),
     warned: objCopy(s.warned),
+    // creative↔adScore↔libStats เป็นชุดเดียวกัน (ผูกแอด → ผลรีวิว → ตัวนับ) ต้องใช้กติกา merge เดียวกัน
+    // ไม่งั้นจะซ้ำรอยบทเรียนของ counted/rejections: mark ว่านับแล้วรอด แต่ตัวนับหาย
+    creative: objCopy(s.creative), adScore: objCopy(s.adScore), libStats: objCopy(s.libStats),
     rejections: arrCopy(s.rejections), reasons: arrCopy(s.reasons),
     logSeen: new Set(s.log || []),
   };
@@ -2200,7 +2261,7 @@ function saveApMerged(s, base) {
 
   // ฟิลด์ object: ดิสก์เป็นฐาน (การลบ/ล้างของผู้ใช้ชนะ) ทับด้วยคีย์ที่ tick นี้เพิ่งเขียนเท่านั้น
   // counter กับ dedupe (rejections↔counted, reasons↔reasonCounted) ต้องใช้กติกาเดียวกันเสมอ
-  for (const f of ['frozen', 'noRotate', 'counted', 'reasonCounted', 'warned']) {
+  for (const f of ['frozen', 'noRotate', 'counted', 'reasonCounted', 'warned', 'creative', 'adScore', 'libStats']) {
     const mine = {};
     for (const [k, v] of Object.entries(s[f] || {})) {
       if (base[f][k] !== v) mine[k] = v;         // ref/ค่าต่างจากตอนเริ่ม = tick นี้เขียนเอง
@@ -2712,8 +2773,8 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz) {
   s.warned['empty:' + acctId] = '';
 
   const want = testMode ? 1 : Math.min(target - activeCount, room);
-  const ranked = videos.slice().sort((x, y) =>
-    ((x.usedOn || []).includes(acctId) ? 1 : 0) - ((y.usedOn || []).includes(acctId) ? 1 : 0) || y.ts - x.ts);
+  const ranked = apRankVideos(s, videos, acctId);
+  const rankedCaps = apRankCaptions(s, captions);
   let campaignId;
   try { campaignId = await apGetCampaign(acct, prof.accessToken, s, acctId, d, objInfo, cf); }
   catch (e) {
@@ -2733,13 +2794,18 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz) {
   let ok = 0;
   for (let i = 0; i < want; i++) {
     const v = ranked[i % ranked.length];
-    const cap = captions[(s.capCursor = ((s.capCursor || 0) + 1)) % captions.length];
+    // cursor เดิมยังทำหน้าที่วนเหมือนเดิม แต่วนไล่ตามลำดับ "ขึ้นง่าย" แทนลำดับในคลัง
+    const cap = rankedCaps[(s.capCursor = ((s.capCursor || 0) + 1)) % rankedCaps.length];
     const item = { mediaId: v.id, name: `${v.name} - auto`, message: cap.message, headline: cap.headline };
     // บาลานซ์เพจแบบ round-robin: แต่ละแอดหมุนไปเพจถัดไปในพูลของโปรไฟล์นี้ (cursor สะสมข้ามรอบ)
     const pageId = pagePool[(s.pageCursor[prof.id] = (s.pageCursor[prof.id] || 0) + 1) % pagePool.length];
     try {
-      await apCreateOneAd(acct, prof.accessToken, campaignId, pageId, pixelId, d, objInfo, item, testMode,
+      const adId = await apCreateOneAd(acct, prof.accessToken, campaignId, pageId, pixelId, d, objInfo, item, testMode,
         beneficiaryId);
+      // จดว่าแอดตัวนี้ใช้คลิป+แคปชั่นไหน ไว้ให้รอบตรวจให้คะแนนย้อนกลับเมื่อรู้ผลรีวิว
+      // โหมดทดสอบไม่จด: แอดถูกสร้างเป็น PAUSED ไม่เคยผ่านรีวิว จะนับเป็น "ผ่าน" ไม่ได้
+      // (s.creative = s.creative || {}) — state บนดิสก์รุ่นเก่าไม่มีคีย์นี้ ถ้าอ่านตรงๆ จะ TypeError ฆ่าทั้งรอบ
+      if (adId && !testMode) (s.creative = s.creative || {})[adId] = { v: v.id, c: cap.id, ts: Date.now() };
       markVideoUsed(v.id, acctId);
       s.created[acctId].push(Date.now());
       if (testMode) { s.tested = s.tested || {}; (s.tested[acctId] = s.tested[acctId] || []).push(Date.now()); }
@@ -3041,6 +3107,10 @@ async function autopilotTick(mode = 'full') {
           limit: 200,
         }, prof.accessToken);
       } catch { continue; }
+
+      // ให้คะแนนคลิป/แคปชั่นจากผลรีวิวจริงก่อนอย่างอื่น — ทำทุกรอบรวมถึงรอบ baseline
+      // เพราะข้อมูลนี้ใช้เลือกครีเอทีฟรอบหน้า ไม่เกี่ยวกับการตัดสินใจลงมือกับแอดที่โดนปฏิเสธ
+      apScoreCreatives(s, ads);
 
       const rejected = ads.filter((x) => x.effective_status === 'DISAPPROVED');
 
@@ -3840,5 +3910,5 @@ if (require.main === module) {
     console.log('');
   });
 } else {
-  module.exports = { app, curFactor, apPrune, apMark, apRecent, apFence, resultSpec, pickResult, loadAp, saveAp, apLimits, apParseLimit, AP_LIMIT_SPEC, apSnapshot, saveApMerged, tgChunks };
+  module.exports = { app, curFactor, apPrune, apMark, apRecent, apFence, resultSpec, pickResult, loadAp, saveAp, apLimits, apParseLimit, AP_LIMIT_SPEC, apSnapshot, saveApMerged, tgChunks, apEase, apProven, apRankVideos, apRankCaptions, apScoreCreatives };
 }
