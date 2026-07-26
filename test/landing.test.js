@@ -227,9 +227,11 @@ describe('หน้า Landing', () => {
     assert.ok(!page.includes('pxC'), 'พิกเซลของบัญชีที่ถูกปิดต้องไม่ถูกฝัง');
   });
 
-  // พิกเซลหลายตัวบนหน้าเดียว = คนที่กดจากแอดบัญชีเดียว ไปนับคอนเวอร์ชั่นให้ทุกบัญชี
-  // ตัวขยายงบ/ตัวปิดแอดขาดทุนจึงตัดสินจากตัวเลขที่เฟ้อ — ต้องยิงเฉพาะของบัญชีที่พาคนมา
-  test('/lp?a=<บัญชี> ต้องโหลดเฉพาะพิกเซลของบัญชีนั้น', async (t) => {
+  // เคยกรองพิกเซลตามบัญชีด้วย ?a= แล้ววัดพบว่าทุกพิกเซลได้ conversion ต่ำกว่าเกณฑ์
+  // learning phase ของ Meta (~50/สัปดาห์) — ทั้งระบบได้ 61/สัปดาห์ แต่พอหารรายบัญชีเหลือ
+  // 29/21/10/1/0/0/0/0 = ไม่มีพิกเซลไหนเรียนรู้ได้เลย จึงเลิกกรอง ให้ทุกตัวเห็นข้อมูลเต็ม
+  // เทสนี้ล็อกไว้ว่าห้ามกลับไปกรองอีกโดยไม่ได้ตั้งใจ
+  test('หน้า LP ต้องยิงทุกพิกเซลเสมอ ไม่ว่าจะมี ?a= หรือไม่', async (t) => {
     const { base } = await boot(t);
     await post(base, '/api/landing', {
       pixels: [
@@ -239,17 +241,20 @@ describe('หน้า Landing', () => {
         { type: 'ga', id: 'G-XYZ' },
       ],
     });
-    const one = await (await fetch(base + '/lp?a=900')).text();
-    assert.ok(one.includes("fbq('init','111111')"), 'ต้องมีพิกเซลของบัญชีที่ระบุ');
-    assert.ok(!one.includes('222222'), 'ห้ามมีพิกเซลของบัญชีอื่น');
-    assert.ok(!one.includes('333333'), 'ตัวที่ไม่รู้เจ้าของก็ห้ามยิงตอนระบุบัญชี');
-    assert.ok(one.includes('G-XYZ'), 'GA ยังต้องทำงานทุกกรณี');
-
-    const all = await (await fetch(base + '/lp')).text();
-    ['111111', '222222', '333333'].forEach((id) => assert.ok(all.includes(id), 'ไม่ระบุบัญชี = โหลดทุกตัวเหมือนเดิม'));
-
-    const none = await (await fetch(base + '/lp?a=999')).text();
-    assert.ok(!none.includes("fbq('init'"), 'บัญชีที่ไม่มีพิกเซล ต้องไม่ยิงให้บัญชีอื่นแทน');
+    // ทุกทางเข้าต้องได้ผลเหมือนกันหมด รวมถึง ?a= ที่ไม่ตรงกับพิกเซลไหนเลย
+    for (const path of ['/lp', '/lp?a=900', '/lp?a=999']) {
+      const page = await (await fetch(base + path)).text();
+      for (const id of ['111111', '222222', '333333']) {
+        assert.ok(page.includes(`fbq('init','${id}')`), `${path}: ต้องมีพิกเซล ${id}`);
+        assert.ok(page.includes(`fbq('trackSingle','${id}','PageView')`), `${path}: ${id} ต้องยิง PageView`);
+      }
+      assert.ok(page.includes('G-XYZ'), `${path}: GA ยังต้องทำงาน`);
+    }
+    // trackSingle คือตัวกันนับซ้ำในพิกเซลเดียวกัน คนละเรื่องกับการกรองรายบัญชี — ห้ามหลุดกลับเป็น track
+    // ต้องตัดบรรทัดคอมเมนต์ทิ้งก่อน เพราะในหน้ามีคอมเมนต์ที่เขียนคำว่า fbq('track',...) ไว้เตือนอยู่
+    const one = await (await fetch(base + '/lp')).text();
+    const code = one.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+    assert.ok(!/fbq\('track',/.test(code), "ห้ามใช้ fbq('track',...) แบบไม่ระบุพิกเซล จะนับซ้ำข้ามพิกเซล");
   });
 
   test('บันทึกจากหน้าเว็บต้องไม่ทำให้บัญชีเจ้าของพิกเซลหาย', async (t) => {

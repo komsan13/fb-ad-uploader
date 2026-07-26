@@ -563,16 +563,6 @@ function lpIsOurLanding(link) {
 
 // ลิงก์ปลายทางของบัญชีหนึ่ง — เป็นหน้า Landing ของเราเมื่อไหร่ให้ติดรหัสบัญชีไปด้วย
 // หน้านั้นจะได้โหลดเฉพาะพิกเซลของบัญชีนี้ ไม่ไปนับคอนเวอร์ชั่นให้บัญชีอื่นที่อยู่หน้าเดียวกัน
-function lpLinkFor(link, acctId) {
-  const id = String(acctId || '').replace(/[^0-9]/g, '');
-  if (!id || !lpIsOurLanding(link)) return link;
-  try {
-    const u = new URL(link);
-    u.searchParams.set('a', id);
-    return u.toString();
-  } catch { return link; }
-}
-
 // ฝังพิกเซลลงหน้า Landing ถ้ายังไม่มี — คืนรายการ id ที่เพิ่งเพิ่มเข้าไป (เขียนไฟล์ครั้งเดียว)
 function lpEnsurePixels(pixelIds, acctId) {
   const v = loadLp();
@@ -617,7 +607,7 @@ const lpEsc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
 
 // only = บัญชีโฆษณาที่พาคนมาหน้านี้ (จาก ?a=) — โหลดเฉพาะพิกเซลของบัญชีนั้น
 // ไม่ระบุ = โหลดทุกตัวเหมือนเดิม (ลิงก์เก่า/คนเข้าเองต้องไม่พัง)
-function lpRender(v, only) {
+function lpRender(v) {
   // พื้นหลังเป็นตัวกำหนดชุดสีทั้งหมด — ยกเว้นตอนใช้รูปที่อัปเอง ซึ่งเราไม่รู้ว่ารูปสว่างหรือมืด
   // กรณีนั้นค่อยให้ theme ที่ผู้ใช้เลือกเป็นตัวตัดสิน
   const pal = LP_BGS[v.bg] || LP_BGS[''];
@@ -626,8 +616,15 @@ function lpRender(v, only) {
     ? (dark ? { card: '#1b1e26', tx: '#eef1f6', mut: '#98a1b3', line: '#2a2f3a' }
             : { card: '#ffffff', tx: '#1a1d23', mut: '#6b7280', line: '#e6e8ec' })
     : pal;
-  // ระบุบัญชีมาแต่ไม่มีพิกเซลของบัญชีนั้น = ไม่ยิงให้ใครเลย ดีกว่าไปนับให้บัญชีอื่นผิดตัว
-  const meta = v.pixels.filter((p) => p.type === 'meta' && (!only || String(p.acct || '') === only));
+  // ยิงทุกพิกเซลที่ฝังไว้ ไม่กรองตามบัญชี
+  // เคยกรองด้วย ?a=<บัญชี> ให้ยิงเฉพาะพิกเซลของบัญชีที่พาคนมา — ถอดออกแล้ว
+  // เหตุผล (วัดจริง 26 ก.ค. 2026): แยกแล้วทุกพิกเซลได้ conversion ต่ำกว่าเกณฑ์ learning phase
+  // ของ Meta (~50/สัปดาห์) — 7 วันได้ 29/21/10/1/0/0/0/0 รวมทั้งระบบแค่ 61
+  // ไม่แยก = ทุกพิกเซลเห็นครบ 61 ซึ่งเกินเกณฑ์ Meta ถึงจะเริ่มปรับการส่งของให้ได้จริง
+  // คนที่เข้ามาเห็นหน้าเดียวกันเป๊ะไม่ว่าจะแยกหรือไม่ การแยกจึงกระทบแค่การวัดกับการเรียนรู้
+  // แลกกับ attribution รายบัญชีที่ปนกันมากขึ้น (ยอดรวมยังถูก) — ยอมแลกเพื่อให้ Meta เรียนรู้ได้
+  // การนับซ้ำในพิกเซลเดียวกันกันด้วย trackSingle อยู่แล้ว คนละเรื่องกับการกรองนี้
+  const meta = v.pixels.filter((p) => p.type === 'meta');
   const ga = v.pixels.filter((p) => p.type === 'ga');
   return `<!doctype html>
 <html lang="th"><head>
@@ -716,7 +713,7 @@ app.get(['/lp/admin', '/lp/admin/'], (req, res) => res.redirect('/#landing'));
 
 app.get(['/lp', '/lp/'], (req, res) => {
   res.set('Cache-Control', 'no-store');   // แก้ลิงก์แล้วต้องเห็นผลทันที
-  res.type('html').send(lpRender(loadLp(), String(req.query.a || '').replace(/[^0-9]/g, '')));
+  res.type('html').send(lpRender(loadLp()));
 });
 
 app.get('/api/landing', (req, res) => res.json(loadLp()));
@@ -1828,7 +1825,7 @@ app.post('/api/launch', upload.any(), async (req, res) => {
             video_id: videoId,
             message: ad.message,
             title: ad.headline || undefined,
-            call_to_action: { type: data.cta, value: { link: lpLinkFor(ad.link, acctId) } },
+            call_to_action: { type: data.cta, value: { link: ad.link } },
           };
           if (videoThumbUrl) spec.video_data.image_url = videoThumbUrl;
         } else {
@@ -1837,7 +1834,7 @@ app.post('/api/launch', upload.any(), async (req, res) => {
             message: ad.message,
             name: ad.headline || undefined,
             image_hash: imageHash,
-            call_to_action: { type: data.cta, value: { link: lpLinkFor(ad.link, acctId) } },
+            call_to_action: { type: data.cta, value: { link: ad.link } },
           };
         }
         const creative = await fb(`${acct}/adcreatives`, {
@@ -2437,7 +2434,7 @@ async function apCreateOneAd(acct, token, campaignId, pageId, pixelId, d, objInf
       video_id: videoId,
       message: item.message,
       title: item.headline || undefined,
-      call_to_action: { type: d.cta || 'LEARN_MORE', value: { link: lpLinkFor(d.link, acct.replace(/^act_/, '')) } },
+      call_to_action: { type: d.cta || 'LEARN_MORE', value: { link: d.link } },
     },
   };
   if (thumb) spec.video_data.image_url = thumb;
