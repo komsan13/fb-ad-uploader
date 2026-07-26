@@ -24,7 +24,6 @@
     /* ทุกอย่างที่กดได้ (ปุ่ม/ตัวเลือก/ช่องกรอก) ต้องใช้ --r-md ตัวเดียวกันหมด ห้ามใส่ 999px หรือค่าอื่นเอง
      ส่วนป้ายที่กดไม่ได้ (st-pill/badge/chip) กับแถบความคืบหน้า ยังกลมได้ตามเดิม */
   --r-lg: 9px; --r-md: 6px; --r-sm: 5px;
-    --shadow-card: 0 1px 2px rgba(20,22,28,.04), 0 1px 6px rgba(20,22,28,.03);
     --ease: cubic-bezier(.23, 1, .32, 1);
   }
   html { -webkit-font-smoothing: antialiased; }
@@ -33,7 +32,7 @@
 
   /* ---------- โครง layout ---------- */
   .app { display: flex; min-height: 100vh; }
-  .sidebar { width: var(--sidebar-w); background: var(--card); border-right: 1px solid var(--line); position: fixed; top: 0; bottom: 0; left: 0; display: flex; flex-direction: column; z-index: 90; }
+  .sidebar { width: var(--sidebar-w); background: var(--card); position: fixed; top: 0; bottom: 0; left: 0; display: flex; flex-direction: column; z-index: 90; }
   .logo { height: var(--header-h); padding: 0 14px; display: flex; align-items: center; gap: 10px; font-size: 14.5px; font-weight: 700; letter-spacing: -.01em; line-height: 1.25; color: #fff; background: var(--brand); flex-shrink: 0; }
   .logo .mark { width: 30px; height: 30px; border-radius: 8px; background: #fff; color: var(--brand); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .logo small { display: block; font-size: 10.5px; font-weight: 500; color: rgba(255,255,255,.78); letter-spacing: 0; }
@@ -47,7 +46,7 @@
   nav a.active svg { color: var(--brand-dark); }
   .nav-sec { padding: 12px 12px 5px; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #9aa1ae; }
   .nav-sec:first-child { padding-top: 4px; }
-  .side-foot { padding: 10px 14px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); }
+  .side-foot { padding: 10px 14px; font-size: 12px; color: var(--muted); }
   .side-foot .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #c3c8d1; margin-right: 7px; }
   .side-foot .dot.on { background: var(--green); }
 
@@ -58,8 +57,8 @@
   .ts-clock { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; background: rgba(255,255,255,.14); border-radius: var(--r-md); padding: 6px 12px; }
   .ts-right { display: flex; align-items: center; gap: 8px; }
   /* ปุ่มบนแถบสีเข้ม: เส้นขอบขาวโปร่ง ชี้แล้วเป็นพื้นขาว — ให้เห็นว่ากดได้โดยไม่แย่งสายตาจากปุ่มหลักในหน้า */
-  .ts-btn { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; border: 1px solid rgba(255,255,255,.45); background: transparent; color: #fff; font-size: 12.5px; font-weight: 600; border-radius: var(--r-md); }
-  .ts-btn:hover { background: #fff; color: var(--brand-dark); border-color: #fff; }
+  .ts-btn { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; background: rgba(255,255,255,.18); color: #fff; font-size: 12.5px; font-weight: 600; border-radius: var(--r-md); }
+  .ts-btn:hover { background: #fff; color: var(--brand-dark); }
   .ts-btn svg { width: 15px; height: 15px; }
   .ts-clock svg { width: 16px; height: 16px; }
 
@@ -70,10 +69,10 @@
 
   /* ---------- stat tiles ---------- */
   .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(178px, 1fr)); gap: 10px; margin-bottom: 10px; }
-  .tile { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 13px 15px; }
+  .tile { background: var(--card); border-radius: var(--r-lg); padding: 13px 15px; }
   /* ไทล์ที่อยู่ในการ์ดแล้วไม่ต้องมีขอบของตัวเอง — กล่องซ้อนกล่องคือสิ่งที่ทำให้ดูรุงรัง
      ใช้พื้นอ่อนแทน จะอ่านเป็น "แผงสถิติหนึ่งอัน" ไม่ใช่ "ห้ากล่องซ้อนกัน" */
-  .card .tile { border: none; background: #f8f9fc; }
+  .card .tile { background: #f8f9fc; }
   .tile .t-label { font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
   .t-ic { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .t-ic svg { width: 14px; height: 14px; }
@@ -86,17 +85,17 @@
   .tile .t-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
 
   /* ---------- การ์ด ---------- */
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-card); padding: 13px 14px; margin-bottom: 10px; }
+  .card { background: var(--card); border-radius: var(--r-lg); padding: 13px 14px; margin-bottom: 10px; }
   .card h2 { font-size: 14px; font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .card .h-desc { font-weight: 400; font-size: 12.5px; color: var(--muted); }
   .sec-ic { display: inline-flex; color: var(--brand); flex-shrink: 0; }
   .sec-ic svg { width: 17px; height: 17px; }
 
   label { display: block; font-size: 12px; font-weight: 600; color: #4c5058; margin-bottom: 5px; }
-  input, select, textarea { width: 100%; padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: var(--r-md); font-size: 13.5px; font-family: inherit; background: #fff; color: var(--text); transition: border-color 150ms var(--ease), box-shadow 150ms var(--ease); }
+  input, select, textarea { width: 100%; padding: 6px 10px; border-radius: var(--r-md); font-size: 13.5px; font-family: inherit; background: #eef0f4; color: var(--text); transition: background 150ms var(--ease); }
   input::placeholder, textarea::placeholder { color: #a6abb5; }
-  input:hover, select:hover, textarea:hover { border-color: #c4c9d4; }
-  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px rgba(37,99,235,.15); }
+  input:hover, select:hover, textarea:hover { background: #e7eaef; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--brand); outline-offset: 1px; background: #fff; }
   textarea { resize: vertical; min-height: 58px; }
 
   /* ---------- dropdown สวยทั้งระบบ (Chrome/Edge รุ่นใหม่ — เบราว์เซอร์เก่า fallback เป็นแบบปกติ) ---------- */
@@ -105,8 +104,8 @@
   select::picker-icon { color: var(--muted); transition: rotate 150ms var(--ease); }
   select:open::picker-icon { rotate: 180deg; }
   select::picker(select) {
-    background: #fff; border: 1px solid var(--line); border-radius: 12px;
-    box-shadow: 0 10px 28px rgba(23,24,28,.13); padding: 5px; margin-top: 5px;
+    background: #fff; border-radius: 12px;
+    padding: 5px; margin-top: 5px;
     opacity: 0; transform: translateY(-4px) scale(.98);
     transition: opacity 150ms var(--ease), transform 150ms var(--ease),
       overlay 150ms allow-discrete, display 150ms allow-discrete;
@@ -129,7 +128,7 @@
   .field { margin-bottom: 11px; }
   .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
 
-  button { cursor: pointer; border: none; border-radius: var(--r-md); font-size: 13px; font-weight: 600; font-family: inherit; padding: 7px 13px; color: var(--text); background: #f0f2f5; transition: background 150ms var(--ease), transform 160ms var(--ease); }
+  button { cursor: pointer; border-radius: var(--r-md); font-size: 13px; font-weight: 600; font-family: inherit; padding: 7px 13px; color: var(--text); background: #f0f2f5; transition: background 150ms var(--ease), transform 160ms var(--ease); }
   button:hover { background: #e8ebef; }
   button:active { transform: scale(.97); }
   .btn-primary { background: var(--brand); color: #fff; }
@@ -167,7 +166,7 @@
   .fgrid .fg-2 { grid-column: span 2; }
   .fgrid .fg-full { grid-column: 1 / -1; }
   @media (max-width: 760px) { .fgrid { grid-template-columns: 1fr 1fr; } .fgrid .fg-2 { grid-column: 1 / -1; } }
-  #uploadModal .camp-side { top: 0; max-height: calc(88vh - 160px); border: 1px solid var(--line); }
+  #uploadModal .camp-side { top: 0; max-height: calc(88vh - 160px); }
   .acct-detail { display: flex; flex-direction: column; gap: 5px; padding: 0 8px 9px 30px; }
   .acct-detail select, .acct-detail input { font-size: 12px; padding: 5px 8px; }
   .camp-link { color: var(--blue); cursor: pointer; }
@@ -199,13 +198,13 @@
   }
 
   /* ปุ่มช่วงเวลาแบบ pill */
-  .date-pill { background: #fff; border: 1px solid var(--line-strong); color: var(--muted); border-radius: var(--r-md); height: 32px; padding: 0 14px; display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 600; transition: background 150ms var(--ease), color 150ms var(--ease), border-color 150ms var(--ease), transform 160ms var(--ease); }
-  .date-pill:hover { border-color: var(--brand); color: var(--brand); }
-  .date-pill.active { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .date-pill { background: #eef0f4; color: var(--muted); border-radius: var(--r-md); height: 32px; padding: 0 14px; display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 600; transition: background 150ms var(--ease), color 150ms var(--ease), border-color 150ms var(--ease), transform 160ms var(--ease); }
+  .date-pill:hover { background: #e2e7f5; color: var(--brand); }
+  .date-pill.active { background: var(--brand); color: #fff; }
 
   /* ---------- บัญชี FB (profiles) ---------- */
-  .prof-card { border: 1px solid var(--line); border-radius: var(--r-lg); padding: 16px; margin-bottom: 12px; background: #fff; transition: border-color 150ms var(--ease), background 150ms var(--ease); }
-  .prof-card.active-prof { border-color: var(--brand); background: #fbfefd; }
+  .prof-card { border-radius: var(--r-lg); padding: 16px; margin-bottom: 12px; background: #fff; transition: border-color 150ms var(--ease), background 150ms var(--ease); }
+  .prof-card.active-prof { background: #fbfefd; }
   .prof-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
   .prof-star { cursor: pointer; font-size: 12px; font-weight: 700; padding: 5px 12px; border-radius: var(--r-md); background: #f0f2f5; color: var(--muted); white-space: nowrap; transition: background 150ms var(--ease), color 150ms var(--ease); }
   .prof-star:hover { background: #e8ebef; }
@@ -214,8 +213,8 @@
   .pc-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
   .pc-avatar { width: 38px; height: 38px; border-radius: 50%; background: var(--brand-soft); color: var(--brand); font-weight: 700; font-size: 16px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .active-prof .pc-avatar { background: var(--brand); color: #fff; }
-  input.pc-name { font-weight: 700; font-size: 14.5px; border-color: transparent; background: transparent; max-width: 220px; padding: 6px 9px; }
-  input.pc-name:hover { border-color: var(--line-strong); background: #fff; }
+  input.pc-name { font-weight: 700; font-size: 14.5px; background: transparent; max-width: 220px; padding: 6px 9px; }
+  input.pc-name:hover { background: #fff; }
   input.pc-name:focus { background: #fff; }
   .p-status { font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 999px; background: #f0f2f5; color: var(--muted); margin-top: 0; }
   .p-status.ok { background: var(--green-soft); color: var(--green); }
@@ -223,10 +222,10 @@
   .pc-del { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border-radius: var(--r-md); margin-left: auto; }
   .pc-del svg { width: 15px; height: 15px; }
   .pc-body { display: grid; grid-template-columns: 1.15fr 1fr; gap: 0 26px; }
-  .pc-col + .pc-col { border-left: 1px dashed var(--line); padding-left: 26px; }
+  .pc-col + .pc-col { padding-left: 26px; }
   @media (max-width: 820px) {
     .pc-body { grid-template-columns: 1fr; }
-    .pc-col + .pc-col { border-left: none; padding-left: 0; margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--line); }
+    .pc-col + .pc-col { padding-left: 0; margin-top: 14px; padding-top: 14px; }
   }
   .pc-step { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; margin-bottom: 11px; }
   .pc-step-num { width: 22px; height: 22px; border-radius: 50%; background: var(--brand); color: #fff; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
@@ -239,8 +238,8 @@
   .setup-list li::before { content: counter(step); width: 22px; height: 22px; flex-shrink: 0; border-radius: 50%; background: var(--brand-soft); color: var(--brand); font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; transform: translateY(4px); }
 
   /* ---------- dropzone ---------- */
-  .dropzone { border: 1.5px dashed var(--line-strong); border-radius: var(--r-lg); padding: 28px 20px; text-align: center; cursor: pointer; background: #fafbfc; transition: border-color 150ms var(--ease), background 150ms var(--ease); }
-  .dropzone:hover, .dropzone.over { border-color: var(--brand); background: var(--brand-soft); }
+  .dropzone { border-radius: var(--r-lg); padding: 28px 20px; text-align: center; cursor: pointer; background: #fafbfc; transition: border-color 150ms var(--ease), background 150ms var(--ease); }
+  .dropzone:hover, .dropzone.over { background: var(--brand-soft); }
   .dropzone svg { width: 26px; height: 26px; color: var(--muted); margin: 0 auto 8px; transition: color 150ms var(--ease); }
   .dropzone:hover svg, .dropzone.over svg { color: var(--brand); }
   .dropzone .big { font-size: 14.5px; font-weight: 700; margin-bottom: 2px; }
@@ -248,18 +247,18 @@
 
   /* ---------- คลังวิดีโอ ---------- */
   .lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-top: 14px; }
-  .lib-item { border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; background: #fff; display: flex; flex-direction: column; transition: border-color 150ms var(--ease), box-shadow 150ms var(--ease); }
-  .lib-item:hover { border-color: var(--brand); box-shadow: var(--shadow-card); }
+  .lib-item { border-radius: var(--r-lg); overflow: hidden; background: #fff; display: flex; flex-direction: column; transition: background 150ms var(--ease); }
+  .lib-item:hover { background: #f4f6fa; }
   .lib-item.pick { cursor: pointer; }
   .lib-item .lib-th { width: 100%; aspect-ratio: 1; object-fit: cover; background: #f4f5f7; display: block; }
   .lib-item .lib-body { padding: 9px 10px; display: flex; flex-direction: column; gap: 6px; }
-  .lib-up { display: flex; align-items: center; gap: 10px; font-size: 12.5px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-md); margin-top: 10px; }
+  .lib-up { display: flex; align-items: center; gap: 10px; font-size: 12.5px; padding: 8px 10px; border-radius: var(--r-md); margin-top: 10px; }
   .lib-up .bar { flex: 1; height: 6px; border-radius: 999px; background: #eef0f3; overflow: hidden; }
   .lib-up .bar i { display: block; height: 100%; background: var(--brand); width: 0; transition: width 120ms linear; }
   .lib-empty { grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: var(--muted); font-size: 13.5px; }
   /* .cap-row ยังใช้เป็นแถวฟอร์มของหน้า Landing/ต้นแบบอยู่ (คลังแคปชั่นเองย้ายไปใช้ตารางแล้ว) */
-  .cap-row { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border: 1px solid var(--line); border-radius: var(--r-md); margin-bottom: 8px; }
-  .cap-row:hover { border-color: var(--brand); }
+  .cap-row { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border-radius: var(--r-md); margin-bottom: 8px; }
+  .cap-row:hover { }
   .cap-row .cap-fields { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
   .cap-row textarea { width: 100%; font-size: 13px; resize: vertical; min-height: 40px; }
   .cap-row .cap-head { width: 100%; font-size: 12.5px; font-weight: 600; }
@@ -269,12 +268,12 @@
   .cap-sort:hover { color: var(--brand-dark); }
 
   /* ---------- การ์ดแอด ---------- */
-  .ad-card { border: 1px solid var(--line); border-radius: var(--r-lg); padding: 14px 16px; margin-bottom: 12px; background: #fff; transition: border-color 150ms var(--ease), background 150ms var(--ease); }
-  .ad-card.st-ok { border-color: #b5e2c6; background: #fbfefc; }
-  .ad-card.st-err { border-color: #f2b8c6; }
+  .ad-card { border-radius: var(--r-lg); padding: 14px 16px; margin-bottom: 12px; background: #fff; transition: border-color 150ms var(--ease), background 150ms var(--ease); }
+  .ad-card.st-ok { background: #fbfefc; }
+  .ad-card.st-err { }
   .ad-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
-  .thumb { width: 60px; height: 60px; border-radius: var(--r-md); object-fit: cover; border: 1px solid var(--line); background: #f4f5f7 center/24px no-repeat url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%23c3c8d1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>'); cursor: pointer; flex-shrink: 0; transition: border-color 150ms var(--ease); }
-  .thumb:hover { border-color: var(--brand); }
+  .thumb { width: 60px; height: 60px; border-radius: var(--r-md); object-fit: cover; background: #f4f5f7 center/24px no-repeat url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%23c3c8d1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>'); cursor: pointer; flex-shrink: 0; transition: border-color 150ms var(--ease); }
+  .thumb:hover { }
   .thumb-wrap { position: relative; width: 60px; height: 60px; flex-shrink: 0; cursor: pointer; }
   .thumb-wrap .thumb { width: 60px; height: 60px; }
   .media-tag { position: absolute; left: 0; bottom: 0; right: 0; background: rgba(14,146,104,.92); color: #fff; font-size: 9.5px; font-weight: 700; text-align: center; padding: 1px 0; border-radius: 0 0 var(--r-md) var(--r-md); }
@@ -290,7 +289,7 @@
   .grid { display: grid; grid-template-columns: 1.7fr 1fr; gap: 10px; }
   @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
 
-  details.target { margin-top: 10px; border-top: 1px dashed var(--line); padding-top: 9px; }
+  details.target { margin-top: 10px; padding-top: 9px; }
   details.target summary { cursor: pointer; font-size: 12.5px; color: var(--brand); font-weight: 600; list-style: none; }
   details.target summary::before { content: '▸ '; }
   details.target[open] summary::before { content: '▾ '; }
@@ -300,7 +299,7 @@
   .chip { background: var(--brand-soft); color: var(--brand); border-radius: 999px; padding: 3px 11px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
   .chip span { cursor: pointer; font-weight: 700; }
   .interest-box { position: relative; }
-  .interest-results { position: absolute; top: 100%; left: 0; right: 0; margin-top: 4px; background: #fff; border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: 0 8px 24px rgba(23,24,28,.10); z-index: 50; max-height: 200px; overflow-y: auto; display: none; }
+  .interest-results { position: absolute; top: 100%; left: 0; right: 0; margin-top: 4px; background: #fff; border-radius: var(--r-md); z-index: 50; max-height: 200px; overflow-y: auto; display: none; }
   .interest-results div { padding: 8px 12px; cursor: pointer; font-size: 13px; }
   .interest-results div:hover { background: #f5f6f8; }
   .interest-results small { color: var(--muted); }
@@ -310,21 +309,21 @@
   table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 960px; }
   /* เส้นแบ่งคอลัมน์คือสิ่งที่ทำให้อ่านเป็น "ตาราง" ไม่ใช่ "รายการลอยๆ" */
   /* สไตล์ B: หัวพื้นเทา ไม่มีเส้นแบ่งคอลัมน์ ใช้แถวสลับสีอ่อนเป็นตัวคั่นแทนการตีเส้นทุกช่อง */
-  thead th { background: #f6f7f9; border-bottom: 1px solid var(--line-strong); color: #5b6270; font-weight: 700; }
-  tbody td { border-bottom: none; }
+  thead th { background: #f6f7f9; color: #5b6270; font-weight: 700; }
+  tbody td { }
   tbody tr:nth-child(even) td { background: #fafbfd; }
   tbody tr:hover td { background: #eef4fe; }
   /* คอลัมน์ตัวเลขหุบเท่าเนื้อหา ไม่ยืดกินที่ — ที่เหลือปล่อยให้คอลัมน์ข้อความเอาไป ความกว้างจะสมดุลขึ้น */
   th.num, td.num { width: 1%; white-space: nowrap; }
-  thead th { text-align: left; color: #59616f; font-size: 12.5px; font-weight: 700; padding: 11px 14px; background: #f8f9fb; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); white-space: nowrap; position: sticky; top: 0; z-index: 2; }
+  thead th { text-align: left; color: #59616f; font-size: 12.5px; font-weight: 700; padding: 11px 14px; background: #f8f9fb; white-space: nowrap; position: sticky; top: 0; z-index: 2; }
   th:first-child, td:first-child { padding-left: 20px; }
   th:last-child, td:last-child { padding-right: 20px; }
-  td { padding: 13px 14px; border-bottom: 1px solid #eef0f4; vertical-align: middle; }
+  td { padding: 13px 14px; vertical-align: middle; }
   tbody tr:hover td { background: #f7f9fd; }
-  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:last-child td { }
   td.tbl-msg { text-align: center; padding: 46px 20px; color: var(--muted); font-size: 13.5px; background: #fff !important; }
   td.tbl-msg.err { color: var(--red); }
-  .spin { display: inline-block; width: 15px; height: 15px; border: 2px solid var(--line-strong); border-top-color: var(--brand); border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -3px; margin-right: 8px; }
+  .spin { display: inline-block; width: 15px; height: 15px; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -3px; margin-right: 8px; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .st-pill { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
   .st-pill.on { background: var(--green-soft); color: var(--green); }
@@ -336,7 +335,7 @@
   .switch { position: relative; display: inline-block; width: 38px; height: 22px; }
   .switch input { display: none; }
   .switch .sl { position: absolute; inset: 0; background: #ccd1d9; border-radius: 22px; cursor: pointer; transition: background 200ms var(--ease); }
-  .switch .sl:before { content: ""; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; box-shadow: 0 1px 2px rgba(0,0,0,.15); transition: transform 200ms var(--ease); }
+  .switch .sl:before { content: ""; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: transform 200ms var(--ease); }
   .switch input:checked + .sl { background: var(--brand); }
   .switch input:checked + .sl:before { transform: translateX(16px); }
   .res-label { color: var(--muted); font-size: 11.5px; font-weight: 400; }
@@ -351,7 +350,7 @@
   /* แถบเครื่องมือเต็มแถวเหนือตาราง — กินขอบเท่าตาราง มีพื้นและเส้นคั่น จึงอ่านเป็นส่วนหนึ่งของกริด */
   /* ค่าเริ่มต้นคือซ่อน — JS สั่งโชว์เมื่อของเยอะพอจะหาไม่เจอ
      กลับด้านจากเดิมที่ default โชว์แล้วรอ JS มาซ่อน เพราะถ้า JS ไม่ทันจะเหลือแถบเทาว่างค้างไว้ */
-  .tbl-bar { display: none; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 -14px; padding: 9px 13px; background: #fbfcfd; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .tbl-bar { display: none; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 -14px; padding: 9px 13px; background: #fbfcfd; }
   .tbl-bar.on { display: flex; }
   .tbl-bar .tb-search { position: relative; flex: 0 1 250px; min-width: 165px; }
   .tbl-bar .tb-search svg { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; color: var(--muted); pointer-events: none; }
@@ -361,25 +360,25 @@
   th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
 
   /* คอลัมน์จัดการตรึงขวา — เลื่อนตารางแล้วปุ่มยังอยู่ให้กด (ทำเฉพาะตารางที่คอลัมน์ท้ายเป็นปุ่มจริง) */
-  table.tb-stick thead th:last-child, table.tb-stick tbody td:last-child { position: sticky; right: 0; z-index: 1; background: var(--card); box-shadow: -6px 0 8px -8px rgba(20,22,28,.22); }
+  table.tb-stick thead th:last-child, table.tb-stick tbody td:last-child { position: sticky; right: 0; z-index: 1; background: var(--card); }
   table.tb-stick thead th:last-child { background: #f6f7f9; z-index: 3; }
   table.tb-stick tbody tr:hover td:last-child { background: #eef4fe; }
   table.tb-stick tbody tr:nth-child(even) td:last-child { background: #fafbfd; }
   .tbl-foot { display: none; align-items: center; justify-content: flex-end; gap: 6px; padding: 9px 14px 0; font-size: 12px; color: var(--muted); }
   .tbl-foot.on { display: flex; }
-  .tbl-foot button { padding: 3px 9px; font-size: 12px; background: #fff; border: 1px solid var(--line-strong); border-radius: var(--r-md); }
+  .tbl-foot button { padding: 3px 9px; font-size: 12px; background: #eef0f4; border-radius: var(--r-md); }
   .tbl-foot button:disabled { opacity: .4; cursor: default; }
   .tbl-foot .tb-page { font-variant-numeric: tabular-nums; padding: 0 4px; }
 
   /* ---------- แถบล่าง ---------- */
-  #bottomBar { border-top: 1px solid var(--line); background: #fff; flex-shrink: 0; }
+  #bottomBar { background: #fff; flex-shrink: 0; }
   #bottomBar .inner { padding: 11px 28px 13px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
   #launchProfiles { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12.5px; }
   #launchProfiles .lp-title { color: var(--muted); font-weight: 600; }
-  .lp-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-strong); border-radius: var(--r-md); padding: 5px 12px; cursor: pointer; font-weight: 600; font-size: 12.5px; user-select: none; background: #fff; transition: background 150ms var(--ease), border-color 150ms var(--ease), color 150ms var(--ease); }
-  .lp-chip:hover { border-color: #c4c9d4; }
+  .lp-chip { display: inline-flex; align-items: center; gap: 6px; background: #eef0f4; border-radius: var(--r-md); padding: 5px 12px; cursor: pointer; font-weight: 600; font-size: 12.5px; user-select: none; background: #fff; transition: background 150ms var(--ease), border-color 150ms var(--ease), color 150ms var(--ease); }
+  .lp-chip:hover { }
   .lp-chip input { width: auto; accent-color: var(--brand); }
-  .lp-chip:has(input:checked) { border-color: var(--brand); background: var(--brand-soft); color: var(--brand); }
+  .lp-chip:has(input:checked) { background: var(--brand-soft); color: var(--brand); }
   #barStats { font-size: 13.5px; white-space: nowrap; }
   #barStats b { font-size: 16px; font-weight: 700; color: var(--text); }
   #barStats .muted { color: var(--muted); font-size: 12px; }
@@ -398,28 +397,27 @@
   /* toast แจ้งเตือนมุมขวาล่าง — แทน alert() ที่บล็อกทั้งหน้า */
   #toastBox { position: fixed; right: 18px; bottom: 18px; z-index: 400; display: flex; flex-direction: column; gap: 8px; max-width: min(420px, calc(100vw - 36px)); }
   .toast { display: flex; align-items: flex-start; gap: 9px; padding: 11px 14px; border-radius: var(--r-md); background: #fff;
-    border: 1px solid var(--line); border-left: 4px solid var(--muted); box-shadow: 0 8px 30px rgba(0,0,0,.16);
     font-size: 13px; line-height: 1.45; white-space: pre-line; word-break: break-word; cursor: pointer;
     animation: toastIn .18s var(--ease); }
-  .toast.ok { border-left-color: var(--green, #0e9268); }
-  .toast.err { border-left-color: var(--red, #d93025); }
-  .toast.warn { border-left-color: #e6a817; }
+  .toast.ok { }
+  .toast.err { }
+  .toast.warn { }
   .toast svg { flex-shrink: 0; margin-top: 1px; }
   .toast.out { opacity: 0; transform: translateX(12px); transition: all .25s var(--ease); }
   @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
   @keyframes fadeIn { from { opacity: 0; } }
-  .modal-box { background: #fff; border-radius: var(--r-lg); box-shadow: 0 20px 60px rgba(0,0,0,.25); width: 100%; max-width: 480px; max-height: 88vh; overflow: hidden; display: flex; flex-direction: column; animation: modalPop .18s var(--ease); }
+  .modal-box { background: #fff; border-radius: var(--r-lg); width: 100%; max-width: 480px; max-height: 88vh; overflow: hidden; display: flex; flex-direction: column; animation: modalPop .18s var(--ease); }
   @keyframes modalPop { from { opacity: 0; transform: scale(.96) translateY(6px); } }
-  .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--line); }
+  .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; }
   .modal-head h3 { font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 9px; min-width: 0; }
   .modal-head h3 > svg { width: 19px; height: 19px; color: var(--brand); flex-shrink: 0; }
   .modal-body { padding: 18px; overflow-y: auto; }
-  .health-item { border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px; margin-bottom: 12px; }
+  .health-item { border-radius: var(--r-md); padding: 14px; margin-bottom: 12px; }
   .health-item .hi-head { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 14px; margin-bottom: 6px; }
   .hi-badge { font-size: 11.5px; font-weight: 700; padding: 3px 11px; border-radius: 999px; margin-left: auto; }
   .hi-badge.ok { background: var(--green-soft); color: var(--green); }
   .hi-badge.bad { background: var(--red-soft); color: var(--red); }
-  .px-item { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 0; border-top: 1px dashed var(--line); }
+  .px-item { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 0; }
   .px-item code { background: #f0f2f5; padding: 1px 7px; border-radius: 6px; font-size: 12px; }
 
   .page { display: none; }
@@ -433,11 +431,11 @@
 
   /* ---------- มือถือ ---------- */
   @media (max-width: 860px) {
-    .sidebar { position: static; width: 100%; flex-direction: row; align-items: center; border-right: none; border-bottom: 1px solid var(--line); }
+    .sidebar { position: static; width: 100%; flex-direction: row; align-items: center; }
     .logo { padding: 12px 14px; border-radius: 0 0 12px 0; }
     .logo small { display: none; }
     nav { display: flex; padding: 0 8px; }
-    nav a { padding: 10px 10px; border-left: none; border-radius: var(--r-md); }
+    nav a { padding: 10px 10px; border-radius: var(--r-md); }
     nav a.active { background: var(--brand-soft); }
     nav a .lbl { display: none; }
     nav a .num { display: none; }
@@ -945,7 +943,7 @@
           <div class="field"><label>ชื่อร้าน/แบรนด์</label><input id="lpTitle"></div>
           <div class="field"><label>รูปโปรไฟล์</label>
             <div style="display:flex;gap:8px;align-items:center">
-              <img id="lpAvatarPrev" alt="" style="width:38px;height:38px;border-radius:50%;object-fit:cover;border:1px solid var(--line);display:none">
+              <img id="lpAvatarPrev" alt="" style="width:38px;height:38px;border-radius:50%;object-fit:cover;display:none">
               <input id="lpAvatar" placeholder="วางลิงก์รูป หรือกดอัปโหลด" style="flex:1">
               <button class="btn-light btn-sm" type="button" onclick="lpUpload('lpAvatar')">อัปโหลด</button>
             </div>
@@ -1023,7 +1021,7 @@
         <h2><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/><path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3"/></svg></span>บัญชี FB ทั้งหมด <span class="h-desc">— เพิ่มได้หลายบัญชี แต่ละบัญชีมี token + บัญชีโฆษณา + เพจของตัวเอง</span></h2>
         <div id="profList"></div>
         <button class="btn-primary" onclick="addProfile()">+ เพิ่มบัญชี FB</button>
-        <details style="margin-top:14px;border:1px solid var(--line);border-radius:var(--r-md);padding:8px 12px">
+        <details style="margin-top:14px;border-radius:var(--r-md);padding:8px 12px">
           <summary style="cursor:pointer;font-weight:600">คู่มือตั้งค่า "เข้าสู่ระบบด้วย Facebook" — ทำครั้งเดียวต่อแอป หลังจากนั้นกดปุ่มเดียวจบ</summary>
           <ol class="setup-list" style="margin-top:10px">
             <li><span>เปิดแอปที่ <a href="https://developers.facebook.com/apps" target="_blank">developers.facebook.com/apps</a> → "เพิ่มผลิตภัณฑ์" → เพิ่ม <b>Facebook Login</b> (Login ด้วย Facebook)</span></li>
@@ -1059,7 +1057,7 @@
             <input id="apScaleMax" type="number" min="0" value="0" onchange="saveAutopilot()">
           </div>
         </div>
-        <details style="margin-bottom:10px;border:1px solid var(--line);border-radius:var(--r-md);padding:8px 12px">
+        <details style="margin-bottom:10px;border-radius:var(--r-md);padding:8px 12px">
           <summary style="cursor:pointer;font-weight:600">วิธีทำงานของระบบ — อ่านครั้งแรกครั้งเดียวพอ</summary>
           <div class="hint" style="margin:10px 0 8px">
             <b>เติมแอด:</b> ใส่ <b>0</b> = ไม่เติมให้ • ถ้าใส่เลข มันจะหยิบวิดีโอ+แคปชั่นจากคลังขึ้นแอดเองจนครบ <b>เปิดยิงทันที</b> โดยใช้ค่าตั้งต้นในหน้าขึ้นแอด (งบ/ลิงก์/วัตถุประสงค์/กลุ่มเป้าหมาย) — งบอยู่ระดับแคมเปญ (CBO) เพิ่มแอดกี่ตัวก็ไม่ใช้จ่ายเกินงบที่ตั้งไว้
@@ -1074,7 +1072,7 @@
           </div>
         </details>
 
-        <details id="apLimitsBox" style="margin-bottom:10px;border:1px solid var(--line);border-radius:var(--r-md);padding:8px 12px">
+        <details id="apLimitsBox" style="margin-bottom:10px;border-radius:var(--r-md);padding:8px 12px">
           <summary style="cursor:pointer;font-weight:600"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg> ปรับเพดานเอง</summary>
           <div class="hint" style="margin:10px 0">
             ทุกช่องมีกรอบต่ำสุด–สูงสุดบังคับไว้ ใส่นอกกรอบระบบจะบีบกลับให้เอง เพราะค่าพวกนี้คือเกราะกันบัญชีโดนแบนและกันเงินไหล<br>
@@ -1084,7 +1082,7 @@
           <div id="apLimitsMoney"></div>
           <button class="btn-light btn-sm" onclick="apResetLimits()" style="margin-top:8px">คืนค่าตั้งต้นทั้งหมด</button>
         </details>
-        <div class="hint" style="margin-bottom:10px;background:#fff6e5;border:1px solid #f0d9a8;border-radius:var(--r-md);padding:10px 12px">
+        <div class="hint" style="margin-bottom:10px;background:#fff6e5;border-radius:var(--r-md);padding:10px 12px">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#b45309" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg> <b>วิธีหยุดระบบคือปุ่มในหน้านี้เท่านั้น</b> — ระบบถูกตั้งให้ดูแลตัวเองเต็มที่ ถ้าไม่มีแคมเปญที่เปิดอยู่ มันจะสร้างใหม่ให้เสมอ ดังนั้นการเข้าไป <b>pause แคมเปญใน Ads Manager จะไม่ได้ผล</b> เพราะมันจะสร้างตัวใหม่มาแทนภายในไม่กี่นาที<br>
           จะหยุดจริงต้องปิดสวิตช์ "เปิดระบบอัตโนมัติ" หรือกด "หยุดฉุกเฉิน" ที่นี่
         </div>
@@ -1093,7 +1091,7 @@
           <button class="btn-light btn-sm" onclick="loadAutopilot()">รีเฟรชบันทึก</button>
         </div>
         <div id="apStatus" style="font-size:13px;margin-bottom:10px"></div>
-        <div id="apLog" style="max-height:280px;overflow-y:auto;border:1px solid var(--line);border-radius:var(--r-md);padding:8px"></div>
+        <div id="apLog" style="max-height:280px;overflow-y:auto;border-radius:var(--r-md);padding:8px"></div>
       </div>
 
       <div class="card">
@@ -1203,7 +1201,7 @@
       <div style="display:flex;gap:10px">
         <div class="field" style="max-width:74px"><label>ไอคอน</label>
           <button type="button" id="lpLinkModalIcon" class="lp-icon-btn" onclick="lpPickIcon(this)" title="เลือกไอคอน"
-            style="width:100%;height:38px;font-size:20px;line-height:1;background:#fff;border:1px solid var(--line);border-radius:8px;cursor:pointer">🔗</button>
+            style="width:100%;height:38px;font-size:20px;line-height:1;background:#fff;border-radius:8px;cursor:pointer">🔗</button>
           <input type="hidden" class="lp-icon" id="lpLinkModalIconVal">
         </div>
         <div class="field" style="flex:1"><label>ข้อความบนปุ่ม</label><input id="lpLinkModalLabel" placeholder="แอดไลน์"></div>
@@ -2921,12 +2919,12 @@ function lpPickIcon(btn) {
   document.querySelectorAll('.lp-icon-pop').forEach(x => x.remove());
   const pop = document.createElement('div');
   pop.className = 'lp-icon-pop';
-  pop.style.cssText = 'position:absolute;z-index:60;background:#fff;border:1px solid var(--line);border-radius:10px;'
-    + 'box-shadow:0 8px 26px rgba(0,0,0,.14);padding:10px;width:250px;max-height:280px;overflow:auto';
+  pop.style.cssText = 'position:absolute;z-index:60;background:#fff;border-radius:10px;'
+    + 'padding:10px;width:250px;max-height:280px;overflow:auto';
   pop.innerHTML = LP_ICONS.map(([group, icons]) =>
     `<div style="font-size:11.5px;color:var(--muted);margin:4px 2px 5px">${esc(group)}</div>
      <div style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:6px">${icons.map(ic =>
-       `<button type="button" data-ic="${ic}" style="width:31px;height:31px;font-size:17px;line-height:1;border:1px solid transparent;background:none;border-radius:6px;cursor:pointer">${ic}</button>`
+       `<button type="button" data-ic="${ic}" style="width:31px;height:31px;font-size:17px;line-height:1;background:none;border-radius:6px;cursor:pointer">${ic}</button>`
      ).join('')}</div>`).join('');
 
   const wrap = btn.closest('.field');
@@ -2967,7 +2965,7 @@ function lpRenderBgs() {
     `<button type="button" onclick="lpSetBg(${jsStr(k)})" title="${esc(v.label)}"
       style="width:66px;height:52px;border-radius:10px;cursor:pointer;background:${v.css};padding:0;
       display:flex;flex-direction:column;justify-content:center;gap:3px;align-items:center;
-      border:2px solid ${k === lpBg ? 'var(--brand-dark)' : 'var(--line)'}">
+      outline:${k === lpBg ? '3px solid var(--brand-dark)' : '1px solid var(--line-strong)'};outline-offset:-1px">
       <span style="display:block;width:44px;height:9px;border-radius:3px;background:${v.card}"></span>
       <span style="display:block;width:44px;height:9px;border-radius:3px;background:${v.card}"></span>
       <span style="font-size:9px;color:${v.tx};line-height:1;margin-top:1px">${esc(v.label)}</span>
@@ -3328,7 +3326,7 @@ async function loadAutopilot() {
 
   const log = d.log || [];
   document.getElementById('apLog').innerHTML = log.length
-    ? log.map(l => `<div style="font-size:12.5px;padding:4px 2px;border-bottom:1px solid var(--line);white-space:pre-wrap">${AP_LEVEL[l.level] || ''} <span class="muted">${new Date(l.ts).toLocaleString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>  ${esc(l.msg)}</div>`).join('')
+    ? log.map(l => `<div style="font-size:12.5px;padding:4px 2px;white-space:pre-wrap">${AP_LEVEL[l.level] || ''} <span class="muted">${new Date(l.ts).toLocaleString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>  ${esc(l.msg)}</div>`).join('')
     : '<div class="muted" style="font-size:12.5px;padding:6px">ยังไม่มีบันทึก</div>';
 
   apConnectLive();
@@ -3362,7 +3360,7 @@ function apPushLog(l) {
   const empty = box.querySelector('.muted');
   if (empty) box.innerHTML = '';
   const div = document.createElement('div');
-  div.style.cssText = 'font-size:12.5px;padding:4px 2px;border-bottom:1px solid var(--line);white-space:pre-wrap';
+  div.style.cssText = 'font-size:12.5px;padding:4px 2px;white-space:pre-wrap';
   div.innerHTML = `${AP_LEVEL[l.level] || ''} <span class="muted">${new Date(l.ts).toLocaleString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>  ${esc(l.msg)}`;
   box.prepend(div);
   while (box.children.length > 60) box.lastChild.remove();
@@ -3471,7 +3469,7 @@ async function aiAdvise(btn) {
 
   body.innerHTML = `
     <div style="background:var(--brand-soft);border-radius:var(--r-md);padding:12px 14px;margin-bottom:14px;font-size:13.5px;line-height:1.6">${esc(d.summary || '')}</div>
-    ${gaps.length ? `<div style="background:#fff6e5;border:1px solid #f0d9a8;border-radius:var(--r-md);padding:10px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.6">⚠ ${gaps.join('<br>')}</div>` : ''}
+    ${gaps.length ? `<div style="background:#fff6e5;border-radius:var(--r-md);padding:10px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.6">⚠ ${gaps.join('<br>')}</div>` : ''}
     ${actions.map(rowOf).join('')}
     <div class="hint" style="margin-top:12px">นี่เป็นแค่ข้อเสนอจากตัวเลขที่เห็น — ตัดสินใจเองอีกทีก่อนกดนะครับ${d.usage ? ` • ใช้ ${d.usage.input.toLocaleString()} + ${d.usage.output.toLocaleString()} โทเคน` : ''}</div>`;
 }
