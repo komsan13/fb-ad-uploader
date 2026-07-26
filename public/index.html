@@ -36,13 +36,15 @@
   .logo .mark { width: 30px; height: 30px; border-radius: 8px; background: #fff; color: var(--brand); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .logo small { display: block; font-size: 10.5px; font-weight: 500; color: rgba(255,255,255,.78); letter-spacing: 0; }
   nav { padding: 8px 8px; flex: 1; display: flex; flex-direction: column; gap: 2px; }
-  nav a { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: var(--r-md); color: var(--text); text-decoration: none; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 150ms var(--ease), color 150ms var(--ease); }
+  nav a { display: flex; align-items: center; gap: 9px; padding: 9px 11px; border-radius: var(--r-md); color: var(--text); text-decoration: none; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 150ms var(--ease), color 150ms var(--ease); }
   nav a .num { width: 20px; height: 20px; border-radius: 5px; background: #f0f2f5; color: var(--muted); font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; transition: background 150ms var(--ease), color 150ms var(--ease); }
   nav a svg { width: 17px; height: 17px; flex-shrink: 0; color: var(--muted); transition: color 150ms var(--ease); }
   nav a:hover { background: #f3f5f7; }
   nav a.active { background: var(--brand-soft); color: var(--brand-dark); }
   nav a.active .num { background: var(--brand); color: #fff; }
   nav a.active svg { color: var(--brand-dark); }
+  .nav-sec { padding: 12px 12px 5px; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #9aa1ae; }
+  .nav-sec:first-child { padding-top: 4px; }
   .side-foot { padding: 10px 14px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); }
   .side-foot .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #c3c8d1; margin-right: 7px; }
   .side-foot .dot.on { background: var(--green); }
@@ -65,7 +67,7 @@
 
   /* ---------- stat tiles ---------- */
   .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(178px, 1fr)); gap: 10px; margin-bottom: 10px; }
-  .tile { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 11px 13px; }
+  .tile { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 13px 15px; }
   .tile .t-label { font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
   .t-ic { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .t-ic svg { width: 14px; height: 14px; }
@@ -74,11 +76,11 @@
   .t-ic.o { background: var(--amber-soft); color: var(--amber); }
   .t-ic.r { background: var(--red-soft); color: var(--red); }
   .t-ic.p { background: #f1edfd; color: #7c3aed; }
-  .tile .t-value { font-size: 20px; font-weight: 700; line-height: 1.15; letter-spacing: -.02em; color: var(--blue); font-variant-numeric: tabular-nums; }
+  .tile .t-value { font-size: 22px; font-weight: 700; line-height: 1.15; letter-spacing: -.02em; color: var(--blue); font-variant-numeric: tabular-nums; }
   .tile .t-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
 
   /* ---------- การ์ด ---------- */
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-card); padding: 14px; margin-bottom: 10px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-card); padding: 13px 14px; margin-bottom: 10px; }
   .card h2 { font-size: 14px; font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .card .h-desc { font-weight: 400; font-size: 12.5px; color: var(--muted); }
   .sec-ic { display: inline-flex; color: var(--brand); flex-shrink: 0; }
@@ -298,10 +300,13 @@
   /* ---------- ตารางแคมเปญ (datatable เต็ม card) ---------- */
   .tbl-wrap { overflow-x: auto; margin: 0 -14px -14px; border-radius: 0 0 var(--r-lg) var(--r-lg); }
   table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 960px; }
-  thead th { text-align: left; color: var(--muted); font-size: 11.5px; font-weight: 700; padding: 7px 12px; background: #f8f9fb; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); white-space: nowrap; position: sticky; top: 0; z-index: 2; }
+  /* เส้นแบ่งคอลัมน์คือสิ่งที่ทำให้อ่านเป็น "ตาราง" ไม่ใช่ "รายการลอยๆ" */
+  thead th + th, tbody td + td { border-left: 1px solid #eef0f4; }
+  thead th { background: #f7f8fa; }
+  thead th { text-align: left; color: #59616f; font-size: 12px; font-weight: 700; padding: 10px 13px; background: #f8f9fb; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); white-space: nowrap; position: sticky; top: 0; z-index: 2; }
   th:first-child, td:first-child { padding-left: 20px; }
   th:last-child, td:last-child { padding-right: 20px; }
-  td { padding: 8px 12px; border-bottom: 1px solid #f2f3f7; vertical-align: middle; }
+  td { padding: 11px 13px; border-bottom: 1px solid #eef0f4; vertical-align: middle; }
   tbody tr:hover td { background: #f7f9fd; }
   tbody tr:last-child td { border-bottom: none; }
   td.tbl-msg { text-align: center; padding: 46px 20px; color: var(--muted); font-size: 13.5px; background: #fff !important; }
@@ -329,11 +334,28 @@
   thead th.srt::after { content: '↕'; margin-left: 5px; opacity: .32; font-size: 10px; }
   thead th.srt.asc::after { content: '↑'; opacity: 1; color: var(--brand); }
   thead th.srt.desc::after { content: '↓'; opacity: 1; color: var(--brand); }
-  .tbl-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 0 0 9px; }
-  .tbl-bar .tb-search { position: relative; flex: 0 1 260px; min-width: 170px; }
+  /* แถบเครื่องมือเต็มแถวเหนือตาราง — กินขอบเท่าตาราง มีพื้นและเส้นคั่น จึงอ่านเป็นส่วนหนึ่งของกริด */
+  .tbl-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 -14px; padding: 9px 13px; background: #fbfcfd; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .tbl-bar .tb-search { position: relative; flex: 0 1 250px; min-width: 165px; }
   .tbl-bar .tb-search svg { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; color: var(--muted); pointer-events: none; }
-  .tbl-bar .tb-search input { padding-left: 29px; font-size: 12.5px; }
+  .tbl-bar .tb-search input { padding-left: 29px; font-size: 12.5px; height: 30px; }
+  .tbl-bar .tb-acts { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .tbl-bar .tb-acts button { background: #fff; border: 1px solid var(--line-strong); color: var(--text); padding: 5px 11px; font-size: 12.5px; }
+  .tbl-bar .tb-acts button:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); background: var(--brand-soft); }
+  .tbl-bar .tb-acts button:disabled { opacity: .45; cursor: default; }
+  .tbl-bar .tb-sel { font-size: 12px; color: var(--brand); font-weight: 700; font-variant-numeric: tabular-nums; }
   .tbl-bar .tb-count { margin-left: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* ช่องติ๊กหน้าแถว */
+  th.tb-ck, td.tb-ck { width: 38px; padding-left: 13px; padding-right: 0; border-left: none !important; }
+  th.tb-ck input, td.tb-ck input { width: 15px; height: 15px; padding: 0; margin: 0; accent-color: var(--brand); cursor: pointer; vertical-align: middle; }
+  tbody tr.tb-on td { background: var(--brand-soft) !important; }
+
+  /* คอลัมน์จัดการตรึงขวา — เลื่อนตารางแล้วปุ่มยังอยู่ให้กด (ทำเฉพาะตารางที่คอลัมน์ท้ายเป็นปุ่มจริง) */
+  table.tb-stick thead th:last-child, table.tb-stick tbody td:last-child { position: sticky; right: 0; z-index: 1; background: var(--card); box-shadow: -6px 0 8px -8px rgba(20,22,28,.22); }
+  table.tb-stick thead th:last-child { background: #f7f8fa; z-index: 3; }
+  table.tb-stick tbody tr:hover td:last-child { background: #f7f9fd; }
+  table.tb-stick tbody tr.tb-on td:last-child { background: var(--brand-soft) !important; }
   .tbl-foot { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 9px 14px 0; font-size: 12px; color: var(--muted); }
   .tbl-foot button { padding: 3px 9px; font-size: 12px; background: #fff; border: 1px solid var(--line-strong); border-radius: var(--r-sm); }
   .tbl-foot button:disabled { opacity: .4; cursor: default; }
@@ -426,11 +448,14 @@
       <div>FB Ad Uploader<small>Marketing API • Multi-Account</small></div>
     </div>
     <nav>
+      <div class="nav-sec">ภาพรวม</div>
       <a data-page="dashboard" class="active" onclick="showPage('dashboard')"><span class="num">1</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg><span class="lbl">แดชบอร์ด</span></a>
       <a data-page="campaigns" onclick="showPage('campaigns')"><span class="num">2</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg><span class="lbl">แคมเปญของฉัน</span></a>
       <a data-page="health" onclick="showPage('health')"><span class="num">3</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/><path d="M3.22 12H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27"/></svg><span class="lbl">สุขภาพบัญชี</span></a>
+      <div class="nav-sec">คลังและปลายทาง</div>
       <a data-page="library" onclick="showPage('library')"><span class="num">4</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m10 8 6 4-6 4Z"/><rect width="20" height="14" x="2" y="5" rx="2"/></svg><span class="lbl">คลังสื่อ</span></a>
       <a data-page="landing" onclick="showPage('landing')"><span class="num">5</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 8h10"/><path d="M7 12h10"/><path d="M7 16h6"/></svg><span class="lbl">หน้า Landing</span></a>
+      <div class="nav-sec">ตั้งค่า</div>
       <a data-page="settings" onclick="showPage('settings')"><span class="num">6</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span class="lbl">บัญชี FB</span></a>
     </nav>
     <div class="side-foot" id="sideConn"><span class="dot"></span>ยังไม่มีบัญชี</div>
@@ -823,7 +848,7 @@
         </h2>
         <div id="healthAmBar" style="margin-bottom:12px"></div>
         <div class="tbl-wrap">
-          <table>
+          <table data-bulk="ซ่อนที่เลือก:bulkHideAccounts|โชว์ที่เลือก:bulkShowAccounts">
             <thead><tr>
               <th>บัญชีโฆษณา</th>
               <th>Pixel</th>
@@ -1919,6 +1944,31 @@ const EYE_OFF_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none"
 function eyeBtn(kind, id, hidden) {
   return `<button class="icon-btn btn-light" title="${hidden ? 'ถูกซ่อนอยู่ (autopilot ไม่ดูแล) — กดเพื่อโชว์กลับและให้ autopilot ดูแลต่อ' : 'ซ่อนจากหน้าแดชบอร์ด/แคมเปญ/ขึ้นแอด + autopilot หยุดดูแล'}" onclick="toggleHidden(${jsStr(kind)},${jsStr(id)},${hidden ? 'false' : 'true'},this)">${hidden ? EYE_OFF_SVG : EYE_ON_SVG}</button>`;
 }
+// ปุ่มรวมของตารางบัญชี — ยิงเส้นเดียวกับปุ่มลูกตาทีละแถว ไม่ได้เปิดทางลัดใหม่
+async function bulkHideAccounts(rows) { return bulkToggleAccounts(rows, true); }
+async function bulkShowAccounts(rows) { return bulkToggleAccounts(rows, false); }
+async function bulkToggleAccounts(rows, hide) {
+  const ids = rows.map((r) => r.dataset.id).filter(Boolean);
+  if (!ids.length) return;
+  // ซ่อน = autopilot เลิกดูแล แต่แอดที่เปิดค้างยังวิ่งใช้เงินต่อ — ต้องให้ผู้ใช้รู้ก่อนกด (เหมือนปุ่มทีละแถว)
+  if (hide && !confirm(`ซ่อน ${ids.length} บัญชี? autopilot จะไม่เติมแอด ไม่ขยายงบ ไม่แก้แอดให้บัญชีพวกนี้อีก แต่แอดที่ยังเปิดอยู่จะวิ่งต่อโดยไม่มีระบบดูแล`)) return;
+  let fail = 0;
+  for (const id of ids) {
+    try {
+      const d = await (await fetch('/api/hidden', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ kind: 'account', id, hidden: hide }),
+      })).json();
+      if (d.error) throw new Error(d.error);
+    } catch { fail++; }
+  }
+  toast(fail ? `${hide ? 'ซ่อน' : 'โชว์'}สำเร็จ ${ids.length - fail} จาก ${ids.length} — พลาด ${fail}` : `${hide ? 'ซ่อน' : 'โชว์'}แล้ว ${ids.length} บัญชี`);
+  [accountCache, dashCache, campCache].forEach((c) => Object.keys(c).forEach((k) => delete c[k]));
+  Object.keys(healthCache).forEach((k) => delete healthCache[k]);
+  saveCaches();
+  loadHealthPage(true);
+}
+
 async function toggleHidden(kind, id, hide, btn) {
   // ซ่อนบัญชี = autopilot เลิกดูแล แต่แอดที่เปิดค้างยังวิ่งใช้เงินต่อเอง — ต้องให้ผู้ใช้รู้ก่อนกด
   if (hide && kind === 'account' && !confirm('ซ่อนบัญชีนี้?\n\n• หายจากหน้าแดชบอร์ด/แคมเปญ/ขึ้นแอด\n• autopilot จะไม่เติมแอด ไม่ขยายงบ ไม่แก้แอดให้บัญชีนี้อีก\n• แอดที่ยังเปิดอยู่จะวิ่งต่อโดยไม่มีระบบดูแล — ถ้าไม่อยากให้เงินเดิน ปิดแอดก่อนซ่อน\n\nกดโชว์กลับได้ที่หน้านี้')) return;
@@ -2037,7 +2087,7 @@ function renderHealthPage(results) {
     const icon = a.dead ? ic('skull', { color: 'var(--red,#d93025)' }) + ' '
       : a.missing ? ic('wrench', { color: '#b45309' }) + ' '
       : ic('checkCircle', { color: 'var(--green,#0e9268)' }) + ' ';
-    return `<tr${rowStyle}>
+    return `<tr${rowStyle} data-id="${esc(String(a.id))}">
       <td style="font-weight:600">${icon}${esc(a.name)}${warn}${deadTag}${apTag}<div class="res-label">${multi ? esc(a.plabel) + ' • ' : ''}${a.id}</div></td>
       <td>${px}</td>
       <td>${card}</td>
@@ -4354,6 +4404,50 @@ function tblApply(t) {
 
 const TB_SEARCH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
 
+// ตารางที่ประกาศ data-bulk = มีปุ่มจัดการรวม จึงมีช่องติ๊กให้เลือกหลายแถว
+// ตารางที่ไม่มีปุ่มรวมจะไม่ใส่ช่องติ๊ก — ช่องติ๊กที่กดแล้วไม่มีอะไรให้ทำคือหลอกผู้ใช้
+function tblSelectable(t) { return !!t.dataset.bulk; }
+
+function tblSelected(t) {
+  return Array.from(t.tBodies[0].rows)
+    .filter((r) => { const c = r.querySelector('td.tb-ck input'); return c && c.checked; });
+}
+
+function tblSelChanged(t) {
+  const st = tblState.get(t);
+  if (!st || !st.bar) return;
+  const rows = tblRows(t);
+  const sel = tblSelected(t);
+  rows.forEach((r) => r.classList.toggle('tb-on', !!(r.querySelector('td.tb-ck input') || {}).checked));
+  st.bar.querySelector('.tb-sel').textContent = sel.length ? `เลือกไว้ ${sel.length}` : '';
+  st.bar.querySelectorAll('.tb-acts button').forEach((b) => { b.disabled = !sel.length; });
+  const all = st.head && st.head.querySelector('input');
+  if (all) {
+    const shownRows = rows.filter((r) => r.style.display !== 'none');
+    all.checked = shownRows.length > 0 && shownRows.every((r) => (r.querySelector('td.tb-ck input') || {}).checked);
+    all.indeterminate = !all.checked && sel.length > 0;
+  }
+}
+
+// ตัว render เดิมไม่รู้เรื่องช่องติ๊ก — เติมให้ทุกครั้งที่มันเขียน tbody ใหม่
+function tblSyncChecks(t) {
+  if (!tblSelectable(t)) return;
+  for (const r of t.tBodies[0].rows) {
+    const msg = r.querySelector('.tbl-msg');
+    if (r.querySelector('td.tb-ck')) continue;
+    const td = document.createElement('td');
+    td.className = 'tb-ck';
+    if (msg) { td.innerHTML = ''; } else {
+      td.innerHTML = '<input type="checkbox">';
+      td.querySelector('input').addEventListener('change', () => tblSelChanged(t));
+    }
+    r.insertBefore(td, r.cells[0]);
+    // แถวข้อความสถานะใช้ colspan เต็มตาราง — เพิ่มคอลัมน์แล้วต้องขยายตาม ไม่งั้นตารางเบี้ยว
+    if (msg && msg.hasAttribute('colspan')) msg.setAttribute('colspan', String(Number(msg.getAttribute('colspan')) + 1));
+  }
+  tblSelChanged(t);
+}
+
 function tblEnhance(t) {
   if (tblState.has(t) || !t.tHead || !t.tBodies[0]) return;
   const wrap = t.closest('.tbl-wrap');
@@ -4364,7 +4458,9 @@ function tblEnhance(t) {
   // แถบค้นหา + ตัวนับ วางเหนือกล่องตาราง (นอก .tbl-wrap เพราะกล่องนั้นเลื่อนแนวนอน)
   const bar = document.createElement('div');
   bar.className = 'tbl-bar';
-  bar.innerHTML = `<div class="tb-search">${TB_SEARCH_SVG}<input type="search" placeholder="ค้นหาในตารางนี้"></div><div class="tb-count"></div>`;
+  bar.innerHTML = `<div class="tb-acts"></div><span class="tb-sel"></span>`
+    + `<div class="tb-search">${TB_SEARCH_SVG}<input type="search" placeholder="ค้นหาในตารางนี้"></div>`
+    + '<div class="tb-count"></div>';
   wrap.parentNode.insertBefore(bar, wrap);
   bar.querySelector('input').addEventListener('input', (e) => {
     st.q = e.target.value; st.page = 1; tblApply(t);
@@ -4378,6 +4474,27 @@ function tblEnhance(t) {
   foot.querySelector('.tb-prev').addEventListener('click', () => { st.page--; tblApply(t); });
   foot.querySelector('.tb-next').addEventListener('click', () => { st.page++; tblApply(t); });
   st.foot = foot;
+
+  if (tblSelectable(t)) {
+    const th = document.createElement('th');
+    th.className = 'tb-ck';
+    th.innerHTML = '<input type="checkbox" title="เลือกทุกแถวที่เห็นอยู่">';
+    t.tHead.rows[0].insertBefore(th, t.tHead.rows[0].cells[0]);
+    st.head = th;
+    th.querySelector('input').addEventListener('change', (e) => {
+      tblRows(t).filter((r) => r.style.display !== 'none')
+        .forEach((r) => { const c = r.querySelector('td.tb-ck input'); if (c) c.checked = e.target.checked; });
+      tblSelChanged(t);
+    });
+    for (const spec of t.dataset.bulk.split('|')) {
+      const [label, fn] = spec.split(':');
+      const b = document.createElement('button');
+      b.textContent = label;
+      b.disabled = true;
+      b.addEventListener('click', () => window[fn](tblSelected(t)));
+      bar.querySelector('.tb-acts').appendChild(b);
+    }
+  }
 
   // คอลัมน์สุดท้ายมักเป็นปุ่มจัดการ ไม่มีอะไรให้เรียง — ข้ามไป
   const ths = Array.from(t.tHead.rows[0].cells);
@@ -4393,8 +4510,12 @@ function tblEnhance(t) {
     });
   });
 
-  // ตัว render เดิมเขียน tbody ใหม่ทั้งก้อน — ต้องจัดเรียง/กรอง/ตัดหน้าให้ใหม่ทุกครั้ง
-  new MutationObserver(() => tblApply(t)).observe(t.tBodies[0], { childList: true });
+  // คอลัมน์ท้ายที่หัวว่าง = คอลัมน์ปุ่มจัดการ ตรึงไว้ขวาเพื่อให้เลื่อนตารางแล้วยังกดได้
+  if (!ths[ths.length - 1].textContent.trim()) t.classList.add('tb-stick');
+
+  // ตัว render เดิมเขียน tbody ใหม่ทั้งก้อน — ต้องเติมช่องติ๊ก/จัดเรียง/กรอง/ตัดหน้าให้ใหม่ทุกครั้ง
+  new MutationObserver(() => { tblSyncChecks(t); tblApply(t); }).observe(t.tBodies[0], { childList: true });
+  tblSyncChecks(t);
   tblApply(t);
 }
 
