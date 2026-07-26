@@ -20,7 +20,7 @@
     --line: #e9ebf0; --line-strong: #d8dbe3;
     --text: #1b1f27; --muted: #6f7684;
     /* ความหนาแน่นแบบตารางปฏิบัติการ: มุมเล็ก แถบบนเตี้ย เห็นข้อมูลได้มากขึ้นเกือบเท่าตัว */
-    --sidebar-w: 224px; --header-h: 52px;
+    --sidebar-w: 224px; --header-h: 58px;
     /* ทุกอย่างที่กดได้ (ปุ่ม/ตัวเลือก/ช่องกรอก) ต้องใช้ --r-md ตัวเดียวกันหมด ห้ามใส่ 999px หรือค่าอื่นเอง
      ส่วนป้ายที่กดไม่ได้ (st-pill/badge/chip) กับแถบความคืบหน้า ยังกลมได้ตามเดิม */
   --r-lg: 9px; --r-md: 6px; --r-sm: 5px;
@@ -55,7 +55,12 @@
 
   /* แถบบนสีเขียว */
   .topstrip { margin: 0 -20px; background: var(--brand); color: #fff; height: var(--header-h); padding: 0 20px; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
-  .ts-clock { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; }
+  .ts-clock { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; background: rgba(255,255,255,.14); border-radius: var(--r-md); padding: 6px 12px; }
+  .ts-right { display: flex; align-items: center; gap: 8px; }
+  /* ปุ่มบนแถบสีเข้ม: เส้นขอบขาวโปร่ง ชี้แล้วเป็นพื้นขาว — ให้เห็นว่ากดได้โดยไม่แย่งสายตาจากปุ่มหลักในหน้า */
+  .ts-btn { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; border: 1px solid rgba(255,255,255,.45); background: transparent; color: #fff; font-size: 12.5px; font-weight: 600; border-radius: var(--r-md); }
+  .ts-btn:hover { background: #fff; color: var(--brand-dark); border-color: #fff; }
+  .ts-btn svg { width: 15px; height: 15px; }
   .ts-clock svg { width: 16px; height: 16px; }
   .top-profile { display: flex; align-items: center; gap: 7px; background: #fff; border-radius: var(--r-md); padding: 6px 10px 6px 13px; font-size: 13px; color: var(--muted); }
   .top-profile svg { width: 16px; height: 16px; flex-shrink: 0; }
@@ -476,9 +481,15 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
         <span id="clockNow"></span>
       </div>
+      <div class="ts-right">
       <div class="top-profile" title="บัญชีที่ใช้งานอยู่ (ใช้กับการค้นหา interest และหน้าแคมเปญ)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-3.9 3.6-6 8-6s8 2.1 8 6"/></svg>
         <select id="topProfile" onchange="setActiveProfile(this.value)"></select>
+      </div>
+        <button class="ts-btn" onclick="logout()" title="ล้างรหัสที่เบราว์เซอร์จำไว้ แล้วถามรหัสใหม่">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
+          ออกจากระบบ
+        </button>
       </div>
     </div>
     <div class="page-banner">
@@ -1758,6 +1769,17 @@ function spendByCurText(items) {
 let dashDate = 'last_7d';
 const dashCache = {}; // datePreset -> {ts, results}
 const DASH_CACHE_MS = 300000;
+// ออกจากระบบ — ระบบใช้ basic auth ที่ตัว proxy ไม่ใช่ session ของแอป จึงไม่มี session ให้ลบ
+// ทำได้แค่ล้างแคชในเครื่องแล้วยิงเส้นที่ตอบ 401 เพื่อให้เบราว์เซอร์ทิ้งรหัสที่จำไว้
+async function logout() {
+  if (!confirm('ออกจากระบบ? จะล้างข้อมูลที่แคชไว้ในเบราว์เซอร์นี้ แล้วถามรหัสใหม่')) return;
+  try { sessionStorage.clear(); } catch { /* ปิดใช้ก็ข้าม */ }
+  try { await fetch('/api/logout', { cache: 'no-store' }); } catch { /* 401 คือผลที่ต้องการ ไม่ใช่ error */ }
+  // บางเบราว์เซอร์ยังจำรหัสไว้จนปิดแท็บ — บอกตรงๆ ดีกว่าปล่อยให้เข้าใจว่าออกแล้วทั้งที่ยังเข้าได้
+  alert('ล้างรหัสที่จำไว้แล้ว — ถ้ารีเฟรชแล้วยังไม่ถูกถามรหัส ให้ปิดแท็บนี้ทิ้ง (ข้อจำกัดของ basic auth)');
+  location.replace('/');
+}
+
 function saveCaches() {
   try { sessionStorage.setItem('fbadCache', JSON.stringify({ dash: dashCache, camp: campCache, health: healthCache })); } catch { /* เต็ม/ปิดใช้ก็ข้าม */ }
 }

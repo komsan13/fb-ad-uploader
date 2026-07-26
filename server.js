@@ -1045,6 +1045,16 @@ app.post('/api/ai-key', (req, res) => {
   res.json({ ok: true, hasKey: !!cfg.anthropicKey });
 });
 
+// ---------- ออกจากระบบ ----------
+// ระบบนี้ล็อกอินด้วย basic auth ที่ traefik (label fbad-auth.basicauth.users) ไม่ใช่ session ของแอป
+// จึงไม่มี session ให้ลบ วิธีเดียวที่ทำได้คือตอบ 401 กลับไป เพื่อให้เบราว์เซอร์ทิ้งรหัสที่จำไว้
+// ของ realm นี้ แล้วถามใหม่รอบหน้า — เป็นวิธี best-effort ตามข้อจำกัดของ basic auth
+// (บางเบราว์เซอร์ยังจำไว้จนปิดแท็บ หน้าเว็บจึงบอกผู้ใช้ให้ปิดแท็บถ้าไม่ถูกถามรหัสใหม่)
+app.get('/api/logout', (req, res) => {
+  res.set('WWW-Authenticate', 'Basic realm="fbad"');
+  res.status(401).json({ ok: true });
+});
+
 // ---------- จัดการบัญชี FB (profiles) ----------
 app.get('/api/profiles', (req, res) => res.json(publicProfiles(loadConfig())));
 
