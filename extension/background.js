@@ -38,13 +38,14 @@ async function push(token, why) {
   const cfg = await chrome.storage.local.get(['appUrl', 'user', 'pass', 'profile']);
   if (!cfg.appUrl || !cfg.profile) return setStatus('ยังไม่ได้ตั้งค่า — กดไอคอนส่วนขยายแล้วตั้งค่าก่อน');
   const headers = { 'content-type': 'application/json' };
-  // หน้าเว็บอยู่หลัง basic auth — ส่วนขยายไม่มี session ของเบราว์เซอร์ ต้องแนบ header เอง
+  // หน้าเว็บอยู่หลัง basic auth — ปกติใช้รหัสที่เบราว์เซอร์จำไว้ (credentials:'include') ก็พอ
+  // ช่องชื่อผู้ใช้/รหัสในป๊อปอัปมีไว้เผื่อเบราว์เซอร์ไม่ได้จำไว้เท่านั้น
   if (cfg.user) headers.Authorization = 'Basic ' + btoa(`${cfg.user}:${cfg.pass || ''}`);
   try {
     const r = await fetch(cfg.appUrl.replace(/\/+$/, '') + '/api/am-token', {
-      method: 'POST', headers, body: JSON.stringify({ profile: cfg.profile, token }),
+      method: 'POST', headers, credentials: 'include', body: JSON.stringify({ profile: cfg.profile, token }),
     });
-    if (r.status === 401) return setStatus('ชื่อผู้ใช้/รหัสผ่านของหน้าเว็บไม่ถูก (401)');
+    if (r.status === 401) return setStatus('หน้าเว็บขอรหัสผ่าน (401) — กรอกชื่อผู้ใช้/รหัสในป๊อปอัปแล้วลองใหม่');
     const d = await r.json().catch(() => ({}));
     if (!r.ok || d.error) return setStatus(`ส่งไม่สำเร็จ: ${d.error || 'HTTP ' + r.status}`);
     return setStatus(`ส่ง token แล้ว (${why})`, true);

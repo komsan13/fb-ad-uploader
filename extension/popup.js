@@ -1,5 +1,9 @@
 const $ = (id) => document.getElementById(id);
 
+// ที่อยู่หน้าเว็บของระบบนี้ — เติมไว้ให้เลย ผู้ใช้ไม่ต้องมานั่งพิมพ์เอง
+// (โดเมนนี้อยู่ใน host_permissions ของ manifest ด้วย จะได้ไม่ต้องกดอนุญาตสิทธิ์อีกรอบ)
+const DEFAULT_APP_URL = 'https://ad.senball.com';
+
 function show(s) {
   const el = $('status');
   if (!s || !s.text) { el.textContent = 'ยังไม่เคยส่ง'; el.className = ''; return; }
@@ -15,7 +19,9 @@ async function loadProfiles(cfg) {
   const headers = {};
   if (cfg.user) headers.Authorization = 'Basic ' + btoa(`${cfg.user}:${cfg.pass || ''}`);
   try {
-    const r = await fetch(cfg.appUrl.replace(/\/+$/, '') + '/api/profiles', { headers });
+    // credentials:'include' = ใช้รหัส basic auth ที่เบราว์เซอร์จำไว้อยู่แล้ว
+    // ผู้ใช้ส่วนใหญ่จึงไม่ต้องกรอกชื่อผู้ใช้/รหัสซ้ำในนี้เลย
+    const r = await fetch(cfg.appUrl.replace(/\/+$/, '') + '/api/profiles', { headers, credentials: 'include' });
     if (!r.ok) throw new Error(r.status === 401 ? 'ชื่อผู้ใช้/รหัสผ่านไม่ถูก' : 'HTTP ' + r.status);
     const d = await r.json();
     sel.innerHTML = (d.profiles || []).map((p) =>
@@ -30,11 +36,16 @@ async function loadProfiles(cfg) {
 
 async function init() {
   const cfg = await chrome.storage.local.get(['appUrl', 'user', 'pass', 'profile', 'status']);
-  $('appUrl').value = cfg.appUrl || '';
+  if (!cfg.appUrl) cfg.appUrl = DEFAULT_APP_URL;
+  $('appUrl').value = cfg.appUrl;
   $('user').value = cfg.user || '';
   $('pass').value = cfg.pass || '';
   show(cfg.status);
   await loadProfiles(cfg);
+  // มีบัญชีเดียวและยังไม่เคยตั้งค่า = ตั้งให้เสร็จเลย ไม่ต้องให้กดบันทึกเอง
+  if (!cfg.profile && $('profile').value) {
+    await chrome.storage.local.set({ appUrl: cfg.appUrl, profile: $('profile').value });
+  }
 }
 
 $('save').addEventListener('click', async () => {
