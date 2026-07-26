@@ -1932,11 +1932,21 @@ const AM_SNIPPET = 'copy(document.documentElement.innerHTML.match(/"access_token
 // (เชื่อว่าเป็นบาท ส่วน threshold_amount เป็นสตางค์) ถ้าหน่วยผิดจะเห็นตั้งแต่ครั้งแรกที่เปิด
 function limitCell(a) {
   const bt = (n) => '฿' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  if (a.dsl === undefined || a.dsl === null) return '<span style="color:var(--muted)">—</span>';
+  // ส่วนขยายดึง token ตอนหน้า Ads Manager เปิดอยู่ ปุ่มนี้จึงเป็นตัวกระตุ้นให้มันได้ token ใหม่
+  // ผูก ?act= ไว้ด้วยเพื่อให้เปิดตรงเข้าบัญชีนั้นเลย ไม่ต้องมานั่งเลือกในหน้า Ads Manager อีกที
+  const openBtn = (label, title) => `<a class="btn-light btn-sm" style="text-decoration:none;display:inline-block;white-space:nowrap"`
+    + ` target="_blank" rel="noopener" title="${title}"`
+    + ` href="https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${encodeURIComponent(a.id)}">${label}</a>`;
+  const refresh = openBtn('↗', 'เปิด Ads Manager ของบัญชีนี้ — ส่วนขยายจะดึง token ใหม่ให้เองตอนหน้าโหลด');
+  if (a.dsl === undefined || a.dsl === null) {
+    return openBtn('เปิด Ads Manager ↗', 'ยังไม่มีตัวเลข — เปิดหน้านี้ให้ส่วนขยายดึง token แล้วกด "เช็คใหม่"');
+  }
   const th = (a.threshold === undefined || a.threshold === null) ? ''
     : `<div class="res-label">เรียกเก็บที่ ${bt(a.threshold / 100)}</div>`;
-  if (a.dsl === -1) return `<span class="st-pill on">ไม่จำกัด</span>${th}`;
-  return `<span style="font-weight:600" title="ค่าดิบจาก Meta: adtrust_dsl=${esc(String(a.dsl))}">${bt(a.dsl)}</span>${th}`;
+  const val = a.dsl === -1
+    ? '<span class="st-pill on">ไม่จำกัด</span>'
+    : `<span style="font-weight:600" title="ค่าดิบจาก Meta: adtrust_dsl=${esc(String(a.dsl))}">${bt(a.dsl)}</span>`;
+  return `<div style="display:flex;align-items:center;gap:6px">${val}${refresh}</div>${th}`;
 }
 
 // แถบสถานะ token ด้านบนตาราง — บอกตรงๆ ว่าอ่านวงเงินได้หรือไม่ได้ ไม่ปล่อยให้คอลัมน์ว่างแบบไม่มีเหตุผล
