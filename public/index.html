@@ -62,10 +62,6 @@
   .ts-btn:hover { background: #fff; color: var(--brand-dark); border-color: #fff; }
   .ts-btn svg { width: 15px; height: 15px; }
   .ts-clock svg { width: 16px; height: 16px; }
-  .top-profile { display: flex; align-items: center; gap: 7px; background: #fff; border-radius: var(--r-md); padding: 6px 10px 6px 13px; font-size: 13px; color: var(--muted); }
-  .top-profile svg { width: 16px; height: 16px; flex-shrink: 0; }
-  .top-profile select { border: none; font-weight: 600; font-size: 13px; padding: 2px; background: transparent; min-width: 120px; color: var(--text); width: auto; }
-  .top-profile select:focus { outline: none; box-shadow: none; }
 
   /* หัวข้อหน้า */
   .page-banner { padding: 14px 2px 2px; margin: 0 0 10px; }
@@ -482,10 +478,6 @@
         <span id="clockNow"></span>
       </div>
       <div class="ts-right">
-      <div class="top-profile" title="บัญชีที่ใช้งานอยู่ (ใช้กับการค้นหา interest และหน้าแคมเปญ)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-3.9 3.6-6 8-6s8 2.1 8 6"/></svg>
-        <select id="topProfile" onchange="setActiveProfile(this.value)"></select>
-      </div>
         <button class="ts-btn" onclick="logout()" title="ล้างรหัสที่เบราว์เซอร์จำไว้ แล้วถามรหัสใหม่">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
           ออกจากระบบ
@@ -1421,11 +1413,8 @@ async function loadProfiles() {
   renderProfileUI();
 }
 function renderProfileUI() {
-  // dropdown มุมขวาบน
-  const top = document.getElementById('topProfile');
-  top.innerHTML = profiles.length
-    ? profiles.map(p => `<option value="${p.id}" ${p.id === activeProfileId ? 'selected' : ''}>${esc(p.label)}</option>`).join('')
-    : '<option value="">— ยังไม่มีบัญชี —</option>';
+  // เดิมมี dropdown เลือกบัญชีมุมขวาบน ถอดออกแล้ว (ไม่ได้ใช้)
+  // การสลับบัญชีที่ใช้งานอยู่ทำที่ปุ่มดาวในหน้า "บัญชี FB" (setActiveProfileAndRender)
   // side foot
   const ready = profiles.filter(p => p.hasToken).length;
   document.getElementById('sideConn').innerHTML = profiles.length
