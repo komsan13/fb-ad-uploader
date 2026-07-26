@@ -28,7 +28,7 @@ docker run -d --name fbad --restart unless-stopped \
   --label traefik.http.routers.fbad.tls.certresolver=le \
   --label traefik.http.routers.fbad.middlewares=fbad-auth \
   --label "traefik.http.middlewares.fbad-auth.basicauth.users=$HASH" \
-  --label 'traefik.http.routers.fbadpub.rule=Host(`ad.senball.com`) && (Path(`/privacy.html`) || Path(`/lp`) || Path(`/lp/`) || PathPrefix(`/lp-asset/`))' \
+  --label 'traefik.http.routers.fbadpub.rule=Host(`ad.senball.com`) && (Path(`/privacy.html`) || Path(`/terms.html`) || Path(`/lp`) || Path(`/lp/`) || PathPrefix(`/lp-asset/`))' \
   --label traefik.http.routers.fbadpub.entrypoints=websecure \
   --label traefik.http.routers.fbadpub.service=fbad \
   --label traefik.http.routers.fbadpub.tls.certresolver=le \
@@ -37,3 +37,9 @@ docker run -d --name fbad --restart unless-stopped \
 
 sleep 2
 docker exec fbad wget -qO /dev/null http://localhost:4000/ && echo "✅ deploy สำเร็จ: $(git log -1 --format='%h %s')" || { echo "❌ container ไม่ตอบ — ดู log: docker logs fbad"; exit 1; }
+
+# หน้ากฎหมายต้องเปิดสาธารณะจริง (Meta ต้องกดดูได้ตอนรีวิวแอป) — เช็คของจริงผ่าน traefik ไม่ใช่เชื่อ label
+for P in /privacy.html /terms.html; do
+  CODE="$(curl -sk --connect-timeout 5 --resolve ad.senball.com:443:127.0.0.1 -o /dev/null -w '%{http_code}' "https://ad.senball.com$P" || true)"
+  [ "$CODE" = "200" ] && echo "✅ $P เปิดสาธารณะ (200)" || echo "⚠️  $P ได้ $CODE — Meta จะกดดูไม่ได้ เช็ค router fbadpub"
+done
