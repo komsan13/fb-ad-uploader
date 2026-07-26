@@ -8,7 +8,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&family=Noto+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+  /* border: 0 ตรงนี้คือตัวปิดขอบของทั้งระบบ — ห้ามลบ
+     ถ้าไม่มีบรรทัดนี้ เบราว์เซอร์จะเอาขอบมาตรฐานของตัวเองมาใส่ปุ่ม/ช่องกรอก/fieldset เอง
+     (เคยพลาดมาแล้ว 26 ก.ค. 2026: กวาดลบ border ทั้งไฟล์แล้วลบ border:none ของปุ่มไปด้วย
+      ผลคือปุ่มทุกอันมีวงเทาเข้มของ Chrome โผล่มา) */
+  * { box-sizing: border-box; margin: 0; padding: 0; border: 0; }
   :root {
     /* สีหลักเป็นน้ำเงินแบบคอนโซล admin — เขียว/แดง/เหลืองเหลือไว้สื่อความหมายสถานะเท่านั้น */
     --brand: #2563eb; --brand-dark: #1d4ed8; --brand-deep: #1e40af; --brand-soft: #eef3ff;
