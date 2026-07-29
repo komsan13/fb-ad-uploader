@@ -567,6 +567,12 @@ function lpIsOurLanding(link) {
   } catch { return false; }
 }
 
+// ให้ระบบฝังพิกเซลลงหน้า Landing ให้เองไหม — ปิดได้เมื่อผู้ใช้ไปเชื่อมพิกเซลเองที่ปลายทางอื่น (เช่น heylink)
+// ไม่มีค่า = เปิด (พฤติกรรมเดิม) ปิดแล้วยังสร้าง Pixel ให้บัญชีอยู่ ไม่งั้นแคมเปญ Sales/Leads ขึ้นไม่ได้
+function lpAutoLink(cfg) {
+  return ((cfg || {}).autopilot || {}).autoLinkPixel !== false;
+}
+
 // ลิงก์ปลายทางของบัญชีหนึ่ง — เป็นหน้า Landing ของเราเมื่อไหร่ให้ติดรหัสบัญชีไปด้วย
 // หน้านั้นจะได้โหลดเฉพาะพิกเซลของบัญชีนี้ ไม่ไปนับคอนเวอร์ชั่นให้บัญชีอื่นที่อยู่หน้าเดียวกัน
 // ฝังพิกเซลลงหน้า Landing ถ้ายังไม่มี — คืนรายการ id ที่เพิ่งเพิ่มเข้าไป (เขียนไฟล์ครั้งเดียว)
@@ -590,6 +596,11 @@ function lpEnsurePixels(pixelIds, acctId) {
 // คืน true เมื่อเพิ่งเพิ่มเข้าไป
 function lpEnsurePixel(pixelId, acctId) {
   return lpEnsurePixels([pixelId], acctId).length > 0;
+}
+// อ่านอย่างเดียว: พิกเซลตัวนี้อยู่บนหน้า Landing แล้วหรือยัง
+function lpHasPixel(pixelId) {
+  const id = String(pixelId || '').replace(/[^A-Za-z0-9-]/g, '');
+  return !!id && loadLp().pixels.some((p) => p.type === 'meta' && p.id === id);
 }
 
 app.post('/api/landing/upload', uploadLpImg.single('file'), (req, res) => {
@@ -1564,9 +1575,9 @@ app.get('/api/health-overview', async (req, res) => {
     // พิกเซลที่ไม่ได้ฝังในหน้า Landing = แคมเปญของบัญชีนั้นเห็นคอนเวอร์ชั่นเป็นศูนย์ตลอดทั้งที่คนกดจริง
     // เดิมผูกให้เฉพาะตอนขึ้นแอด/autopilot เติมแอด บัญชีที่ยังไม่ถึงคิวจึงค้างไม่ผูก — ผูกให้ตรงนี้ด้วย
     // ข้ามบัญชีที่ถูกซ่อน (ผู้ใช้สั่งว่าไม่ต้องดูแล) และบัญชีที่ไม่ได้อยู่ในสถานะใช้งานได้
-    const boundToLp = lpEnsurePixels(
+    const boundToLp = lpAutoLink(cfg) ? lpEnsurePixels(
       accounts.filter((a) => a.status === 1 && !a.hidden).flatMap((a) => a.pixels.map((x) => x.id)),
-    );
+    ) : [];
     const onLp = new Set(loadLp().pixels.filter((p) => p.type === 'meta').map((p) => p.id));
     for (const a of accounts) for (const x of a.pixels) x.onLp = onLp.has(String(x.id));
     // วงเงิน/วัน = ตัวเลขที่ส่วนขยายส่งมาเก็บไว้ ไม่ได้อ่านสดตรงนี้ (เซิร์ฟเวอร์ยิงเองไม่ได้ ดู /api/am-limits)
@@ -1621,7 +1632,7 @@ app.post('/api/create-pixel', async (req, res) => {
   try {
     const r = await fb(`act_${acctId}/adspixels`, { name }, 'POST', prof.accessToken);
     // สร้างเสร็จผูกเข้าหน้า Landing ให้เลย ไม่ต้องรอรอบ autopilot มาผูกทีหลัง
-    res.json({ ok: true, id: r.id, boundToLp: lpEnsurePixel(r.id, acctId) });
+    res.json({ ok: true, id: r.id, boundToLp: lpAutoLink(cfg) && lpEnsurePixel(r.id, acctId) });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
@@ -1674,7 +1685,7 @@ app.post('/api/launch', upload.any(), async (req, res) => {
   // แอดชี้มาหน้า Landing ของเราแต่พิกเซลยังไม่ถูกฝังบนหน้า = คนกดจริงแต่คอนเวอร์ชั่นเป็นศูนย์ตลอด
   // แล้วกฎหยุดอัตโนมัติ/ตัวขยายงบก็ตัดสินจากตัวเลขผิด — เช็คแล้วฝังให้เองก่อนขึ้น
   // (ตรรกะเดียวกับตอน autopilot เติมแอด ที่ทำอยู่แล้วใน apRefill)
-  if (objInfo.needsPixel && (data.ads || []).some((ad) => lpIsOurLanding(ad && ad.link))) {
+  if (objInfo.needsPixel && lpAutoLink(cfg) && (data.ads || []).some((ad) => lpIsOurLanding(ad && ad.link))) {
     if (lpEnsurePixel(data.pixelId, acctId)) {
       send({ type: 'progress', msg: `ฝัง Pixel ${data.pixelId} ลงหน้า Landing ให้แล้ว — แคมเปญนี้ถึงจะนับคอนเวอร์ชั่นได้` });
     }
@@ -2813,7 +2824,15 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz, ta
     // แอดพาคนไปหน้า Landing ของเราเอง แต่หน้านั้นจะเก็บคอนเวอร์ชั่นให้บัญชีไหนได้
     // ขึ้นกับว่ามีพิกเซลของบัญชีนั้นฝังอยู่ไหม — ขาดไปแคมเปญนั้นจะเห็นผลลัพธ์เป็นศูนย์ตลอด
     // ทั้งที่คนกดจริง แล้วตัวขยายงบ/ปิดตัวขาดทุนก็จะตัดสินจากตัวเลขที่ผิด
-    if (lpIsOurLanding(d.link)) {
+    // ปิดการเชื่อมอัตโนมัติไว้ = ผู้ใช้บอกว่าไปฝังพิกเซลเองที่ปลายทาง ไม่ต้องฝังให้และไม่ต้องเตือนซ้ำทุกวัน
+    // ยกเว้นกรณีเดียว: ลิงก์ดันชี้กลับมาหน้า /lp ของเราแต่พิกเซลไม่ได้อยู่บนหน้า
+    // อันนั้นคือคอนเวอร์ชั่นเป็นศูนย์ตลอดแบบเงียบๆ แล้วตัวขยายงบ/ตัวปิดแอดขาดทุนจะตัดสินจากตัวเลขผิด — ต้องบอก
+    if (!lpAutoLink(cfg)) {
+      if (lpIsOurLanding(d.link) && !lpHasPixel(pixelId) && s.warned['lppx:' + acctId] !== apToday()) {
+        const m = `⚠️ ${a.name}: ปิดการเชื่อมพิกเซลอัตโนมัติไว้ แต่ลิงก์ชี้มาหน้า Landing ของระบบ และ Pixel ${pixelId} ยังไม่อยู่บนหน้า — คอนเวอร์ชั่นจะเป็นศูนย์ตลอด`;
+        alerts.push(m); apLog(s, 'warn', m, acctId); s.warned['lppx:' + acctId] = apToday();
+      }
+    } else if (lpIsOurLanding(d.link)) {
       if (lpEnsurePixel(pixelId, acctId)) {
         const m = `🔗 ${a.name}: ฝัง Pixel ${pixelId} ลงหน้า Landing ให้แล้ว — แคมเปญของบัญชีนี้ถึงจะนับคอนเวอร์ชั่นได้`;
         alerts.push(m); apLog(s, 'info', m, acctId);
@@ -3396,6 +3415,7 @@ app.get('/api/autopilot', (req, res) => {
   res.json({
     enabled: !!(cfg.autopilot || {}).enabled,
     testMode: !!(cfg.autopilot || {}).testMode,
+    autoLinkPixel: lpAutoLink(cfg),
     minAds: Number((cfg.autopilot || {}).minAds) || 0,
     scaleMaxBudget: Number((cfg.autopilot || {}).scaleMaxBudget) || 0,
     scaledToday: Object.values(s.scaled || {}).filter((t) => Date.now() - t < 24 * 3600 * 1000).length,
@@ -3428,6 +3448,7 @@ app.post('/api/autopilot', (req, res) => {
     cfg.autopilot.scaleMaxBudget = Math.max(0, Number(req.body.scaleMaxBudget) || 0);
   }
   if (req.body.testMode !== undefined) cfg.autopilot.testMode = !!req.body.testMode;
+  if (req.body.autoLinkPixel !== undefined) cfg.autopilot.autoLinkPixel = !!req.body.autoLinkPixel;
   if (req.body.resetLimits) {
     delete cfg.autopilot.limits;    // คืนค่าตั้งต้นแบบไม่ตรึงตัวเลขของวันนี้ไว้บนดิสก์
   } else if (req.body.limits && typeof req.body.limits === 'object') {

@@ -3,9 +3,23 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const net = require('net');
 
 function tmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'fbad-test-'));
+}
+
+// ขอพอร์ตว่างจากระบบแทนการสุ่มเลขเอง — สุ่มเองในช่วง 20000 ตัวเลข พอเทสเยอะขึ้น
+// เซิร์ฟเวอร์เทสสองตัวจะชนพอร์ตกันเป็นบางรอบ แล้วเทสพังแบบสุ่มโดยไม่เกี่ยวกับโค้ดที่แก้
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const s = net.createServer();
+    s.once('error', reject);
+    s.listen(0, '127.0.0.1', () => {
+      const { port } = s.address();
+      s.close(() => resolve(port));
+    });
+  });
 }
 
 // เขียน config + คลังวิดีโอ/แคปชั่นให้พร้อมใช้ (autopilot ต้องมีของครบถึงจะเติมแอด)
@@ -28,7 +42,7 @@ function seed(dir, { config = {}, videos = 1, captions = 1 } = {}) {
 }
 
 async function startServer(dir, fbPort, extraEnv = {}) {
-  const port = 20000 + Math.floor(Math.random() * 20000);
+  const port = await freePort();
   const child = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
     env: {
       ...process.env,

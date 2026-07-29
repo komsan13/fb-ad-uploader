@@ -317,6 +317,76 @@ describe('ขึ้นแอดเองแล้วลิงก์ชี้ม�
   });
 });
 
+// ---------- สวิตช์ "เชื่อมพิกเซลกับหน้า Landing ให้อัตโนมัติ" ----------
+// ปิดไว้ = ผู้ใช้ไปเชื่อมพิกเซลเองที่ปลายทางอื่น (เช่น heylink) ระบบต้องไม่ไปยุ่งกับหน้า /lp
+// แต่ต้องยังสร้าง Pixel ให้บัญชีที่ยังไม่มี ไม่งั้นแคมเปญ Sales/Leads ขึ้นไม่ได้เลย
+describe('สวิตช์เชื่อมพิกเซลอัตโนมัติ', () => {
+  const noAutoLink = () => baseConfig({ autopilot: { enabled: true, minAds: 2, autoLinkPixel: false } });
+
+  test('ค่าตั้งต้นคือเปิด และเซฟ/อ่านกลับได้', async (t) => {
+    const { base } = await boot(t);
+    assert.strictEqual((await get(base, '/api/autopilot')).autoLinkPixel, true,
+      'ไม่ได้ตั้งอะไร = ต้องเป็นพฤติกรรมเดิม (เชื่อมให้อัตโนมัติ)');
+    await post(base, '/api/autopilot', { enabled: true, autoLinkPixel: false });
+    assert.strictEqual((await get(base, '/api/autopilot')).autoLinkPixel, false);
+    await post(base, '/api/autopilot', { enabled: true, autoLinkPixel: true });
+    assert.strictEqual((await get(base, '/api/autopilot')).autoLinkPixel, true);
+  });
+
+  test('ปิดไว้ autopilot ต้องไม่ฝังพิกเซลลงหน้า Landing แม้ลิงก์จะชี้มาหน้าเรา', async (t) => {
+    const world = freshWorld({ pixels: [{ id: '5566778899' }] });
+    const cfg = noAutoLink();
+    const { base } = await boot(t, { world, config: cfg });
+    await post(base, '/api/launch-defaults', { ...cfg.launchDefaults, link: base + '/lp' });
+    await runTwice(base);
+    const lp = await get(base, '/api/landing');
+    assert.ok(!(lp.pixels || []).some((p) => p.id === '5566778899'),
+      'ผู้ใช้บอกว่าจะไปเชื่อมเอง ระบบต้องไม่ฝังให้');
+  });
+
+  test('ปิดไว้แต่ลิงก์ดันชี้กลับมาหน้า /lp ต้องเตือน ไม่ใช่เงียบแล้วปล่อยคอนเวอร์ชั่นเป็นศูนย์', async (t) => {
+    const world = freshWorld({ pixels: [{ id: '5566778899' }] });
+    const cfg = noAutoLink();
+    const { base, dir } = await boot(t, { world, config: cfg });
+    await post(base, '/api/launch-defaults', { ...cfg.launchDefaults, link: base + '/lp' });
+    await runTwice(base);
+    const log = (readState(dir).log || []).map((x) => x.msg || '').join('\n');
+    assert.match(log, /ยังไม่อยู่บนหน้า/, 'เงียบไว้ = ตัวขยายงบกับตัวปิดแอดขาดทุนจะตัดสินจากตัวเลขที่ผิด');
+  });
+
+  test('ปิดไว้แล้วลิงก์ไปเว็บอื่น (heylink) ต้องไม่เตือนซ้ำ — นั่นคือเหตุผลที่ปิด', async (t) => {
+    const { base, dir } = await boot(t, { config: noAutoLink() });   // baseConfig ใช้ link เป็น example.com
+    await runTwice(base);
+    const log = (readState(dir).log || []).map((x) => x.msg || '').join('\n');
+    assert.ok(!/ต้องไปฝัง Pixel/.test(log), 'ผู้ใช้บอกแล้วว่าไปเชื่อมเอง ไม่ต้องทวงทุกวัน');
+  });
+
+  test('ปิดไว้ก็ยังต้องสร้าง Pixel ให้บัญชีที่ยังไม่มี และเติมแอดต่อได้', async (t) => {
+    const world = freshWorld({ pixels: [] });
+    const { base } = await boot(t, { world, config: noAutoLink() });
+    await runTwice(base);
+    const made = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/adspixels`);
+    assert.strictEqual(made.length, 1, 'สวิตช์นี้คุมแค่เรื่องหน้า Landing ไม่ได้คุมการสร้าง Pixel');
+    const ads = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/ads`);
+    assert.ok(ads.length > 0, 'ต้องเติมแอดต่อได้ตามปกติ');
+  });
+
+  test('ปิดไว้แล้วขึ้นแอดเอง ก็ต้องไม่ฝังพิกเซลลงหน้า Landing', async (t) => {
+    const world = freshWorld({ pixels: [{ id: 'px777' }] });
+    const { base } = await boot(t, { world, config: noAutoLink() });
+    const form = new FormData();
+    form.append('data', JSON.stringify({
+      profileId: 'p1', accountId: ACCT, pageId: 'page1',
+      campaign: { name: 'เทสปิดการเชื่อม', objective: 'OUTCOME_SALES' },
+      campaignBudget: 300, cta: 'LEARN_MORE', pixelId: 'px777', conversionEvent: 'SUBSCRIBE', active: false,
+      ads: [{ mediaId: 'v1', name: 'Ad-1', message: 'ทดสอบ', link: base + '/lp', ageMin: 20, ageMax: 65, gender: '', countries: ['TH'], interests: [] }],
+    }));
+    await (await fetch(base + '/api/launch', { method: 'POST', body: form })).text();
+    const lp = await get(base, '/api/landing');
+    assert.ok(!(lp.pixels || []).some((p) => p.id === 'px777'), 'สวิตช์ต้องคุมเส้นขึ้นแอดเองด้วย ไม่ใช่เฉพาะ autopilot');
+  });
+});
+
 describe('การอ่านเหตุผลปฏิเสธ', () => {
   test('เหตุผลอยู่ใน ad_review_feedback ต้องไม่ถูกมองข้าม และหมวดเดิมซ้ำต้องหยุดเติมแอด', async (t) => {
     const reject = (id) => ({
