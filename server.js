@@ -2060,8 +2060,11 @@ async function watchTick() {
 
 // ================= AUTOPILOT: จัดการแอดโดนปฏิเสธเอง =================
 // หลักการ: แก้ที่เหตุ ไม่ใช่ยิงซ้ำ — อ่านเหตุผลจริงจาก FB, ให้ Claude ชี้ว่าผิดข้อไหน,
-// แก้ได้เฉพาะที่ข้อความเท่านั้น และแก้ได้ครั้งเดียวต่อครีเอทีฟตลอดชีพ
-// ยิงซ้ำจนหลุดคือทางที่ทำให้บัญชีโดนแบน ระบบนี้จงใจไม่รองรับ
+// แล้วแก้เฉพาะสิ่งที่ถูกตัดสินว่าผิด (ข้อความ → เขียนใหม่, ตัววิดีโอ → สับคลิป)
+// จำนวนครั้งที่แอดตัวหนึ่งขึ้นใหม่ได้คุมด้วย maxRelaunchPerAd — ตั้งต้น 1 คือแก้ข้อความครั้งเดียว
+// เท่ากับพฤติกรรมเดิม การสับคลิปเปิดใช้ต่อเมื่อผู้ใช้ตั้งเกิน 1 เอง (ผ่าน dialog เตือนเกราะ)
+// ยิงซ้ำจนหลุดรีวิวคือทางที่ทำให้บัญชีโดนแบน จึงคุมด้วยเพดานรายวัน + เกราะหยุดบัญชี
+// + ห้ามขึ้นใหม่เมื่อเหตุผลหมวดเดิมซ้ำ (= พิสูจน์แล้วว่าไม่ใช่ปัญหาที่ครีเอทีฟ)
 const AP_PATH = path.join(path.dirname(CONFIG_PATH), 'autopilot-state.json');
 const AP_REASON_WINDOW = 7 * 24 * 3600 * 1000;   // นับย้อนหลังกี่วัน
 
@@ -2083,6 +2086,11 @@ const AP_LIMIT_SPEC = {
     def: 2, min: 1, max: 3, int: true, group: 'safety', rail: true,
     label: 'เหตุผลหมวดเดิมซ้ำกี่ครั้งถึงหยุดเติมแอด',
     hint: 'ซ้ำหมวดเดิม = ปัญหาไม่ได้อยู่ที่ครีเอทีฟ เติมต่อไปก็โดนปฏิเสธเหมือนเดิม',
+  },
+  maxRelaunchPerAd: {
+    def: 1, min: 1, max: 2, int: true, group: 'safety', rail: true,
+    label: 'แอดหนึ่งตัวขึ้นใหม่ได้กี่ครั้งหลังโดนปฏิเสธ',
+    hint: '1 = พฤติกรรมเดิม (แก้ข้อความครั้งเดียว โดนอีกหยุดถาวร) • ตั้งเกิน 1 = ยอมให้สับคลิปแล้วขึ้นใหม่อีก ซึ่งคือการยิงซ้ำหลังโดนปฏิเสธ FB ใช้จับ ban evasion โดยตรง • ทุกครั้งยังนับรวมในเพดาน "แก้ข้อความอัตโนมัติได้วันละ" และยังโดนเกราะหยุดบัญชี/หยุดเติมแอดตามปกติ',
   },
   maxDiagRetry: {
     def: 3, min: 1, max: 10, int: true, group: 'safety',
@@ -2154,7 +2162,8 @@ const AP_DEFAULTS = () => ({
   // creative: adId -> {v: mediaId, c: capId, ts} ผูกแอดกลับไปหาคลิป+แคปชั่นที่ใช้สร้างมัน
   // adScore: adId -> {v:'ok'|'bad', ts} ผลรีวิวที่นับไปแล้ว (กันนับซ้ำ และรองรับกรณีผ่านแล้วโดนถอดทีหลัง)
   // libStats: 'v:<id>'|'c:<id>' -> {ok, bad} ตัวนับสะสมว่าครีเอทีฟชิ้นนั้นขึ้นง่ายแค่ไหน
-  creative: {}, adScore: {}, libStats: {},
+  // relaunch: adId -> จำนวนครั้งที่แอดสายนี้ถูกขึ้นใหม่มาแล้ว (นับสะสมข้ามรุ่น)
+  creative: {}, adScore: {}, libStats: {}, relaunch: {},
 });
 
 // ---------- คะแนน "ขึ้นง่าย" ของคลิป/แคปชั่น ----------
@@ -2270,7 +2279,7 @@ function loadAp() {
 const AP_KEEP_MS = 60 * 24 * 3600 * 1000;     // เก็บประวัติ 60 วันพอ
 const apMark = (obj, id, v) => { obj[id] = { v, ts: Date.now() }; };
 function apPrune(s) {
-  for (const key of ['handled', 'retryOf', 'retries', 'counted', 'paused', 'reasonCounted', 'creative', 'adScore']) {
+  for (const key of ['handled', 'retryOf', 'retries', 'counted', 'paused', 'reasonCounted', 'creative', 'adScore', 'relaunch']) {
     const bag = s[key] || {};
     for (const id of Object.keys(bag)) {
       const e = bag[id];
@@ -2475,6 +2484,33 @@ async function apResubmit(acct, token, origCreative, adsetId, adName, newMessage
   }, 'POST', token);
   const ad = await fb(`${acct}/ads`, {
     name: `${adName} (แก้ข้อความ)`.slice(0, 100),
+    adset_id: adsetId,
+    creative: { creative_id: creative.id },
+    status: 'ACTIVE',
+  }, 'POST', token);
+  return ad.id;
+}
+
+// สร้างแอดใหม่ในชุดโฆษณาเดิม เปลี่ยน "คลิป" ข้อความคงเดิม (ใช้เมื่อ AI ชี้ว่าปัญหาอยู่ที่ตัววิดีโอ)
+// ไม่สร้าง adset ใหม่ — เป้าหมาย/งบ/พิกเซลของเดิมผ่านมาแล้ว เปลี่ยนแค่ตัวที่ถูกตัดสินว่าผิด
+async function apRelaunchNewVideo(acct, token, origCreative, adsetId, adName, mediaId) {
+  const spec = JSON.parse(JSON.stringify(origCreative.object_story_spec || {}));
+  if (!spec.video_data) throw new Error('ครีเอทีฟนี้ไม่ใช่วิดีโอ สับคลิปให้ไม่ได้');
+  const m = resolveMedia(mediaId);
+  if (!m) throw new Error('ไฟล์วิดีโอหายจากคลัง');
+  const file = { buffer: fs.readFileSync(m.path), mimetype: m.mimetype, originalname: m.originalname };
+  const videoId = await uploadVideo(acct, file, token);
+  await waitVideoReady(videoId, token);
+  const thumb = await videoThumb(videoId, token);
+  spec.video_data.video_id = videoId;
+  // ภาพปกของคลิปเดิมต้องไม่ติดมากับคลิปใหม่ — ได้ปกไม่ตรงคลิปคือเหตุโดนปฏิเสธซ้ำอีกข้อ
+  if (thumb) spec.video_data.image_url = thumb; else delete spec.video_data.image_url;
+  delete spec.video_data.image_hash;
+  const creative = await fb(`${acct}/adcreatives`, {
+    name: `${adName} (สับคลิป) - Creative`, object_story_spec: spec,
+  }, 'POST', token);
+  const ad = await fb(`${acct}/ads`, {
+    name: `${adName} (สับคลิป)`.slice(0, 100),
     adset_id: adsetId,
     creative: { creative_id: creative.id },
     status: 'ACTIVE',
@@ -3245,10 +3281,14 @@ async function autopilotTick(mode = 'full') {
           break;
         }
 
-        // ตัวที่เกิดจากการแก้อัตโนมัติแล้วยังโดนอีก = ตายถาวร ห้ามแตะต่อ
-        if (s.retryOf[ad.id]) {
+        // ขึ้นใหม่ไปแล้วครบเพดานของสายนี้ = ตายถาวร ห้ามแตะต่อ
+        // นับสะสมข้ามรุ่น (แอดรุ่นที่ 2 รู้ว่าตัวเองเป็นรุ่นที่ 2) ไม่ใช่แค่ "เคยถูกแก้ไหม"
+        // migration: state รุ่นก่อนมีแต่ retryOf (ไม่มีตัวนับ) — แอดที่เคยถูกแก้แล้วต้องนับเป็น 1
+        // ไม่งั้นแอดที่เคย "ตายถาวร" ตามกติกาเดิมจะได้สิทธิ์ขึ้นใหม่คืนมาเงียบๆ ตอนอัปเดต
+        const relaunched = ((s.relaunch[ad.id] || {}).v) || (s.retryOf[ad.id] ? 1 : 0);
+        if (relaunched >= apLim.maxRelaunchPerAd) {
           apMark(s.handled, ad.id, 'dead-after-retry');
-          const m = `⛔ ${a.name}: "${ad.name}" แก้ข้อความไปแล้วยังโดนปฏิเสธอีก — หยุดถาวร ไม่ลองต่อ`;
+          const m = `⛔ ${a.name}: "${ad.name}" ขึ้นใหม่ไปแล้ว ${relaunched}/${apLim.maxRelaunchPerAd} ครั้งยังโดนปฏิเสธอีก — หยุดถาวร ไม่ลองต่อ`;
           alerts.push(m); apLog(s, 'dead', m, acctId);
           continue;
         }
@@ -3297,6 +3337,17 @@ async function autopilotTick(mode = 'full') {
           alerts.push(m); apLog(s, 'blocked', m, acctId);
         }
 
+        // หมวดเดิมซ้ำจนบัญชีถูกสั่งหยุดเติมแอดแล้ว = พิสูจน์แล้วว่าไม่ใช่ปัญหาที่ครีเอทีฟ
+        // ขึ้นใหม่ต่อ (ไม่ว่าจะแก้ข้อความหรือสับคลิป) ก็โดนข้อเดิม ได้แค่ประวัติเสียเพิ่ม
+        if (s.noRotate[acctId]) {
+          apMark(s.handled, ad.id, 'blocked-same-reason');
+          if (s.warned['norelaunch:' + acctId] !== apToday()) {
+            const m = `🚧 ${a.name}: มีแอดโดนปฏิเสธแต่ไม่ขึ้นใหม่ให้ — บัญชีนี้ติดเหตุผลเดิม "${s.noRotate[acctId].cat}" ต้องแก้ต้นเหตุแล้วปลดล็อกเอง`;
+            alerts.push(m); apLog(s, 'blocked', m, acctId); s.warned['norelaunch:' + acctId] = apToday();
+          }
+          continue;
+        }
+
         const spec = (ad.creative || {}).object_story_spec || {};
         const vd = spec.video_data || spec.link_data || {};
         const curMsg = vd.message || '';
@@ -3337,6 +3388,39 @@ async function autopilotTick(mode = 'full') {
           continue;
         }
 
+        // ---- AI ชี้ว่าปัญหาอยู่ที่ตัววิดีโอ: สับคลิปแล้วขึ้นใหม่ในชุดโฆษณาเดิม ----
+        // เปิดใช้เฉพาะเมื่อตั้งเพดาน "ขึ้นใหม่ได้กี่ครั้ง" เกิน 1 — ตั้งต้น 1 = พฤติกรรมเดิมเป๊ะ
+        // ข้อความไม่แตะ เพราะ AI เพิ่งบอกว่าข้อความไม่ใช่ปัญหา
+        if (dx.where === 'video' && apLim.maxRelaunchPerAd > 1) {
+          const curVid = ((s.creative || {})[ad.id] || {}).v || null;
+          // ไม่หยิบคลิปที่พิสูจน์แล้วว่าไม่ผ่าน (bad>=2 และมากกว่าที่ผ่าน) — สับไปเจอของแย่อีกคือเผาเปล่า
+          const pool = loadLib().filter((x) => x.id !== curVid && !apBadCreative(s, 'v:' + x.id));
+          const alt = apRankVideos(s, pool, acctId, null)[0];
+          if (!alt) {
+            apMark(s.handled, ad.id, 'no-alt-video');
+            const m = `✕ ${a.name}: "${ad.name}" โดนปฏิเสธที่ตัววิดีโอ แต่ไม่มีคลิปอื่นในคลังให้สับ — เติมคลิปใหม่เข้าคลังก่อน`;
+            alerts.push(m); apLog(s, 'manual', m, acctId);
+            continue;
+          }
+          try {
+            const newId = await apRelaunchNewVideo(acct, prof.accessToken, ad.creative, ad.adset_id, ad.name, alt.id);
+            apMark(s.handled, ad.id, 'video-swapped');
+            apMark(s.retryOf, newId, ad.id);
+            apMark(s.relaunch, newId, relaunched + 1);
+            // สายพันธุ์ต้องต่อได้ ไม่งั้นรอบให้คะแนนจะไม่รู้ว่าแอดใหม่ใช้คลิปไหน แล้วคลิปที่สับมาไม่ถูกนับผลเลย
+            (s.creative = s.creative || {})[newId] = { v: alt.id, c: ((s.creative || {})[ad.id] || {}).c, ts: Date.now() };
+            markVideoUsed(alt.id, acctId);
+            s.fixes.push(Date.now());
+            const m = `🎬 ${a.name}: "${ad.name}" โดนปฏิเสธที่ตัววิดีโอ (${dx.violation})\n   → สับเป็นคลิป "${alt.name}" แล้วขึ้นใหม่ให้ (ครั้งที่ ${relaunched + 1}/${apLim.maxRelaunchPerAd})`;
+            alerts.push(m); apLog(s, 'fixed', m, acctId);
+          } catch (e) {
+            apMark(s.handled, ad.id, 'swap-failed');
+            const m = `⚠️ ${a.name}: "${ad.name}" สับคลิปไม่สำเร็จ (${e.message})`;
+            alerts.push(m); apLog(s, 'warn', m, acctId);
+          }
+          continue;
+        }
+
         if (!dx.fixable || dx.where !== 'text' || !dx.newMessage) {
           apMark(s.handled, ad.id, 'not-fixable');
           const where = { video: 'ตัววิดีโอ', landing_page: 'หน้าปลายทาง', account: 'ระดับบัญชี/เพจ', unclear: 'ไม่ชัดเจน', text: 'ข้อความ' }[dx.where] || dx.where;
@@ -3364,8 +3448,12 @@ async function autopilotTick(mode = 'full') {
           const newId = await apResubmit(acct, prof.accessToken, ad.creative, ad.adset_id, ad.name, nm, nh || undefined);
           apMark(s.handled, ad.id, 'fixed');
           apMark(s.retryOf, newId, ad.id);
+          apMark(s.relaunch, newId, relaunched + 1);
+          // คลิป/แคปชั่นเดิมยกมาทั้งคู่ (แก้แค่ข้อความในครีเอทีฟ) — สายพันธุ์ต้องต่อ ไม่งั้นผลรีวิวของรุ่นใหม่ลอย
+          (s.creative = s.creative || {})[newId] = { ...(((s.creative || {})[ad.id]) || {}), ts: Date.now() };
           s.fixes.push(Date.now());
-          const m = `🔧 ${a.name}: "${ad.name}" โดนปฏิเสธเพราะ ${dx.violation}\n   → แก้ข้อความแล้วขึ้นใหม่ให้ (ครั้งเดียว ถ้าโดนอีกจะหยุดถาวร)\n   ข้อความใหม่: ${nm.slice(0, 150)}`;
+          const left = apLim.maxRelaunchPerAd - (relaunched + 1);
+          const m = `🔧 ${a.name}: "${ad.name}" โดนปฏิเสธเพราะ ${dx.violation}\n   → แก้ข้อความแล้วขึ้นใหม่ให้ (ครั้งที่ ${relaunched + 1}/${apLim.maxRelaunchPerAd}${left ? '' : ' — โดนอีกหยุดถาวร'})\n   ข้อความใหม่: ${nm.slice(0, 150)}`;
           alerts.push(m); apLog(s, 'fixed', m, acctId);
         } catch (e) {
           apMark(s.handled, ad.id, 'resubmit-failed');

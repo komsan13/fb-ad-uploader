@@ -91,6 +91,7 @@ test('pickResult: ไม่มี action ที่ตรงต้องไม่
 test('apLimits: ไม่ได้ตั้งอะไร ต้องได้ค่าเดิมก่อนทำให้ตั้งได้ทุกตัว', () => {
   const expected = {
     maxFixPerDay: 10, freezeRejections: 3, maxDiagRetry: 3, sameReasonStop: 2,
+    maxRelaunchPerAd: 1,
     maxNewAdsPerDay: 6, maxPausePerDay: 10, loserMinSpend: 2, loserCpaMult: 1.5, scaleStep: 1.2,
   };
   assert.deepStrictEqual(apLimits({}), expected);
@@ -173,7 +174,9 @@ test('กรอบของเกราะที่ห้ามถอดต้�
   // CLAUDE.md ระบุว่าเกราะสามตัวนี้ห้ามถอด กรอบจึงต้องแคบพอที่การตั้งสุดกรอบยังไม่ทำให้
   // บัญชีสะสมประวัติเสียจนโดนแบน เทสนี้กันไม่ให้ใครมาขยาย max ทีหลังโดยไม่คิด
   const rails = Object.entries(AP_LIMIT_SPEC).filter(([, s]) => s.rail);
-  assert.strictEqual(rails.length, 3, 'เกราะที่ห้ามถอดต้องมีสามตัวตาม CLAUDE.md');
+  // maxRelaunchPerAd เป็นตัวที่สี่ — คุมจำนวนครั้งที่แอดตัวหนึ่งถูกส่งเข้ารีวิวใหม่หลังโดนปฏิเสธ
+  // ซึ่งคือพฤติกรรมที่ FB ใช้จับ ban evasion ตรงๆ จึงต้องอยู่ในกรอบเดียวกับเกราะตัวอื่น
+  assert.strictEqual(rails.length, 4, 'เกราะที่ห้ามถอดต้องมีสี่ตัวตาม CLAUDE.md');
   for (const [k, s] of rails) {
     // maxFixPerDay เป็นเพดานรวมทั้งระบบ — ต้องโตตามจำนวนบัญชีได้ (100 บัญชี × ~1 ครั้ง/บัญชี)
     // ความเสี่ยงที่ FB จับคือพฤติกรรมรายบัญชี/รายครีเอทีฟ ซึ่งคุมด้วย "แก้ครั้งเดียวต่อครีเอทีฟ"

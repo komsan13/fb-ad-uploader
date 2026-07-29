@@ -387,6 +387,95 @@ describe('สวิตช์เชื่อมพิกเซลอัตโน�
   });
 });
 
+// ---------- สับคลิปเมื่อ AI ชี้ว่าปัญหาอยู่ที่ตัววิดีโอ ----------
+// เกราะที่ต้องไม่หลุด: ตั้งต้น 1 = พฤติกรรมเดิมเป๊ะ (ไม่สับคลิปเลย), ติด noRotate ห้ามขึ้นใหม่,
+// ครบเพดานต้องตายถาวร — ทั้งหมดนี้คือสิ่งที่กันไม่ให้ระบบกลายเป็นตัวยิงซ้ำจนหลุดรีวิว
+describe('สับคลิปหลังโดนปฏิเสธ', () => {
+  const { makeFakeAi } = require('./fake-tg');
+  const rejectedAd = (id) => ({
+    id, acct: ACCT, name: `แอด ${id}`, effective_status: 'DISAPPROVED', adset_id: 'S1',
+    issues_info: [],
+    ad_review_feedback: { global: { 'คุณภาพวิดีโอ': 'ภาพในวิดีโอไม่เป็นไปตามนโยบาย' } },
+    creative: { id: 'cr1', object_story_spec: { video_data: { video_id: 'vidOld', message: 'ข้อความเดิม', title: 'หัวข้อ' } } },
+  });
+
+  // AI ตอบว่าปัญหาอยู่ที่ตัววิดีโอ ไม่ใช่ข้อความ
+  const bootWithAi = async (t, limits) => {
+    const ai = await makeFakeAi({ fixable: true, where: 'video', violation: 'ภาพในคลิปผิดนโยบาย' });
+    t.after(() => ai.server.close());
+    const world = freshWorld({
+      campaigns: [{ id: 'C1', acct: ACCT, name: 'Autopilot เดิม', status: 'ACTIVE', daily_budget: '333300' }],
+    });
+    const cfg = baseConfig({
+      anthropicKey: 'sk-test',
+      autopilot: { enabled: true, minAds: 0, limits },   // minAds 0 = ไม่เติมแอด จะได้เหลือแต่เส้นสับคลิป
+    });
+    const boots = await boot(t, { world, config: cfg, env: { ANTHROPIC_BASE_URL: `http://127.0.0.1:${ai.port}` } });
+    return { ...boots, world, ai };
+  };
+  const newAds = (world) => world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/ads`);
+
+  test('ค่าตั้งต้น (1 ครั้ง) ต้องไม่สับคลิปให้ — พฤติกรรมเดิมต้องไม่เปลี่ยนเงียบๆ', async (t) => {
+    const { base, world, dir, ai } = await bootWithAi(t, {});
+    await post(base, '/api/autopilot/run');
+    world.ads.push(rejectedAd('A1'));
+    await post(base, '/api/autopilot/run');
+    assert.ok(ai.state.requests.length > 0, 'ต้องเดินถึงขั้นวินิจฉัยจริง ไม่ใช่หลุดออกก่อนแล้วเทสผ่านฟรี');
+    assert.strictEqual(newAds(world).length, 0, 'ตั้งต้นต้องไม่ขึ้นแอดใหม่จากการสับคลิป');
+    assert.strictEqual(Object.keys(readState(dir).relaunch || {}).length, 0);
+  });
+
+  test('ตั้งเป็น 2 แล้วต้องสับคลิปขึ้นใหม่ในชุดโฆษณาเดิม พร้อมจดสายพันธุ์ไว้', async (t) => {
+    const { base, world, dir } = await bootWithAi(t, { maxRelaunchPerAd: 2 });
+    await post(base, '/api/autopilot/run');
+    // บอก state ว่าแอดตัวนี้ใช้คลิป v1 อยู่ — จะได้ยืนยันได้ว่าตัวที่สับมาไม่ใช่ตัวเดิม
+    const fs2 = require('node:fs'), path2 = require('node:path');
+    const p = path2.join(dir, 'autopilot-state.json');
+    const st0 = JSON.parse(fs2.readFileSync(p, 'utf8'));
+    st0.creative = { A1: { v: 'v1', c: 'c:x', ts: Date.now() } };
+    fs2.writeFileSync(p, JSON.stringify(st0));
+    world.ads.push(rejectedAd('A1'));
+    await post(base, '/api/autopilot/run');
+
+    const made = newAds(world);
+    assert.strictEqual(made.length, 1, 'ต้องขึ้นแอดใหม่ 1 ตัว');
+    assert.strictEqual(made[0].params.adset_id, 'S1', 'ต้องใช้ชุดโฆษณาเดิม ไม่สร้างใหม่');
+    assert.strictEqual(world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/adsets`).length, 0);
+
+    const st = readState(dir);
+    const newId = Object.keys(st.relaunch)[0];
+    assert.ok(newId, 'ต้องจดว่าแอดใหม่เป็นรุ่นที่เท่าไหร่');
+    assert.strictEqual(st.relaunch[newId].v, 1, 'แอดใหม่ต้องเป็นรุ่นที่ 1');
+    assert.ok(st.creative[newId] && st.creative[newId].v, 'ต้องจดว่าแอดใหม่ใช้คลิปไหน ไม่งั้นรอบให้คะแนนจะไม่นับผลคลิปที่สับมา');
+    assert.notStrictEqual(st.creative[newId].v, 'v1', 'ต้องสับไปคลิปอื่น ไม่ใช่ยิงคลิปเดิมที่เพิ่งโดนปฏิเสธซ้ำ');
+    assert.match((st.log || []).map((x) => x.msg).join('\n'), /สับเป็นคลิป/);
+  });
+
+  test('บัญชีติดเหตุผลเดิมซ้ำ (noRotate) แล้วห้ามสับคลิปขึ้นใหม่', async (t) => {
+    const { base, world, dir } = await bootWithAi(t, { maxRelaunchPerAd: 3, sameReasonStop: 1 });
+    await post(base, '/api/autopilot/run');
+    world.ads.push(rejectedAd('A1'), rejectedAd('A2'));
+    await post(base, '/api/autopilot/run');
+    assert.ok(readState(dir).noRotate[ACCT], 'หมวดเดิมซ้ำถึงเพดานต้องหยุดบัญชีก่อน');
+    assert.strictEqual(newAds(world).length, 0, 'ติดหมวดเดิมแล้ว = ปัญหาไม่ได้อยู่ที่ครีเอทีฟ สับคลิปต่อไม่ได้');
+  });
+
+  test('state รุ่นเก่าที่มีแต่ retryOf ต้องนับเป็นขึ้นใหม่แล้ว 1 ครั้ง ไม่ใช่ได้สิทธิ์คืน', async (t) => {
+    const { base, world, dir } = await bootWithAi(t, { maxRelaunchPerAd: 1 });
+    await post(base, '/api/autopilot/run');
+    const fs2 = require('node:fs'), path2 = require('node:path');
+    const p = path2.join(dir, 'autopilot-state.json');
+    const st0 = JSON.parse(fs2.readFileSync(p, 'utf8'));
+    st0.retryOf = { A1: { v: 'A0', ts: Date.now() } };   // เคยถูกแก้มาแล้วตามกติกาเดิม
+    delete st0.relaunch;
+    fs2.writeFileSync(p, JSON.stringify(st0));
+    world.ads.push(rejectedAd('A1'));
+    await post(base, '/api/autopilot/run');
+    assert.strictEqual(newAds(world).length, 0, 'แอดที่ตายถาวรตามกติกาเดิม ต้องไม่ฟื้นตอนอัปเดต');
+    assert.match((readState(dir).log || []).map((x) => x.msg).join('\n'), /หยุดถาวร/);
+  });
+});
+
 describe('การอ่านเหตุผลปฏิเสธ', () => {
   test('เหตุผลอยู่ใน ad_review_feedback ต้องไม่ถูกมองข้าม และหมวดเดิมซ้ำต้องหยุดเติมแอด', async (t) => {
     const reject = (id) => ({
