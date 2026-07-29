@@ -76,3 +76,58 @@ npm start
 - token 60 วันหมดอายุแล้วแค่ generate ใหม่มาวางแทน (หรือใช้ System User token จะไม่หมดอายุ)
 - token เก็บไว้ในไฟล์ `config.json` ในเครื่องคุณเท่านั้น — **อย่าแชร์ไฟล์นี้ให้ใคร**
 - ถ้าขึ้นแอดถี่มากๆ อาจเจอ rate limit ของ FB ชั่วคราว — รอ 5-10 นาทีแล้วขึ้นต่อได้
+
+---
+
+## เปิดเช่าแบบแยกผู้เช่า
+
+ใช้ `tenant-deploy.sh` สร้าง **หนึ่ง container และหนึ่ง data directory ต่อผู้เช่า** แทนการเพิ่ม profile ของลูกค้าหลายคนใน instance เดียว จึงแยก `config.json` (รวม Meta token), media, captions, Landing, autopilot state, Telegram และ AI settings ออกจากกันจริง
+
+ทุกผู้เช่าอยู่ใต้ `ad.senball.com` เดิม โดย script จะสร้าง profile code แบบสุ่ม 32 ตัวอักษร แล้วรันบนเซิร์ฟเวอร์ในโฟลเดอร์โปรเจกต์:
+
+```bash
+TENANT_USER=shop-a \
+bash tenant-deploy.sh
+```
+
+สคริปต์จะถามรหัสแบบซ่อน และบังคับความยาวอย่างน้อย 12 ตัวอักษร จึงไม่ต้องใส่รหัสลงใน command history.
+
+สคริปต์จะแสดง profile code เช่น `a1b2…` เก็บรหัสนี้ไว้เพื่อใช้ตอนอัปเดต ผู้เช่าจะเข้าโปรแกรมที่ `https://ad.senball.com/p/<profile-code>/` ด้วยรหัสของตนเอง และใช้ Landing ที่เปิดสาธารณะเฉพาะร้านที่ `https://ad.senball.com/p/<profile-code>/lp` โดย `MAX_PROFILES=1` บังคับให้ instance เช่านี้มี FB profile เดียว รหัสใน URL เป็นตัวระบุเพื่อกันเข้าผิด ไม่ใช่สิทธิ์เข้าหลังบ้าน
+
+อัปเดตโค้ดโดยไม่เปลี่ยนข้อมูลหรือรหัสของผู้เช่า:
+
+```bash
+git pull --ff-only
+PROFILE_CODE=<profile-code> ACTION=redeploy bash tenant-deploy.sh
+```
+
+หาก container หายแต่ data directory เดิมยังอยู่ ห้ามใช้ `create` ทับ เพราะจะถูกปฏิเสธเพื่อป้องกันการยึดข้อมูลผู้เช่ารายก่อน ให้กู้โดยตั้งใจเท่านั้น (ระบบจะขอรหัสหลังบ้านใหม่):
+
+```bash
+PROFILE_CODE=<profile-code> \
+RESTORE_CONFIRM=<profile-code> \
+TENANT_USER=shop-a \
+ACTION=restore bash tenant-deploy.sh
+```
+
+ห้ามนำผู้เช่ามาเพิ่มเป็น profile ใน container `fbad` เดิม เพราะ container เก่านั้นเป็นระบบรวม ข้อมูลจะไม่แยกกัน. `tenant-deploy.sh` เก็บข้อมูลของแต่ละรายไว้ที่ `/opt/fbad-tenants/<profile-code>` และไม่เปิด port ตรงออกอินเทอร์เน็ต — เข้าได้ผ่าน Traefik และ Basic Auth ของผู้เช่ารายนั้นเท่านั้น
+
+### เมนูสมาชิกในแอดมินใหญ่
+
+เมนู **สมาชิก** สร้างและจัดการผู้เช่าจากแอดมินใหญ่ได้: สร้าง profile และรหัสเข้าหลังบ้าน, แก้ข้อมูล/วันหมดอายุ, เปลี่ยนรหัส, ระงับการเข้าใช้, archive/restore และเปิด URL หลังบ้านหรือ Landing ของแต่ละราย
+
+ก่อนเปิดเมนูนี้บน production ต้องติดตั้ง root-only provisioner บน host ก่อนหนึ่งครั้ง แล้วค่อย redeploy แอปหลัก:
+
+```bash
+cd /opt/fbad
+git pull --ff-only
+bash redeploy.sh
+bash install-provisioner.sh
+bash redeploy.sh
+```
+
+Provisioner ฟังเฉพาะ Unix socket `/run/fbad-provisioner.sock` และยอมรับเฉพาะ lifecycle ที่กำหนดไว้ตายตัว เว็บแอดมินหลักเป็นเพียง proxy จึง **ไม่ mount Docker socket และไม่ mount data ของผู้เช่า**. ข้อมูลทะเบียนและ audit เก็บที่ `/opt/fbad-provisioner/`; รหัสผ่านไม่ถูกเก็บในทะเบียนหรือส่งกลับ API
+
+Provisioner จะสร้าง private Docker network ต่อผู้เช่าหนึ่งราย แล้วเชื่อมเฉพาะ Traefik กับ tenant container (ไม่ใช้ `web` network ร่วม) เพื่อไม่ให้ tenant ต่อ HTTP ถึง container อื่นโดยตรง. ตอนติดตั้ง script จะตรึง `TENANT_IMAGE` เป็น local Docker image ID (`sha256:...`) ที่เพิ่ง build แล้ว, provisioner ปฏิเสธ mutable tag เช่น `fbad:latest`
+
+`Archive` หยุด instance และย้าย data ไป `/opt/fbad-tenants-archive/` โดยไม่ลบข้อมูล แต่ไม่ได้ pause แคมเปญที่เปิดอยู่บน Meta. `Restore` จะเปิด container ด้วย `AUTOPILOT_HOLD=1`; ต้องพิมพ์ `ENABLE_AUTOPILOT` ในเมนูสมาชิกเพื่อปลด hold อย่างตั้งใจเท่านั้น

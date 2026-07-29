@@ -29,6 +29,7 @@ function seed(dir, { config = {}, videos = 1, captions = 1 } = {}) {
 
 async function startServer(dir, fbPort, extraEnv = {}) {
   const port = 20000 + Math.floor(Math.random() * 20000);
+  const { PUBLIC_URL_PATH = '', ...restEnv } = extraEnv;
   const child = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
     env: {
       ...process.env,
@@ -36,8 +37,8 @@ async function startServer(dir, fbPort, extraEnv = {}) {
       CONFIG_PATH: path.join(dir, 'config.json'),
       FB_API_BASE: `http://127.0.0.1:${fbPort}`,
       // ต้องตรงกับ base ที่เทสใช้เรียก ไม่งั้นโค้ดที่เทียบว่า "ลิงก์ชี้มาหน้าเราไหม" จะไม่ตรง
-      PUBLIC_URL: `http://127.0.0.1:${port}`,
-      ...extraEnv,
+      PUBLIC_URL: `http://127.0.0.1:${port}${PUBLIC_URL_PATH}`,
+      ...restEnv,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
