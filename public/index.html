@@ -14,8 +14,10 @@
       ผลคือปุ่มทุกอันมีวงเทาเข้มของ Chrome โผล่มา) */
   * { box-sizing: border-box; margin: 0; padding: 0; border: 0; }
   :root {
-    /* สีหลักเป็นน้ำเงินแบบคอนโซล admin — เขียว/แดง/เหลืองเหลือไว้สื่อความหมายสถานะเท่านั้น */
-    --brand: #2563eb; --brand-dark: #1d4ed8; --brand-deep: #1e40af; --brand-soft: #eef3ff;
+    /* สีหลักเป็นเขียวชุดเดิม (ค่าเดียวกับก่อน commit 7a3fef1)
+       --blue ยังแยกไว้ต่างหากสำหรับตัวเลขสถิติกับลิงก์ เหมือนที่เคยเป็นมา
+       --green/--red/--amber ไว้สื่อความหมายสถานะเท่านั้น */
+    --brand: #0e9268; --brand-dark: #0b7a57; --brand-deep: #086048; --brand-soft: #e9f6f1;
     --blue: #2563eb; --blue-soft: #eaf0fd;
     --green: #16a34a; --green-soft: #eaf8f0;
     --red: #e11d48; --red-soft: #fdeef2;
@@ -96,11 +98,34 @@
   .sec-ic svg { width: 17px; height: 17px; }
 
   label { display: block; font-size: 12px; font-weight: 600; color: #4c5058; margin-bottom: 5px; }
-  input, select, textarea { width: 100%; padding: 6px 10px; border-radius: var(--r-md); font-size: 13.5px; font-family: inherit; background: #eef0f4; color: var(--text); transition: background 150ms var(--ease); }
+  input, select, textarea { width: 100%; padding: 8px 11px; border-radius: var(--r-md); font-size: 13.5px; font-family: inherit; background: #f7f9fb; color: var(--text); transition: background 150ms var(--ease); }
   input::placeholder, textarea::placeholder { color: #a6abb5; }
-  input:hover, select:hover, textarea:hover { background: #e7eaef; }
+  input:hover, select:hover, textarea:hover { background: #f1f4f8; }
   input:focus, select:focus, textarea:focus { outline: 2px solid var(--brand); outline-offset: 1px; background: #fff; }
   textarea { resize: vertical; min-height: 58px; }
+
+  /* ---------- ช่องติ๊ก — วาดเองให้เหมือนกันทุกหน้า ----------
+     ต้องมีกฎนี้เพราะกฎ input ด้านบน (width:100% + padding + พื้นเทา) กินช่องติ๊กไปด้วย
+     คงภาษาเดิมของระบบ: ไม่มีขอบ ไม่มีเงา พื้นทึบล้วน เทา → น้ำเงินตอนเลือก เหมือน .date-pill */
+  input[type="checkbox"] {
+    appearance: none; -webkit-appearance: none;
+    width: 17px; height: 17px; flex-shrink: 0; padding: 0; margin: 0;
+    border-radius: var(--r-sm); background: #dbdfe7; cursor: pointer; vertical-align: -3px;
+    transition: background-color 150ms var(--ease);
+  }
+  input[type="checkbox"]:hover { background-color: #c8cedb; }
+  input[type="checkbox"]:checked, input[type="checkbox"]:indeterminate {
+    background-color: var(--brand); background-repeat: no-repeat; background-position: center; background-size: 13px;
+  }
+  input[type="checkbox"]:checked {
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%23fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="m4.5 12.5 5 5 10-11"/></svg>');
+  }
+  input[type="checkbox"]:indeterminate {
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%23fff" stroke-width="3.4" stroke-linecap="round"><path d="M6 12h12"/></svg>');
+  }
+  input[type="checkbox"]:checked:hover, input[type="checkbox"]:indeterminate:hover { background-color: var(--brand-dark); }
+  input[type="checkbox"]:disabled { background-color: #e9ebf0; cursor: not-allowed; }
+  input[type="checkbox"]:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 
   /* ---------- dropdown สวยทั้งระบบ (Chrome/Edge รุ่นใหม่ — เบราว์เซอร์เก่า fallback เป็นแบบปกติ) ---------- */
   select, select::picker(select) { appearance: base-select; }
@@ -132,7 +157,7 @@
   .field { margin-bottom: 11px; }
   .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
 
-  button { cursor: pointer; border-radius: var(--r-md); font-size: 13px; font-weight: 600; font-family: inherit; padding: 7px 13px; color: var(--text); background: #f0f2f5; transition: background 150ms var(--ease), transform 160ms var(--ease); }
+  button { cursor: pointer; border-radius: var(--r-md); font-size: 13.5px; font-weight: 600; font-family: inherit; padding: 9px 16px; color: var(--text); background: #f0f2f5; transition: background 150ms var(--ease), transform 160ms var(--ease); }
   button:hover { background: #e8ebef; }
   button:active { transform: scale(.97); }
   .btn-primary { background: var(--brand); color: #fff; }
@@ -141,12 +166,12 @@
   .btn-light:hover { background: #e8ebef; }
   .btn-danger-light { background: var(--red-soft); color: var(--red); }
   .btn-danger-light:hover { background: #fbdde6; }
-  .btn-sm { padding: 4px 9px; font-size: 12px; border-radius: var(--r-md); }
+  .btn-sm { padding: 6px 11px; font-size: 12.5px; border-radius: var(--r-md); }
   .btn-fblogin { background: #1877f2; color: #fff; white-space: nowrap; }
   .btn-fblogin:hover { background: #1567d3; }
 
-  .icon-btn { width: 27px; height: 27px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-md); flex-shrink: 0; }
-  .icon-btn svg { width: 15px; height: 15px; }
+  .icon-btn { width: 32px; height: 32px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-md); flex-shrink: 0; }
+  .icon-btn svg { width: 16px; height: 16px; }
   .switch-row { display: flex; align-items: center; gap: 10px; font-size: 13.5px; font-weight: 400; margin-top: 6px; cursor: pointer; }
   .switch-row .switch { flex-shrink: 0; }
   .sub-h { font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 9px; }
@@ -157,8 +182,8 @@
   /* แถบเครื่องมือของหน้า: ไม่ใช่การ์ด — การ์ดลอยที่มีแค่ปุ่มไม่กี่อันคือน้ำหนักที่ไม่ได้ให้อะไร */
   .page-toolbar { margin: 0 0 12px; }
   .filter-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .filter-bar > button { margin-left: auto; height: 32px; }
-  .filter-bar select { height: 32px; }
+  .filter-bar > button { margin-left: auto; height: 38px; }
+  .filter-bar select { height: 38px; }
   /* panel เลือกบัญชีโฆษณาฝั่งซ้ายของหน้าแคมเปญ */
   .camp-layout { display: flex; gap: 14px; align-items: flex-start; }
   .camp-side { width: 264px; flex-shrink: 0; position: sticky; top: 14px; max-height: calc(100vh - 110px); overflow-y: auto; padding: 16px; }
@@ -177,7 +202,12 @@
   .camp-link:hover { text-decoration: underline; }
   .ad-thumb { width: 34px; height: 34px; border-radius: 6px; object-fit: cover; background: #eceef2; vertical-align: middle; }
   .camp-main { flex: 1; min-width: 0; }
-  .cs-head { display: flex; justify-content: space-between; align-items: center; font-size: 13.5px; font-weight: 700; margin-bottom: 10px; }
+  /* หน้าแคมเปญเสียที่ให้แผงเลือกบัญชีไป 278px — auto-fit จึงได้แค่ 3 ช่อง ไทล์ที่ 4 ตกบรรทัดไปอยู่เดี่ยวๆ
+     บังคับ 4 ช่องเท่ากันให้เป็นแถวเดียวเหมือนแดชบอร์ด */
+  .camp-main .kpi-row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  /* หัวการ์ดเลือกบัญชี ใช้ขนาด+ไอคอนนำชุดเดียวกับ h2 ของการ์ดอื่นทั้งระบบ */
+  .cs-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; margin-bottom: 10px; }
+  .cs-head > span:first-child { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .cs-actions { font-size: 12px; font-weight: 600; color: var(--muted); }
   .cs-actions a { cursor: pointer; }
   details.camp-bm { margin-bottom: 4px; }
@@ -190,7 +220,6 @@
   .bm-count { background: #f0f2f5; border-radius: 10px; padding: 1px 8px; font-size: 11px; flex-shrink: 0; }
   .acct-row { display: flex; align-items: center; gap: 8px; padding: 7px 8px 7px 22px; border-radius: 8px; cursor: pointer; font-size: 13px; }
   .acct-row:hover { background: #f4f6f8; }
-  .acct-row input { width: auto; accent-color: var(--brand); flex-shrink: 0; }
   .acct-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
   .acct-dot.ok { background: var(--green); }
   .acct-dot.bad { background: var(--red); }
@@ -202,8 +231,8 @@
   }
 
   /* ปุ่มช่วงเวลาแบบ pill */
-  .date-pill { background: #eef0f4; color: var(--muted); border-radius: var(--r-md); height: 32px; padding: 0 14px; display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 600; transition: background 150ms var(--ease), color 150ms var(--ease), border-color 150ms var(--ease), transform 160ms var(--ease); }
-  .date-pill:hover { background: #e2e7f5; color: var(--brand); }
+  .date-pill { background: #eef0f4; color: var(--muted); border-radius: var(--r-md); height: 38px; padding: 0 16px; display: inline-flex; align-items: center; font-size: 12.5px; font-weight: 600; transition: background 150ms var(--ease), color 150ms var(--ease), border-color 150ms var(--ease), transform 160ms var(--ease); }
+  .date-pill:hover { background: var(--brand-soft); color: var(--brand); }
   .date-pill.active { background: var(--brand); color: #fff; }
 
   /* ---------- บัญชี FB (profiles) ---------- */
@@ -252,7 +281,7 @@
   /* ---------- คลังวิดีโอ ---------- */
   .lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-top: 14px; }
   .lib-item { border-radius: var(--r-lg); overflow: hidden; background: #fff; display: flex; flex-direction: column; transition: background 150ms var(--ease); }
-  .lib-item:hover { background: #f4f6fa; }
+  .lib-item:hover { background: #f4f7f5; }
   .lib-item.pick { cursor: pointer; }
   .lib-item .lib-th { width: 100%; aspect-ratio: 1; object-fit: cover; background: #f4f5f7; display: block; }
   .lib-item .lib-body { padding: 9px 10px; display: flex; flex-direction: column; gap: 6px; }
@@ -316,14 +345,14 @@
   thead th { background: #f6f7f9; color: #5b6270; font-weight: 700; }
   tbody td { }
   tbody tr:nth-child(even) td { background: #fafbfd; }
-  tbody tr:hover td { background: #eef4fe; }
+  tbody tr:hover td { background: #f6f8f7; }
   /* คอลัมน์ตัวเลขหุบเท่าเนื้อหา ไม่ยืดกินที่ — ที่เหลือปล่อยให้คอลัมน์ข้อความเอาไป ความกว้างจะสมดุลขึ้น */
   th.num, td.num { width: 1%; white-space: nowrap; }
   thead th { text-align: left; color: #59616f; font-size: 12.5px; font-weight: 700; padding: 11px 14px; background: #f8f9fb; white-space: nowrap; position: sticky; top: 0; z-index: 2; }
   th:first-child, td:first-child { padding-left: 20px; }
   th:last-child, td:last-child { padding-right: 20px; }
   td { padding: 13px 14px; vertical-align: middle; }
-  tbody tr:hover td { background: #f7f9fd; }
+  tbody tr:hover td { background: #f6f8f7; }
   tbody tr:last-child td { }
   td.tbl-msg { text-align: center; padding: 46px 20px; color: var(--muted); font-size: 13.5px; background: #fff !important; }
   td.tbl-msg.err { color: var(--red); }
@@ -343,10 +372,13 @@
   .switch input:checked + .sl { background: var(--brand); }
   .switch input:checked + .sl:before { transform: translateX(16px); }
   .res-label { color: var(--muted); font-size: 11.5px; font-weight: 400; }
+  /* .muted ถูกใช้อยู่ 8 จุด (หน้าสุขภาพ, บันทึก autopilot, แถบล่าง) แต่มีกฎเฉพาะใน #barStats
+     ที่เหลือจึงเป็นตัวดำเต็มขนาดปนกับเนื้อหาหลัก */
+  .muted { color: var(--muted); }
 
   /* ---------- ชั้นตารางแบบคอนโซลปฏิบัติการ: เรียงคอลัมน์ / ค้นหา / แบ่งหน้า ---------- */
   thead th.srt { cursor: pointer; user-select: none; }
-  thead th.srt:hover { color: var(--text); background: #f1f4f9; }
+  thead th.srt:hover { color: var(--text); background: #f1f5f2; }
   thead th.srt::after { content: '↕'; margin-left: 5px; opacity: 0; font-size: 10px; transition: opacity 120ms var(--ease); }
   thead th.srt:hover::after { opacity: .45; }
   thead th.srt.asc::after { content: '↑'; opacity: 1; color: var(--brand); }
@@ -358,19 +390,27 @@
   .tbl-bar.on { display: flex; }
   .tbl-bar .tb-search { position: relative; flex: 0 1 250px; min-width: 165px; }
   .tbl-bar .tb-search svg { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; color: var(--muted); pointer-events: none; }
-  .tbl-bar .tb-search input { padding-left: 29px; font-size: 12.5px; height: 30px; }
+  .tbl-bar .tb-search input { padding-left: 31px; font-size: 12.5px; height: 34px; }
   .tbl-bar .tb-count { margin-left: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
   th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
 
   /* คอลัมน์จัดการตรึงขวา — เลื่อนตารางแล้วปุ่มยังอยู่ให้กด (ทำเฉพาะตารางที่คอลัมน์ท้ายเป็นปุ่มจริง) */
   table.tb-stick thead th:last-child, table.tb-stick tbody td:last-child { position: sticky; right: 0; z-index: 1; background: var(--card); }
-  table.tb-stick thead th:last-child { background: #f6f7f9; z-index: 3; }
-  table.tb-stick tbody tr:hover td:last-child { background: #eef4fe; }
+  /* สีสองค่านี้ต้องตรงกับ thead th กับ tbody tr:hover td เป๊ะ ไม่งั้นช่องที่ตรึงขวาจะเป็นแถบสีเพี้ยนคาไว้ท้ายแถว */
+  table.tb-stick thead th:last-child { background: #f8f9fb; z-index: 3; }
+  table.tb-stick tbody tr:hover td:last-child { background: #f6f8f7; }
   table.tb-stick tbody tr:nth-child(even) td:last-child { background: #fafbfd; }
+  /* คอลัมน์ปุ่มท้ายตารางหุบเท่าเนื้อหา ไม่งั้นตารางคอลัมน์น้อยจะแบ่งที่ว่างให้มันจนเป็นรูโหว่กลางตาราง */
+  table.tb-stick thead th:last-child, table.tb-stick tbody td:last-child { width: 1%; white-space: nowrap; }
+  /* แถวที่มีสีของตัวเอง (เช่น "ต้องแก้") ต้องทาสีถึงช่องที่ตรึงขวาด้วย ไม่งั้นเป็นรอยขาวคาอยู่ท้ายแถว */
+  tbody tr.row-warn td,
+  table.tb-stick tbody tr.row-warn td:last-child { background: #fffbf3; }
+  tbody tr.row-warn:hover td,
+  table.tb-stick tbody tr.row-warn:hover td:last-child { background: #fdf5e5; }
   .tbl-foot { display: none; align-items: center; justify-content: flex-end; gap: 6px; padding: 9px 14px 0; font-size: 12px; color: var(--muted); }
   .tbl-foot.on { display: flex; }
-  .tbl-foot button { padding: 3px 9px; font-size: 12px; background: #eef0f4; border-radius: var(--r-md); }
+  .tbl-foot button { padding: 5px 11px; font-size: 12px; background: #eef0f4; border-radius: var(--r-md); }
   .tbl-foot button:disabled { opacity: .4; cursor: default; }
   .tbl-foot .tb-page { font-variant-numeric: tabular-nums; padding: 0 4px; }
 
@@ -423,6 +463,18 @@
   .hi-badge.bad { background: var(--red-soft); color: var(--red); }
   .px-item { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 0; }
   .px-item code { background: #f0f2f5; padding: 1px 7px; border-radius: 6px; font-size: 12px; }
+  /* ช่อง Pixel ในตารางสุขภาพ: ป้ายกับปุ่มต้องสูงเท่ากันและเว้นระยะเท่ากัน ไม่ใช่วางต่อกันด้วยช่องว่างตัวอักษร */
+  .px-cell { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  /* แถบที่มาของตัวเลขวงเงิน — เป็นหมายเหตุ ไม่ใช่เนื้อหาหลัก ใช้พื้นอ่อนกินขอบเท่าการ์ดแบบเดียวกับแถบเครื่องมือตาราง */
+  /* คอลัมน์ชื่อเพจหุบเท่าเนื้อหา ไม่งั้นมันกินที่ว่างทั้งหมดจนสถานะไปลอยอยู่กลางตาราง (ตารางนี้มีแค่ 3 คอลัมน์) */
+  #healthPageRows td:first-child { white-space: nowrap; max-width: 460px; overflow: hidden; text-overflow: ellipsis; }
+  .am-bar { margin: 0 -14px 12px; padding: 9px 14px; background: #fbfcfd; font-size: 12.5px; line-height: 1.7; }
+  .am-bar:empty { display: none; }
+  .am-bar summary { cursor: pointer; list-style: none; color: var(--muted); font-weight: 600; width: fit-content; }
+  .am-bar summary::before { content: '▸ '; }
+  .am-bar details[open] summary::before { content: '▾ '; }
+  .px-one { display: inline-flex; align-items: center; gap: 6px; }
+  .btn-pill { padding: 3px 11px; font-size: 11.5px; font-weight: 700; border-radius: 999px; }
 
   .page { display: none; }
   .page.active { display: block; }
@@ -445,6 +497,7 @@
     nav a .num { display: none; }
     .side-foot { display: none; }
     .app { flex-direction: column; }
+    .camp-main .kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     main { margin-left: 0; padding: 0 14px 40px; }
     .topstrip { margin: 0 -14px; padding: 0 14px; height: auto; min-height: 52px; }
     .logo { height: auto; min-height: 52px; }
@@ -502,7 +555,7 @@
       <div class="camp-layout">
       <aside class="camp-side card">
         <div class="cs-head">
-          <span>บัญชีที่จะขึ้น</span>
+          <span><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>บัญชีที่จะขึ้น</span>
           <span class="cs-actions"><a onclick="launchSelectReady()">ที่พร้อม</a> · <a onclick="loadLaunchAccounts(true)">โหลดใหม่</a></span>
         </div>
         <div class="hint" id="launchAcctSummary" style="margin-bottom:8px"></div>
@@ -741,7 +794,7 @@
       <div class="camp-layout">
       <aside class="camp-side card">
         <div class="cs-head">
-          <span>บัญชีโฆษณา</span>
+          <span><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>บัญชีโฆษณา</span>
           <span class="cs-actions"><a onclick="campSelectAll(true)">ทั้งหมด</a> · <a onclick="campSelectAll(false)">ล้าง</a></span>
         </div>
         <div id="campProfiles"></div>
@@ -849,7 +902,7 @@
           <div class="tile">
             <div class="t-label"><span class="t-ic r"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg></span>บิน / ถูกปิด</div>
             <div class="t-value" id="hDead">—</div>
-            <div class="t-sub">บัญชีถูกปิด + เพจบิน — กดปุ่มตาเพื่อซ่อนจากหน้าอื่น</div>
+            <div class="t-sub">บัญชีถูกปิด + เพจที่บิน</div>
           </div>
         </div>
       </div>
@@ -858,7 +911,7 @@
         <h2 style="margin-bottom:12px"><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><path d="M2 10h20"/></svg></span>บัญชีโฆษณาที่ใช้ได้ <span class="h-desc" id="healthAcctSub"></span>
           <button id="healthBulkPx" class="btn-primary btn-sm" style="margin-left:auto;display:none" onclick="createAllPixelsHealth(this)"></button>
         </h2>
-        <div id="healthAmBar" style="margin-bottom:12px"></div>
+        <div id="healthAmBar" class="am-bar"></div>
         <div class="tbl-wrap">
           <table>
             <thead><tr>
@@ -878,7 +931,8 @@
         <div class="tbl-wrap">
           <table>
             <thead><tr>
-              <th>เพจ</th>
+              <!-- ตารางนี้มีแค่ 3 คอลัมน์ ถ้าปล่อยให้คอลัมน์ชื่อกินที่ว่างทั้งหมด สถานะจะไปลอยอยู่กลางตาราง -->
+              <th style="width:1%">เพจ</th>
               <th>ลงโฆษณาได้ไหม</th>
               <th></th>
             </tr></thead>
@@ -1046,6 +1100,10 @@
         <label class="switch-row" style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
           <span class="switch"><input type="checkbox" id="apTest" onchange="saveAutopilot()"><span class="sl"></span></span>
           <span><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#b8860b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M14 2v6a2 2 0 0 0 .245.96l5.51 10.08A2 2 0 0 1 18 22H6a2 2 0 0 1-1.755-2.96l5.51-10.08A2 2 0 0 0 10 8V2"/><path d="M6.453 15h11.094"/><path d="M8.5 2h7"/></svg> <b>โหมดทดสอบ</b> — สร้างแอดจริงบัญชีละ 1 ตัวแต่<b>ปิดไว้ ไม่ใช้เงินสักบาท</b> ให้ดูฝีมือก่อน • ไม่ปิดแอดขาดทุนและไม่ขยายงบ</span>
+        </label>
+        <label class="switch-row" style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+          <span class="switch"><input type="checkbox" id="apAutoPx" onchange="saveAutopilot()"><span class="sl"></span></span>
+          <span><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--brand-dark,#1a73e8)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> <b>เชื่อมพิกเซลกับหน้า Landing ให้อัตโนมัติ</b> — ปิดไว้ถ้า<b>คุณไปเชื่อมพิกเซลเอง</b>ที่ปลายทาง (เช่น heylink) ระบบจะไม่ฝังพิกเซลลงหน้า <code>/lp</code> และไม่เตือนซ้ำทุกวัน • ยังสร้าง Pixel ให้บัญชีที่ยังไม่มีเหมือนเดิม</span>
         </label>
         <label class="switch-row" style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
           <span class="switch"><input type="checkbox" id="apKill" onchange="saveAutopilot()"><span class="sl"></span></span>
@@ -1959,6 +2017,7 @@ async function loadHealthPage(force) {
   renderHealthPage(results);
 }
 // ปุ่มลูกตา: ซ่อน/โชว์จากทุกหน้า (จัดการที่หน้าสุขภาพที่เดียว) — ซ่อนคือเรื่องการแสดงผลเท่านั้น
+const EXT_LINK_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>';
 const EYE_ON_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
 const EYE_OFF_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/></svg>';
 function eyeBtn(kind, id, hidden) {
@@ -1998,12 +2057,13 @@ function limitCell(a) {
   const bt = (n) => '฿' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   // ส่วนขยายดึง token ตอนหน้า Ads Manager เปิดอยู่ ปุ่มนี้จึงเป็นตัวกระตุ้นให้มันได้ token ใหม่
   // ผูก ?act= ไว้ด้วยเพื่อให้เปิดตรงเข้าบัญชีนั้นเลย ไม่ต้องมานั่งเลือกในหน้า Ads Manager อีกที
-  const openBtn = (label, title) => `<a class="btn-light btn-sm" style="text-decoration:none;display:inline-block;white-space:nowrap"`
+  const openBtn = (label, title, cls) => `<a class="btn-light ${cls}" style="text-decoration:none;white-space:nowrap"`
     + ` target="_blank" rel="noopener" title="${title}"`
     + ` href="https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${encodeURIComponent(a.id)}">${label}</a>`;
-  const refresh = openBtn('↗', 'เปิด Ads Manager ของบัญชีนี้ — ส่วนขยายจะดึง token ใหม่ให้เองตอนหน้าโหลด');
+  // ปุ่มเปิด Ads Manager ใช้ทรงเดียวกับปุ่มไอคอนอื่นในตาราง (27px) ไม่ใช่กล่องเทาลอยขนาดพิเศษ
+  const refresh = openBtn(EXT_LINK_SVG, 'เปิด Ads Manager ของบัญชีนี้ — ส่วนขยายจะดึง token ใหม่ให้เองตอนหน้าโหลด', 'icon-btn');
   if (a.dsl === undefined || a.dsl === null) {
-    return openBtn('เปิด Ads Manager ↗', 'ยังไม่มีตัวเลข — เปิดหน้านี้ให้ส่วนขยายดึง token แล้วกด "เช็คใหม่"');
+    return openBtn('เปิด Ads Manager ↗', 'ยังไม่มีตัวเลข — เปิดหน้านี้ให้ส่วนขยายดึง token แล้วกด "เช็คใหม่"', 'btn-sm');
   }
   const th = (a.threshold === undefined || a.threshold === null) ? ''
     : `<div class="res-label">เรียกเก็บที่ ${bt(a.threshold / 100)}</div>`;
@@ -2021,8 +2081,8 @@ function renderAmBar(results) {
     return `<span class="muted">${esc(r.p.label)}: วงเงินอัปเดตล่าสุด ${t}</span>`;
   });
   document.getElementById('healthAmBar').innerHTML =
-    rows.map(l => `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">${l}</div>`).join('')
-    + '<details><summary class="muted" style="cursor:pointer;font-size:12.5px">วงเงิน/วัน มาจากไหน</summary>'
+    rows.map(l => `<div>${l}</div>`).join('')
+    + '<details><summary>วงเงิน/วัน มาจากไหน</summary>'
     + '<div class="res-label" style="margin-top:8px;line-height:1.9">'
     + 'Meta ไม่เปิด API ให้อ่านวงเงินนี้ด้วย token ของแอปเรา ต้องใช้ session ของ Ads Manager<br>'
     + 'ส่วนขยาย Chrome (โฟลเดอร์ <code>extension</code> ในโปรเจกต์) จึงเป็นตัวอ่านให้ <b>ในเบราว์เซอร์ของคุณเอง</b> แล้วส่งมาแค่ตัวเลข<br><br>'
@@ -2071,21 +2131,21 @@ function renderHealthPage(results) {
     // บัญชีใช้งานได้ที่ถูกซ่อน: autopilot เลิกดูแลแล้ว แต่แอดที่เปิดค้างยังวิ่งเองได้ — ต้องมีป้ายย้ำ
     const apTag = a.hidden && a.status === 1 ? ` <span class="st-pill rejected" title="autopilot ไม่เติมแอด/ไม่ขยายงบ/ไม่แก้แอดให้บัญชีนี้แล้ว — แอดที่ยังเปิดอยู่จะวิ่งต่อเองโดยไม่มีระบบดูแล ปิดแอดเองถ้าไม่ต้องการ">${ic('ban', { size: 12 })} autopilot ไม่ดูแล (ถูกซ่อน)</span>` : '';
     const px = a.dead ? '<span style="color:var(--muted)">—</span>' : a.pixels.length
-      ? a.pixels.map(x => `<span style="white-space:nowrap"><span class="st-pill on" title="Pixel ID: ${esc(x.id)}">✓ ${esc(x.name)}</span> ${x.onLp
+      ? a.pixels.map(x => `<span class="px-one"><span class="st-pill on" title="Pixel ID: ${esc(x.id)}">✓ ${esc(x.name)}</span>${x.onLp
           ? '<span class="st-pill on" title="ฝังอยู่ในหน้า Landing แล้ว — คอนเวอร์ชั่นของบัญชีนี้ถึงจะถูกนับ">LP ✓</span>'
           : '<span class="st-pill issue" title="ยังไม่ได้ฝังในหน้า Landing — แคมเปญของบัญชีนี้จะเห็นคอนเวอร์ชั่นเป็นศูนย์ ระบบผูกให้เองเฉพาะบัญชีที่ใช้งานได้และไม่ถูกซ่อน">ยังไม่ผูก LP</span>'
-        } <button class="btn-light btn-sm" title="คัดลอก Pixel ID ${esc(x.id)}" onclick="copyPixel(${jsStr(x.id)});this.textContent='✓ คัดลอกแล้ว';setTimeout(()=>this.textContent='คัดลอก ID',1200)">คัดลอก ID</button></span>`).join(' ')
+        }<button class="btn-light btn-pill" title="คัดลอก Pixel ID ${esc(x.id)}" onclick="copyPixel(${jsStr(x.id)});this.textContent='✓ คัดลอกแล้ว';setTimeout(()=>this.textContent='คัดลอก ID',1200)">คัดลอก ID</button></span>`).join('')
       : `<button class="btn-primary btn-sm" onclick="createPixelHealth(${jsStr(a.pid)},${jsStr(a.id)},this)">+ สร้าง Pixel เลย</button>`;
     const card = a.dead ? '<span style="color:var(--muted)">—</span>' : a.funding
       ? `<span class="st-pill on">✓ ${esc(a.funding)}</span>`
       : `<a class="btn-primary btn-sm" style="text-decoration:none;display:inline-block;color:#fff" target="_blank" href="https://business.facebook.com/billing_hub/payment_settings?asset_id=${a.id}">เชื่อมบัตรเลย ↗</a>`;
-    const rowStyle = a.hidden ? ' style="opacity:.45"' : a.dead ? ' style="opacity:.6"' : a.missing ? ' style="background:#fffbf3"' : '';
+    const rowStyle = a.hidden ? ' style="opacity:.45"' : a.dead ? ' style="opacity:.6"' : a.missing ? ' class="row-warn"' : '';
     const icon = a.dead ? ic('skull', { color: 'var(--red,#d93025)' }) + ' '
       : a.missing ? ic('wrench', { color: '#b45309' }) + ' '
       : ic('checkCircle', { color: 'var(--green,#0e9268)' }) + ' ';
     return `<tr${rowStyle} data-id="${esc(String(a.id))}">
       <td style="font-weight:600">${icon}${esc(a.name)}${warn}${deadTag}${apTag}<div class="res-label">${multi ? esc(a.plabel) + ' • ' : ''}${a.id}</div></td>
-      <td>${px}</td>
+      <td><div class="px-cell">${px}</div></td>
       <td>${card}</td>
       <td>${a.dead ? '<span style="color:var(--muted)">—</span>' : limitCell(a)}</td>
       <td style="text-align:right">${eyeBtn('account', a.id, !!a.hidden)}</td>
@@ -2465,7 +2525,7 @@ function renderCampaignRows(results, sels) {
       <td><input type="checkbox" class="camp-sel" data-id="${esc(c.id)}" data-name="${esc(c.name)}" data-pid="${esc(c.pid)}" onchange="campSelChanged()"></td>
       <td>${toggle}</td>
       <td><span class="chip" style="white-space:nowrap;max-width:170px;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:middle" title="${esc(label)}">${esc(label)}</span></td>
-      <td style="font-weight:600;min-width:150px"><span class="camp-link" title="ดูชุดโฆษณา/โฆษณาข้างใน" onclick="openCampaignDetail(${jsStr(c.pid)},${jsStr(c.id)},${jsStr(c.account)},${jsStr(c.currency)},${jsStr(c.name)})">${esc(c.name)}</span><div class="res-label">${OBJ_TH[c.objective] || c.objective}</div></td>
+      <td style="font-weight:600;min-width:200px"><span class="camp-link" title="ดูชุดโฆษณา/โฆษณาข้างใน" onclick="openCampaignDetail(${jsStr(c.pid)},${jsStr(c.id)},${jsStr(c.account)},${jsStr(c.currency)},${jsStr(c.name)})">${esc(c.name)}</span><div class="res-label">${OBJ_TH[c.objective] || c.objective}</div></td>
       <td>${statusPill(c)}</td>
       <td>${results}</td>
       <td class="num-cell">${cpr}</td>
@@ -2584,14 +2644,21 @@ async function deleteCampaign(id, name, pid) {
 }
 
 // ---------- เลือกหลายแคมเปญแล้วลบทีเดียว ----------
-function campSelBoxes() { return [...document.querySelectorAll('#campaignRows .camp-sel')]; }
+// นับเฉพาะแถวที่ "มองเห็นอยู่จริง" — ค้นหา/แบ่งหน้าซ่อนแถวไว้ได้
+// ถ้านับแถวที่ซ่อนด้วย ปุ่ม "ลบที่เลือก" จะลบแคมเปญที่ผู้ใช้มองไม่เห็น = ลบผิดตัวแบบกู้คืนไม่ได้
+function campSelBoxes() {
+  return [...document.querySelectorAll('#campaignRows .camp-sel')]
+    .filter((b) => b.closest('tr').style.display !== 'none');
+}
 function campSelChanged() {
   const all = campSelBoxes();
   const n = all.filter((b) => b.checked).length;
   const btn = document.getElementById('campBulkDel');
   btn.style.display = n ? '' : 'none';
   btn.textContent = `ลบที่เลือก (${n})`;
-  document.getElementById('campSelAll').checked = n > 0 && n === all.length;
+  const selAll = document.getElementById('campSelAll');
+  selAll.checked = n > 0 && n === all.length;
+  selAll.indeterminate = n > 0 && n < all.length;   // เลือกบางส่วน = ขีดกลาง ไม่ใช่ติ๊กเต็ม
 }
 function campSelAllToggle(on) { campSelBoxes().forEach((b) => { b.checked = on; }); campSelChanged(); }
 async function bulkDeleteCampaigns() {
@@ -3299,6 +3366,7 @@ async function loadAutopilot() {
   document.getElementById('apEnabled').checked = d.enabled;
   document.getElementById('apKill').checked = d.killSwitch;
   document.getElementById('apTest').checked = d.testMode;
+  document.getElementById('apAutoPx').checked = d.autoLinkPixel !== false;
   document.getElementById('apCap').textContent = d.maxPerDay;
   // หน้านี้รีเฟรชเองทุกจบรอบ (SSE) — เขียนทับช่องที่กำลังพิมพ์คือดีดตัวเลขคามือแล้วที่พิมพ์หายเงียบ
   for (const [id, v] of [['apMinAds', d.minAds || 0], ['apScaleMax', d.scaleMaxBudget || 0]]) {
@@ -3387,6 +3455,7 @@ async function saveAutopilot(extra) {
         enabled: document.getElementById('apEnabled').checked,
         killSwitch: document.getElementById('apKill').checked,
         testMode: document.getElementById('apTest').checked,
+        autoLinkPixel: document.getElementById('apAutoPx').checked,
         minAds: Number(document.getElementById('apMinAds').value) || 0,
         scaleMaxBudget: Number(document.getElementById('apScaleMax').value) || 0,
         ...(reset ? { resetLimits: true } : { limits }),
@@ -4417,6 +4486,8 @@ function tblApply(t) {
       q ? `ตรงกับที่ค้น ${hit.length} จาก ${rows.length}` : `ทั้งหมด ${rows.length}`;
   }
   tblAlignNums(t, hit);
+  // ตารางแคมเปญมีช่องติ๊กรายแถว — พอค้นหา/เปลี่ยนหน้าแล้วแถวที่นับได้เปลี่ยน ต้องอัปเดตปุ่ม "ลบที่เลือก" ตาม
+  if (t.tBodies[0].id === 'campaignRows') campSelChanged();
   const foot = st.foot;
   if (foot) {
     foot.classList.toggle('on', hit.length > TBL_PAGE);
@@ -4442,7 +4513,7 @@ function tblEnhance(t) {
   // แถบค้นหา + ตัวนับ วางเหนือกล่องตาราง (นอก .tbl-wrap เพราะกล่องนั้นเลื่อนแนวนอน)
   const bar = document.createElement('div');
   bar.className = 'tbl-bar';
-    + `<div class="tb-search">${TB_SEARCH_SVG}<input type="search" placeholder="ค้นหาในตารางนี้"></div>`
+  bar.innerHTML = `<div class="tb-search">${TB_SEARCH_SVG}<input type="search" placeholder="ค้นหาในตารางนี้"></div>`
     + '<div class="tb-count"></div>';
   wrap.parentNode.insertBefore(bar, wrap);
   bar.querySelector('input').addEventListener('input', (e) => {
@@ -4462,6 +4533,7 @@ function tblEnhance(t) {
   const ths = Array.from(t.tHead.rows[0].cells);
   ths.forEach((th, i) => {
     if (i === ths.length - 1 && !th.textContent.trim()) return;
+    if (th.querySelector('input')) return;   // หัวคอลัมน์ที่เป็นช่องติ๊ก "เลือกทั้งหมด" — กดแล้วต้องติ๊ก ไม่ใช่เรียงลำดับ
     th.classList.add('srt');
     th.addEventListener('click', () => {
       const dir = (st.sort && st.sort.i === i && st.sort.dir === 'asc') ? 'desc' : 'asc';
