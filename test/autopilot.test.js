@@ -35,7 +35,7 @@ async function boot(t, { world = freshWorld(), config = baseConfig(), videos = 3
   return { ...srv, dir, world, fb };
 }
 
-// รอบแรกของบัญชีจะ baseline แล้วข้าม — ต้องรันสองรอบถึงจะได้พฤติกรรมจริง
+// รอบแรกของบัญชีจะ baseline แอดที่โดนปฏิเสธอยู่ก่อน (ไม่แตะ) — เทสส่วนใหญ่รันสองรอบให้ได้พฤติกรรมของรอบปกติ
 async function runTwice(base) {
   await post(base, '/api/autopilot/run');
   return post(base, '/api/autopilot/run');
@@ -50,6 +50,21 @@ describe('การกันรอบตรวจซ้อนกัน (P0-1)', 
     ]);
     const codes = [a.status, b.status].sort();
     assert.deepStrictEqual(codes, [200, 409], 'ต้องได้ 200 หนึ่ง 409 หนึ่ง');
+  });
+});
+
+describe('รอบแรกหลังเปิดระบบ', () => {
+  test('บัญชีที่ยังไม่มีแอด ต้องเติมแอดตั้งแต่รอบแรก — รอบ baseline ข้ามแค่แอดที่โดนปฏิเสธอยู่ก่อน', async (t) => {
+    // เดิมรอบแรกข้ามทั้งบัญชี เปิดระบบแล้วไม่มีอะไรขึ้นจนรอบถัดไป (20 นาที) ผู้ใช้เจอจริง 12 ต.ค. 2026
+    const world = freshWorld({
+      ads: [{ id: 'OLD', acct: ACCT, name: 'แอดเก่าโดนปฏิเสธ', effective_status: 'DISAPPROVED', adset_id: 'S0', issues_info: [] }],
+    });
+    const { base, dir } = await boot(t, { world });
+    await post(base, '/api/autopilot/run');
+    const made = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/ads`);
+    assert.strictEqual(made.length, 2, 'minAds=2 ต้องเติมครบตั้งแต่รอบแรก');
+    assert.strictEqual((readState(dir).handled.OLD || {}).v, 'baseline', 'แอดที่โดนปฏิเสธอยู่ก่อนต้องจดไว้เฉยๆ ไม่แตะ');
+    assert.ok(!world.calls.some((c) => c.method === 'POST' && c.path === 'OLD'), 'ห้ามแตะแอดเก่า');
   });
 });
 
@@ -81,23 +96,289 @@ describe('การจัดการแคมเปญ (P0-3)', () => {
   });
 });
 
+// งบในค่าตั้งต้นกรอกเป็นบาทเสมอ — บัญชีสกุลอื่นต้องแปลงด้วยเรตจริง (fake-fb: 1 บาท = 0.03 USD / 4.5 JPY / 768 VND)
+// เดิมเอาเลขบาทไปใช้ตรงๆ: บัญชี USD งบ 3,333 บาท กลายเป็น 3,333 ดอลลาร์/วัน (~30 เท่า)
 describe('ค่าเงิน (P2-10)', () => {
-  test('บัญชี JPY ต้องส่งงบเป็นจำนวนเต็มของหน่วยหลัก ไม่คูณ 100', async (t) => {
+  const madeBudget = (world, acct = ACCT) => {
+    const made = world.calls.find((c) => c.method === 'POST' && c.path === `act_${acct}/campaigns`);
+    return made && made.params.daily_budget;
+  };
+  const acctIn = (currency, id = ACCT) => ({ name: `บัญชี ${currency}`, account_id: id, account_status: 1, currency });
+
+  test('บัญชี JPY: แปลงบาทเป็นเยนแล้วส่งเป็นจำนวนเต็ม (เยนไม่มีหน่วยย่อย)', async (t) => {
+    const { base, world } = await boot(t, { world: freshWorld({ accounts: [acctIn('JPY')] }) });
+    await runTwice(base);
+    assert.strictEqual(madeBudget(world), '14999', '3,333 บาท × 4.5 = 14,998.5 เยน → 14,999 (ไม่คูณ 100)');
+  });
+
+  test('บัญชี USD: 3,333 บาท ต้องเป็น 99.99 ดอลลาร์ ไม่ใช่ 3,333 ดอลลาร์', async (t) => {
+    const { base, world } = await boot(t, { world: freshWorld({ accounts: [acctIn('USD')] }) });
+    await runTwice(base);
+    assert.strictEqual(madeBudget(world), '9999', '3,333 × 0.03 = 99.99 ดอลลาร์ = 9,999 เซนต์');
+  });
+
+  test('บัญชี VND: แปลงเป็นดองจำนวนเต็ม', async (t) => {
+    const { base, world } = await boot(t, { world: freshWorld({ accounts: [acctIn('VND')] }) });
+    await runTwice(base);
+    assert.strictEqual(madeBudget(world), '2559744', '3,333 × 768 = 2,559,744 ดอง');
+  });
+
+  test('บัญชี THB ยังต้องคูณ 100 เหมือนเดิม และไม่ต้องไปขอเรต', async (t) => {
+    const { base, world } = await boot(t);
+    await runTwice(base);
+    assert.strictEqual(madeBudget(world), '333300');
+    assert.ok(!world.calls.some((c) => c.path === 'fx'), 'บัญชีบาทไม่ต้องพึ่งแหล่งเรต');
+  });
+
+  test('ดึงเรตไม่ได้: บัญชี USD ต้องไม่ถูกสร้างแคมเปญ (ไม่เดาเรต) แต่บัญชีบาทในรอบเดียวกันยังเดินต่อ', async (t) => {
+    const world = freshWorld({ fxDown: true, accounts: [acctIn('USD', '111'), acctIn('THB', '222')] });
+    const { base, dir } = await boot(t, { world });
+    await runTwice(base);
+    assert.strictEqual(madeBudget(world, '111'), undefined, 'ไม่มีเรตแล้วสร้างแคมเปญ = เสี่ยงงบผิดหลายสิบเท่า');
+    assert.strictEqual(madeBudget(world, '222'), '333300');
+    const log = JSON.stringify(readState(dir).log || []);
+    assert.ok(log.includes('อัตราแลกเปลี่ยน'), 'ต้องเตือนว่าทำไมบัญชีนั้นไม่ถูกเติมแอด');
+  });
+
+  test('ขยายงบบัญชี USD: เพดานกับเกณฑ์ต้นทุนเป็นบาท ต้องแปลงก่อนเทียบ', async (t) => {
+    // งบเดิม 10 ดอลลาร์ • เพดาน 1,000 บาท = 30 ดอลลาร์ • เกณฑ์ 100 บาท = 3 ดอลลาร์/ผล
+    // ใช้ไป 7 ดอลลาร์ ได้ 10 ผล = 0.7 ดอลลาร์/ผล (ถูกกว่า 70% ของ 3) → ชนะ → 10 × 1.2 = 12 ดอลลาร์
     const world = freshWorld({
-      accounts: [{ name: 'บัญชีเยน', account_id: ACCT, account_status: 1, currency: 'JPY' }],
+      accounts: [acctIn('USD')],
+      campaigns: [{ id: 'C1', acct: ACCT, name: 'Autopilot เดิม', status: 'ACTIVE', effective_status: 'ACTIVE', objective: 'OUTCOME_SALES', daily_budget: '1000' }],
+      insights: [{ acct: ACCT, campaign_id: 'C1', spend: '7', actions: [{ action_type: 'omni_purchase', value: '10' }] }],
+    });
+    const config = baseConfig({ autopilot: { enabled: true, minAds: 0, scaleMaxBudget: 1000 } });
+    config.launchDefaults.ruleCpr = '100';
+    const { base, dir } = await boot(t, { world, config, env: { ANTHROPIC_API_KEY: '' } });
+    require('node:fs').writeFileSync(require('node:path').join(dir, 'autopilot-state.json'),
+      JSON.stringify({ baselined: { [ACCT]: Date.now() }, owned: ['C1'], campaign: { [ACCT]: 'C1' } }));
+    await post(base, '/api/autopilot/run');
+    const up = world.calls.find((c) => c.method === 'POST' && c.path === 'C1' && c.params.daily_budget);
+    assert.ok(up, 'ตัวชนะตามเกณฑ์ที่แปลงแล้วต้องถูกขยายงบ (เดิมเทียบ 0.7 ดอลลาร์กับ 100 "บาท" ตรงๆ)');
+    assert.strictEqual(up.params.daily_budget, '1200');
+  });
+
+  test('ขึ้นแอดเองบัญชี USD: งบและกฎหยุดอัตโนมัติต้องแปลงเป็นดอลลาร์', async (t) => {
+    const { base, world } = await boot(t, { world: freshWorld({ accounts: [acctIn('USD')] }) });
+    const form = new FormData();
+    form.append('data', JSON.stringify({
+      profileId: 'p1', accountId: ACCT, pageId: 'page1',
+      campaign: { name: 'เทสสกุลเงิน', objective: 'OUTCOME_SALES' },
+      campaignBudget: 300, cta: 'LEARN_MORE', pixelId: 'px1', conversionEvent: 'SUBSCRIBE', active: false,
+      autoRule: { cpr: 100, minSpend: 150 },
+      ads: [{ mediaId: 'v1', name: 'Ad-1', message: 'ทดสอบ', link: 'https://example.com/', ageMin: 20, ageMax: 65, gender: '', countries: ['TH'], interests: [] }],
+    }));
+    const out = await (await fetch(base + '/api/launch', { method: 'POST', body: form })).text();
+    assert.strictEqual(madeBudget(world), '900', '300 บาท = 9 ดอลลาร์ = 900 เซนต์');
+    const rule = world.calls.find((c) => c.method === 'POST' && /adrules_library$/.test(c.path));
+    const filters = JSON.parse(rule.params.evaluation_spec).filters;
+    assert.strictEqual(filters.find((f) => f.field === 'cpa').value, 300, 'CPA 100 บาท = 3 ดอลลาร์');
+    assert.strictEqual(filters.find((f) => f.field === 'spent').value, 450, 'ใช้เกิน 150 บาท = 4.5 ดอลลาร์');
+    assert.ok(out.includes('1 บาท = 0.03 USD'), 'ต้องบอกผู้ใช้ว่าแปลงด้วยเรตเท่าไหร่');
+  });
+
+  test('ขึ้นแอดเองบัญชี USD ตอนดึงเรตไม่ได้: ต้องไม่สร้างแคมเปญ และบอกเหตุผล', async (t) => {
+    const { base, world } = await boot(t, { world: freshWorld({ fxDown: true, accounts: [acctIn('USD')] }) });
+    const form = new FormData();
+    form.append('data', JSON.stringify({
+      profileId: 'p1', accountId: ACCT, pageId: 'page1',
+      campaign: { name: 'เทสเรตล่ม', objective: 'OUTCOME_SALES' },
+      campaignBudget: 300, cta: 'LEARN_MORE', pixelId: 'px1', conversionEvent: 'SUBSCRIBE', active: false,
+      ads: [{ mediaId: 'v1', name: 'Ad-1', message: 'ทดสอบ', link: 'https://example.com/', ageMin: 20, ageMax: 65, gender: '', countries: ['TH'], interests: [] }],
+    }));
+    const out = await (await fetch(base + '/api/launch', { method: 'POST', body: form })).text();
+    assert.strictEqual(madeBudget(world), undefined);
+    assert.ok(out.includes('"fatal"') && out.includes('อัตราแลกเปลี่ยน'));
+  });
+
+  // ---- รอบรีวิว 12 ต.ค. 2026 ----
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const writeFx = (dir, cache) => fs.writeFileSync(path.join(dir, 'fx-rates.json'), JSON.stringify(cache));
+  const logText = (dir) => JSON.stringify((readState(dir) || {}).log || []);
+  const launchForm = (over = {}) => {
+    const form = new FormData();
+    form.append('data', JSON.stringify({
+      profileId: 'p1', accountId: ACCT, pageId: 'page1',
+      campaign: { name: 'เทสขึ้นแอด', objective: 'OUTCOME_SALES' },
+      campaignBudget: 300, cta: 'LEARN_MORE', pixelId: 'px1', conversionEvent: 'SUBSCRIBE', active: false,
+      ads: [{ mediaId: 'v1', name: 'Ad-1', message: 'ทดสอบ', link: 'https://example.com/', ageMin: 20, ageMax: 65, gender: '', countries: ['TH'], interests: [] }],
+      ...over,
+    }));
+    return form;
+  };
+
+  test('บัญชี IDR: รูเปียห์ไม่มีหน่วยย่อยตามตารางของ Meta ต้องไม่คูณ 100', async (t) => {
+    // เดิมใช้รายชื่อของ Stripe ซึ่งไม่มี IDR → 3,333 บาท × 480 × 100 = เกินจริง 100 เท่า (~333,300 บาท/วัน)
+    const world = freshWorld({ accounts: [acctIn('IDR')], fx: { THB: 1, USD: 0.03, IDR: 480 } });
+    const { base } = await boot(t, { world });
+    await runTwice(base);
+    assert.strictEqual(madeBudget(world), '1599840', '3,333 × 480 = 1,599,840 รูเปียห์ (ไม่ใช่ 159,984,000)');
+  });
+
+  test('แหล่งเรตส่งเรตที่ไม่ใช่ฐานบาทมา ต้องไม่เอาไปคูณ (เดิมบัญชี VND ได้งบเกิน ~33 เท่า)', async (t) => {
+    const world = freshWorld({
+      accounts: [acctIn('VND')],
+      route: (m, p) => (p === 'fx' ? { result: 'success', base_code: 'USD', rates: { USD: 1, THB: 33.5, VND: 25800 } } : null),
+    });
+    const { base, dir } = await boot(t, { world });
+    await runTwice(base);
+    assert.strictEqual(madeBudget(world), undefined, 'เรตฐานผิดต้องไม่ถูกใช้สร้างแคมเปญ');
+    assert.ok(logText(dir).includes('ฐานบาท'), 'ต้องบอกว่าทำไมไม่สร้าง');
+  });
+
+  test('เรตบนดิสก์เก่าเกิน 3 วันและดึงใหม่ไม่ได้ ต้องหยุดแปลงพร้อมเตือน ไม่ใช้เรตเก่าไปเรื่อยๆ', async (t) => {
+    const world = freshWorld({ fxDown: true, accounts: [acctIn('USD')] });
+    const { base, dir } = await boot(t, { world });
+    const old = Date.now() - 5 * 864e5;
+    writeFx(dir, { ts: old, updated: old, rates: { THB: 1, USD: 0.05 } });
+    await runTwice(base);
+    assert.strictEqual(madeBudget(world), undefined, 'เรตเก่า 5 วัน ห้ามใช้ตั้งงบ');
+    assert.ok(logText(dir).includes('เก่าเกิน 3 วัน'));
+  });
+
+  // คำตอบจากแหล่งเรตแบบกำหนดเวลาอัปเดตเองได้ (fake ปกติไม่ส่ง time_last_update_unix)
+  const fxReply = (rates, updatedMs = Date.now()) => (m, p) => (p === 'fx'
+    ? { result: 'success', base_code: 'THB', time_last_update_unix: Math.floor(updatedMs / 1000), rates } : null);
+  const t13h = () => Date.now() - 13 * 3600e3;   // เกินรอบดึงใหม่ 12 ชม. แต่ยังไม่เก่าเกิน 3 วัน
+
+  test('เรตสกุลที่ใช้กระโดดผิดปกติจากรอบก่อน ต้องพักการแปลงพร้อมเตือน ไม่เอาไปตั้งงบ', async (t) => {
+    const world = freshWorld({ accounts: [acctIn('USD')], fx: { THB: 1, USD: 0.05 } });   // 0.03 → 0.05 = +66%
+    const { base, dir } = await boot(t, { world });
+    writeFx(dir, { ts: t13h(), updated: t13h(), rates: { THB: 1, USD: 0.03 } });
+    await runTwice(base);
+    assert.ok(world.calls.some((c) => c.path === 'fx'), 'ต้องลองดึงชุดใหม่');
+    assert.strictEqual(madeBudget(world), undefined, 'เรตกระโดด 66% ห้ามใช้ตั้งงบ');
+    assert.ok(logText(dir).includes('เปลี่ยนผิดปกติ'));
+  });
+
+  test('ตรวจกระโดดรายสกุล: VND เพี้ยน 100 เท่าโดย USD เท่าเดิม ต้องโดนจับ และบัญชี USD ยังเดินต่อได้', async (t) => {
+    // เดิมเทียบแค่ USD — VND 768 → 76800 หลุดผ่าน ส่งงบ 255,974,400 ดอง (เกิน 100 เท่า) โดยไม่มีคนยืนยัน
+    const world = freshWorld({ accounts: [acctIn('VND', '111'), acctIn('USD', '222')], fx: { THB: 1, USD: 0.03, VND: 76800 } });
+    const { base, dir } = await boot(t, { world });
+    writeFx(dir, { ts: t13h(), updated: t13h(), rates: { THB: 1, USD: 0.03, VND: 768 } });
+    await runTwice(base);
+    assert.strictEqual(madeBudget(world, '111'), undefined, 'VND เพี้ยนต้องไม่ถูกใช้');
+    assert.strictEqual(madeBudget(world, '222'), '9999', 'สกุลที่ปกติต้องไม่โดนลากหยุดไปด้วย');
+  });
+
+  test('กระโดดจริงแล้วผู้ให้บริการอัปเดตรอบถัดไป ต้องปลดเอง (ไม่ล็อกถาวร)', async (t) => {
+    const world = freshWorld({ accounts: [acctIn('USD')], route: fxReply({ THB: 1, USD: 0.05 }) });
+    const { base, dir } = await boot(t, { world });
+    // ชุดปัจจุบันคือชุดที่กระโดดแล้ว (0.03 → 0.05) • รอบนี้ผู้ให้บริการอัปเดตใหม่ยังเป็น 0.05 = ค่าจริง
+    writeFx(dir, { ts: t13h(), updated: Date.now() - 864e5, rates: { THB: 1, USD: 0.05 }, prev: { THB: 1, USD: 0.03 }, prevUpdated: Date.now() - 2 * 864e5 });
+    await runTwice(base);
+    assert.strictEqual(madeBudget(world), '16665', '3,333 × 0.05 = 166.65 ดอลลาร์');
+  });
+
+  test('แหล่งเรตล่มนานจนแคชเก่า แล้วกลับมาพร้อมค่าที่ขยับจริงเกิน 20% ต้องรับได้ทันที (ไม่ล็อกตัวเอง)', async (t) => {
+    // เดิมเทียบกับแคชอายุ 10 วัน → ปฏิเสธเรตจริงทุกรอบ ไฟล์อยู่ข้าม redeploy = ล็อกถาวร
+    const world = freshWorld({ accounts: [acctIn('USD')], route: fxReply({ THB: 1, USD: 0.0275 }) });
+    const { base, dir } = await boot(t, { world });
+    const d10 = Date.now() - 10 * 864e5;
+    writeFx(dir, { ts: d10, updated: d10, rates: { THB: 1, USD: 0.0334 } });
+    await runTwice(base);
+    assert.strictEqual(madeBudget(world), '9166', '3,333 × 0.0275 = 91.66 ดอลลาร์');
+  });
+
+  test('เรตชุดแรก (ยังไม่มีแคม) ที่ผิดสเกลทั้งชุด ต้องโดนกรอบ 10–100 บาท/ดอลลาร์', async (t) => {
+    const world = freshWorld({ accounts: [acctIn('USD')], fx: { THB: 1, USD: 0.3 } });
+    const { base, dir } = await boot(t, { world });
+    await runTwice(base);
+    assert.strictEqual(madeBudget(world), undefined);
+    assert.ok(logText(dir).includes('USD ผิดปกติ'));
+  });
+
+  test('แหล่งเรตส่งข้อมูลเก่ากว่าแคมที่มี ต้องไม่ทับ และแคชไม่มีเวลา (ไฟล์เสีย) ต้องถูกทิ้ง', async (t) => {
+    const world = freshWorld({ accounts: [acctIn('USD')], route: fxReply({ THB: 1, USD: 0.02 }, Date.now() - 5 * 864e5) });
+    const { base, dir } = await boot(t, { world });
+    writeFx(dir, { ts: t13h(), updated: t13h(), rates: { THB: 1, USD: 0.03 } });
+    await runTwice(base);
+    assert.strictEqual(madeBudget(world), '9999', 'ต้องใช้ชุดที่ใหม่กว่า (0.03) ไม่ใช่ 0.02 ที่เก่ากว่า');
+    const saved = JSON.parse(fs.readFileSync(path.join(dir, 'fx-rates.json'), 'utf8'));
+    assert.strictEqual(saved.rates.USD, 0.03);
+
+    const w2 = freshWorld({ accounts: [acctIn('USD')], fx: { THB: 1, USD: 0.03 } });
+    const b2 = await boot(t, { world: w2 });
+    writeFx(b2.dir, { rates: { THB: 1, USD: 0.05 } });   // ไม่มี ts — เดิมใช้ตลอดไปไม่ดึงใหม่
+    await runTwice(b2.base);
+    assert.ok(w2.calls.some((c) => c.path === 'fx'), 'ต้องดึงใหม่');
+    assert.strictEqual(madeBudget(w2), '9999');
+  });
+
+  test('ขยายงบบัญชี USD: เพดานที่มีเศษต้องปัดลงเป็นเซนต์ ถึงเพดานแล้วต้องไม่ยิงงบเดิมซ้ำทุกวัน', async (t) => {
+    // เพดาน 3,000 บาท × 0.0304677 = 91.4031 ดอลลาร์ → 9140 เซนต์ • งบตอนนี้ 9140 = ถึงเพดานแล้ว
+    // เดิมเทียบ 91.4 < 91.4031 → "ยังไม่ถึง" → POST 9140 ซ้ำ + แจ้ง "ขยายงบ 91.4 → 91.4 USD" ทุกวัน
+    const world = freshWorld({
+      accounts: [acctIn('USD')], fx: { THB: 1, USD: 0.0304677 },
+      campaigns: [{ id: 'C1', acct: ACCT, name: 'Autopilot เดิม', status: 'ACTIVE', effective_status: 'ACTIVE', objective: 'OUTCOME_SALES', daily_budget: '9140' }],
+      insights: [{ acct: ACCT, campaign_id: 'C1', spend: '20', actions: [{ action_type: 'omni_purchase', value: '30' }] }],
+    });
+    const config = baseConfig({ autopilot: { enabled: true, minAds: 0, scaleMaxBudget: 3000 } });
+    const { base, dir } = await boot(t, { world, config, env: { ANTHROPIC_API_KEY: '' } });
+    fs.writeFileSync(path.join(dir, 'autopilot-state.json'),
+      JSON.stringify({ baselined: { [ACCT]: Date.now() }, owned: ['C1'], campaign: { [ACCT]: 'C1' } }));
+    await post(base, '/api/autopilot/run');
+    assert.ok(!world.calls.some((c) => c.method === 'POST' && c.path === 'C1'), 'ถึงเพดานแล้วต้องไม่แตะงบ');
+    assert.ok(!logText(dir).includes('ขยายงบ'), 'ต้องไม่แจ้งว่าขยายงบ');
+  });
+
+  test('ดึงเรตไม่ได้: ตัวปิดแอดขาดทุนต้องเตือน ไม่ใช่หยุดเงียบ (แอดขาดทุนจะเผาเงินต่อโดยไม่มีใครรู้)', async (t) => {
+    const config = baseConfig({ autopilot: { enabled: true, minAds: 0 } });
+    config.launchDefaults.ruleOn = true;
+    const { base, dir } = await boot(t, { world: freshWorld({ fxDown: true, accounts: [acctIn('USD')] }), config });
+    await runTwice(base);
+    assert.ok(logText(dir).includes('ไม่ปิดแอดขาดทุน'), 'ต้องบอกว่าระหว่างนี้ระบบไม่ปิดแอดขาดทุนให้');
+  });
+
+  test('ดึงเรตไม่ได้แต่แคมเปญของระบบยังเปิดอยู่ ต้องเติมแอดเข้าแคมเปญเดิมต่อได้ (ไม่ต้องใช้เรต)', async (t) => {
+    const world = freshWorld({
+      fxDown: true, accounts: [acctIn('USD')],
+      campaigns: [{ id: 'C_EXIST', acct: ACCT, name: 'Autopilot 2026-10-01', status: 'ACTIVE', objective: 'OUTCOME_SALES', daily_budget: '9999' }],
     });
     const { base } = await boot(t, { world });
     await runTwice(base);
-    const made = world.calls.find((c) => c.method === 'POST' && c.path === `act_${ACCT}/campaigns`);
-    assert.ok(made, 'ต้องมีการสร้างแคมเปญ');
-    assert.strictEqual(made.params.daily_budget, '3333', 'JPY ไม่มีหน่วยย่อย ต้องส่ง 3333 ไม่ใช่ 333300');
+    assert.strictEqual(madeBudget(world), undefined, 'ไม่สร้างแคมเปญใหม่');
+    const adsets = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/adsets`);
+    assert.ok(adsets.length > 0 && adsets.every((c) => c.params.campaign_id === 'C_EXIST'), 'ต้องเติมแอดเข้าแคมเปญเดิม');
   });
 
-  test('บัญชี THB ยังต้องคูณ 100 เหมือนเดิม', async (t) => {
-    const { base, world } = await boot(t);
+  test('บัญชี USD ใช้งบวันนี้ครบ ข้อความต้องติดป้าย USD ไม่ใช่ "บาท"', async (t) => {
+    const world = freshWorld({
+      accounts: [acctIn('USD')],
+      campaigns: [{ id: 'C_EXIST', acct: ACCT, name: 'Autopilot 2026-10-01', status: 'ACTIVE', objective: 'OUTCOME_SALES', daily_budget: '10000' }],
+      insights: [{ acct: ACCT, spend: '99' }],
+    });
+    const { base, dir } = await boot(t, { world });
     await runTwice(base);
-    const made = world.calls.find((c) => c.method === 'POST' && c.path === `act_${ACCT}/campaigns`);
-    assert.strictEqual(made.params.daily_budget, '333300');
+    const line = ((readState(dir) || {}).log || []).map((l) => l.msg).find((m) => m.includes('ใช้งบวันนี้ครบแล้ว'));
+    assert.ok(line, 'ต้องมีข้อความงบเต็ม');
+    assert.ok(line.includes('99/100 USD') && !line.includes('บาท'), line);
+  });
+
+  test('ขึ้นแอดเองเข้าแคมเปญเดิมตอนดึงเรตไม่ได้ ต้องขึ้นได้ (ไม่ได้ตั้งงบใหม่ ไม่ต้องใช้เรต)', async (t) => {
+    const world = freshWorld({
+      fxDown: true, accounts: [acctIn('USD')],
+      campaigns: [{ id: 'C_OLD', acct: ACCT, name: 'แคมเปญเดิม', status: 'ACTIVE', objective: 'OUTCOME_SALES', daily_budget: '1000' }],
+    });
+    const { base } = await boot(t, { world });
+    const out = await (await fetch(base + '/api/launch', { method: 'POST', body: launchForm({ campaignId: 'C_OLD', currency: 'USD' }) })).text();
+    assert.ok(!out.includes('"fatal"'), out.slice(0, 300));
+    assert.ok(world.calls.some((c) => c.method === 'POST' && c.path === `act_${ACCT}/ads`), 'ต้องสร้างแอดได้');
+  });
+
+  test('ขึ้นแอดเองตอนอ่านสกุลเงินจาก FB ไม่ได้ ต้องใช้สกุลจากรายชื่อบัญชีที่หน้าเว็บส่งมา (บัญชีบาทไม่ควรติด)', async (t) => {
+    const world = freshWorld({
+      route: (m, p, params) => (m === 'GET' && p === `act_${ACCT}` && params.fields === 'currency' ? { error: 'ล่มชั่วคราว' } : null),
+    });
+    const { base } = await boot(t, { world });
+    const out = await (await fetch(base + '/api/launch', { method: 'POST', body: launchForm({ currency: 'THB' }) })).text();
+    assert.strictEqual(madeBudget(world), '30000', '300 บาท = 30,000 สตางค์');
+    assert.ok(out.includes('ใช้ THB จากรายชื่อบัญชีแทน'));
+    // ไม่มีสกุลจากหน้าเว็บ = ไม่รู้จริงๆ ต้องไม่เดา
+    const out2 = await (await fetch(base + '/api/launch', { method: 'POST', body: launchForm({ campaign: { name: 'อีกอัน', objective: 'OUTCOME_SALES' } }) })).text();
+    assert.ok(out2.includes('"fatal"') && out2.includes('สกุลเงิน'));
   });
 });
 
@@ -119,6 +400,51 @@ describe('ผู้ลงโฆษณา DSA', () => {
     const as = world.calls.find((c) => c.method === 'POST' && c.path === `act_${ACCT}/adsets`);
     assert.ok(as);
     assert.ok(!('regional_regulation_identities' in as.params), 'ไม่มีค่าก็ไม่ควรส่งฟิลด์');
+  });
+
+  // หน้าขึ้นแอดเอง: ช่อง "ผู้ลงโฆษณา" ไม่บังคับ — ไม่มีให้เลือก/ไม่เลือก ต้องขึ้นแอดต่อได้
+  const launchWith = async (base, beneficiaryId) => {
+    const form = new FormData();
+    form.append('data', JSON.stringify({
+      profileId: 'p1', accountId: ACCT, pageId: 'page1', beneficiaryId,
+      campaign: { name: 'เทสผู้ลงโฆษณา', objective: 'OUTCOME_SALES' },
+      campaignBudget: 300, cta: 'LEARN_MORE', pixelId: 'px1', conversionEvent: 'SUBSCRIBE', active: false,
+      ads: [{ mediaId: 'v1', name: 'Ad-1', message: 'ทดสอบ', link: 'https://example.com/', ageMin: 20, ageMax: 65, gender: '', countries: ['TH'], interests: [] }],
+    }));
+    return (await fetch(base + '/api/launch', { method: 'POST', body: form })).text();
+  };
+  const adsetCalls = (world) => world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/adsets`);
+  const adCreated = (world) => world.calls.some((c) => c.method === 'POST' && c.path === `act_${ACCT}/ads`);
+
+  test('ขึ้นแอดเองโดยไม่เลือกผู้ลงโฆษณา ต้องข้ามฟิลด์นี้แล้วขึ้นแอดได้ตามปกติ', async (t) => {
+    const { base, world } = await boot(t);
+    await launchWith(base, '');
+    const [as] = adsetCalls(world);
+    assert.ok(as, 'ต้องสร้างชุดโฆษณา');
+    assert.ok(!('regional_regulation_identities' in as.params), 'ไม่เลือก = ไม่ส่งฟิลด์');
+    assert.ok(adCreated(world), 'ต้องสร้างแอดต่อได้');
+  });
+
+  test('ขึ้นแอดเองแล้วเลือกผู้ลงโฆษณา ต้องส่งไปกับชุดโฆษณา', async (t) => {
+    const { base, world } = await boot(t);
+    await launchWith(base, '999888');
+    const rri = JSON.parse(adsetCalls(world)[0].params.regional_regulation_identities || '{}');
+    assert.strictEqual(rri.universal_beneficiary, '999888');
+    assert.strictEqual(rri.universal_payer, '999888');
+  });
+
+  test('FB ไม่รับผู้ลงโฆษณาที่เลือก ต้องเตือนแล้วขึ้นต่อโดยไม่ระบุ ไม่ล้มทั้งแอด', async (t) => {
+    const world = freshWorld({
+      route: (m, path, params) => (m === 'POST' && path === `act_${ACCT}/adsets` && params.regional_regulation_identities
+        ? { error: 'Invalid parameter: regional_regulation_identities' } : null),
+    });
+    const { base } = await boot(t, { world });
+    const out = await launchWith(base, '999888');
+    const calls = adsetCalls(world);
+    assert.strictEqual(calls.length, 2, 'ครั้งแรกโดนปฏิเสธ ครั้งที่สองต้องลองใหม่โดยไม่มีฟิลด์นี้');
+    assert.ok(!('regional_regulation_identities' in calls[1].params));
+    assert.ok(out.includes('ขึ้นต่อโดยไม่ระบุ'), 'ต้องบอกผู้ใช้ในสตรีม');
+    assert.ok(adCreated(world), 'ต้องสร้างแอดต่อได้');
   });
 });
 
@@ -783,10 +1109,8 @@ describe('บาลานซ์เพจ + กันเพจแตก', () => {
     const { base, dir, world } = await boot(t, { world: pagesWorld(), config: cfg });
     const fs = require('node:fs'), path = require('node:path');
     const sp = path.join(dir, 'autopilot-state.json');
-    await post(base, '/api/autopilot/run');              // baseline
-    const st0 = JSON.parse(fs.readFileSync(sp, 'utf8'));
-    st0.pageCursor = 7;                                    // ค่าเดิมแบบเก่า (ตัวเลข)
-    fs.writeFileSync(sp, JSON.stringify(st0));
+    // state เก่าต้องอยู่ก่อนรอบแรก — รอบแรกเติมแอดเลย (รอบ baseline ไม่ข้ามการเติมแอดแล้ว)
+    fs.writeFileSync(sp, JSON.stringify({ pageCursor: 7 }));   // ค่าเดิมแบบเก่า (ตัวเลข)
     await post(base, '/api/autopilot/run');               // เติมจริง
     const ids = pageIdsOf(world);
     assert.ok(ids.length >= 2, 'ต้องยังสร้างแอดได้ ไม่พังเพราะ state เก่า: ได้ ' + ids.length);
@@ -1229,5 +1553,81 @@ describe('การหมุนครีเอทีฟต้องไม่ต�
       assert.ok(same < Math.min(a.size, b.size) || a.size === 0,
         `สองบัญชีในรอบเดียวกันได้คลิปซ้ำกันทั้งหมด (${same} ตัว) — taken ไม่ทำงาน`);
     }
+  });
+});
+
+describe('สวิตช์หยุดฉุกเฉิน (รีวิว 12 ต.ค. 2026)', () => {
+  test('ส่งมาแค่ killSwitch ต้องไม่ไปแตะค่าอื่น (เปิดระบบ/minAds/ฝังพิกเซล/เพดานขยายงบ)', async (t) => {
+    // หน้าเว็บกดหยุดฉุกเฉินได้ก่อนโหลดค่าเสร็จ — เดิม endpoint ตั้ง enabled จาก body เสมอ
+    // ส่งแค่ killSwitch = ปิดระบบอัตโนมัติไปด้วย ปลดหยุดแล้วระบบยังปิดอยู่เงียบๆ
+    const config = baseConfig({ autopilot: { enabled: true, minAds: 3, autoLinkPixel: true, scaleMaxBudget: 5000, testMode: true } });
+    const { base, dir } = await boot(t, { config });
+    await post(base, '/api/autopilot', { killSwitch: true });
+    const ap = JSON.parse(require('node:fs').readFileSync(require('node:path').join(dir, 'config.json'), 'utf8')).autopilot;
+    assert.deepStrictEqual(
+      { enabled: ap.enabled, minAds: ap.minAds, autoLinkPixel: ap.autoLinkPixel, scaleMaxBudget: ap.scaleMaxBudget, testMode: ap.testMode },
+      { enabled: true, minAds: 3, autoLinkPixel: true, scaleMaxBudget: 5000, testMode: true });
+    assert.strictEqual(readState(dir).killSwitch, true);
+    const log = JSON.stringify(readState(dir).log);
+    assert.ok(log.includes('กดหยุดฉุกเฉิน') && !log.includes('ปิดระบบอัตโนมัติ'));
+  });
+});
+
+describe('หน้าสุขภาพบัญชี: สกุลเงิน (รีวิว 12 ต.ค. 2026)', () => {
+  test('ต้องส่งสกุลและหน่วยย่อยของแต่ละบัญชี ให้หน้าเว็บโชว์ยอดเรียกเก็บถูกสกุล', async (t) => {
+    // เดิมหน้าเว็บหาร 100 และใส่ ฿ ตายตัว — บัญชี VND/JPY/IDR โชว์ยอดเล็กไป 100 เท่า
+    const world = freshWorld({ accounts: [
+      { name: 'บัญชีดอง', account_id: '111', account_status: 1, currency: 'VND' },
+      { name: 'บัญชีดอลลาร์', account_id: '222', account_status: 1, currency: 'USD' },
+    ] });
+    const { base } = await boot(t, { world });
+    const h = await get(base, '/api/health-overview?profile=p1');
+    const by = Object.fromEntries(h.accounts.map((a) => [a.id, a]));
+    assert.deepStrictEqual([by['111'].currency, by['111'].minor], ['VND', 1]);
+    assert.deepStrictEqual([by['222'].currency, by['222'].minor], ['USD', 100]);
+  });
+});
+
+describe('error ที่ต้องให้คนไปจัดการก่อน (บัญชีจริง 12 ต.ค. 2026)', () => {
+  const adPosts = (world) => world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/ads`);
+
+  test('FB ให้ยืนยันบัญชี (3858385) ตอนสร้างแอด: ต้องหยุดบัญชีนี้ ลบชุดโฆษณาเปล่าทิ้ง และไม่ลองซ้ำรอบหน้า', async (t) => {
+    // เดิมลองซ้ำทุก 20 นาที ทิ้งชุดโฆษณาเปล่าไว้ทุกรอบ และยิงคำขอใส่บัญชีที่ FB สงสัยอยู่ซ้ำๆ
+    const world = freshWorld({
+      route: (m, p) => (m === 'POST' && p === `act_${ACCT}/ads`
+        ? { error: 'This request requires the user to take a pending action', errorCode: 31, errorSubcode: 3858385 } : null),
+    });
+    const { base, dir } = await boot(t, { world });
+    await post(base, '/api/autopilot/run');
+    const st = readState(dir);
+    assert.ok(st.noRotate[ACCT] && st.noRotate[ACCT].action, 'ต้องหยุดเติมแอดให้บัญชีนี้');
+    assert.match(st.noRotate[ACCT].cat, /ยืนยันบัญชี/);
+    const sets = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/adsets`);
+    assert.strictEqual(sets.length, 1);
+    assert.ok(world.adsets.every((x) => x.status === 'DELETED'), 'ชุดโฆษณาที่เพิ่งสร้างต้องถูกลบ ไม่ค้างเป็นชุดเปล่า');
+    const tries = adPosts(world).length;
+    await post(base, '/api/autopilot/run');
+    assert.strictEqual(adPosts(world).length, tries, 'รอบถัดไปต้องไม่ลองซ้ำ');
+    // แก้แล้วกดปลดล็อก = กลับมาลองได้
+    await post(base, '/api/autopilot/unfreeze', { acctId: ACCT });
+    world.route = null;
+    await post(base, '/api/autopilot/run');
+    assert.ok(adPosts(world).length > tries, 'ปลดล็อกแล้วต้องเติมแอดได้');
+  });
+
+  test('FB บังคับผู้ลงโฆษณาที่ยืนยันแล้ว (3858634) ตอนสร้างชุดโฆษณา: ต้องหยุดบัญชีนี้และบอกวิธีแก้', async (t) => {
+    const world = freshWorld({
+      route: (m, p) => (m === 'POST' && p === `act_${ACCT}/adsets`
+        ? { error: 'Invalid parameter', errorCode: 100, errorSubcode: 3858634 } : null),
+    });
+    const { base, dir } = await boot(t, { world });
+    await post(base, '/api/autopilot/run');
+    const st = readState(dir);
+    assert.ok(st.noRotate[ACCT] && st.noRotate[ACCT].action);
+    assert.match(st.noRotate[ACCT].cat, /ผู้ลงโฆษณา/);
+    assert.strictEqual(adPosts(world).length, 0);
+    const before = world.calls.length;
+    await post(base, '/api/autopilot/run');
+    assert.ok(!world.calls.slice(before).some((c) => c.method === 'POST' && c.path === `act_${ACCT}/adsets`), 'ต้องไม่ลองซ้ำ');
   });
 });

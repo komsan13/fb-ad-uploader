@@ -14,7 +14,7 @@ if errorlevel 1 (
 )
 
 echo === [2/2] deploy ไปที่เซิร์ฟเวอร์ ad.senball.com ===
-ssh -i "%USERPROFILE%\.ssh\ball_deploy" root@31.97.105.21 "cd /opt/fb-ad-uploader && git pull --ff-only && bash redeploy.sh"
+ssh -i "%USERPROFILE%\.ssh\ball_deploy" root@72.61.114.133 "cd /opt/fb-ad-uploader && git pull --ff-only && bash redeploy.sh"
 if errorlevel 1 (
   echo.
   echo deploy ไม่สำเร็จ — อ่าน error ด้านบน

@@ -49,6 +49,7 @@ async function startServer(dir, fbPort, extraEnv = {}) {
       PORT: String(port),
       CONFIG_PATH: path.join(dir, 'config.json'),
       FB_API_BASE: `http://127.0.0.1:${fbPort}`,
+      FX_API_URL: `http://127.0.0.1:${fbPort}/fx`,   // เรตปลอมจาก fake-fb — ห้ามเทสวิ่งไปเว็บจริง
       // ต้องตรงกับ base ที่เทสใช้เรียก ไม่งั้นโค้ดที่เทียบว่า "ลิงก์ชี้มาหน้าเราไหม" จะไม่ตรง
       PUBLIC_URL: `http://127.0.0.1:${port}`,
       ...extraEnv,

@@ -240,6 +240,8 @@ async function fb(pathname, params, method, token, attempt = 0) {
     }
     const err = new Error(msg);
     err.fbMessage = e.message || '';
+    err.fbCode = e.code;
+    err.fbSubcode = e.error_subcode;
     throw err;
   }
   fbClearAppBlock(token);   // token นี้เรียกสำเร็จ = แอปของมันกลับมาแล้ว — ปลดเฉพาะของตัวเอง (ปกติ no-op)
@@ -338,6 +340,40 @@ const THAI_LOCALE = 35;
 
 const REDIRECT_URI = `${PUBLIC_URL}/auth/callback`;
 const LOGIN_SCOPES = 'ads_management,ads_read,business_management,pages_show_list,pages_read_engagement';
+
+// ช่วงวันที่ที่หน้าเว็บส่งมาได้ — ลิสต์เดียวทุก endpoint ค่านอกลิสต์ถูกบีบเป็น 'maximum' (ไม่ส่งต่อ FB ตรงๆ)
+// เดิมแต่ละ endpoint มีลิสต์ของตัวเอง เพิ่มช่วงใหม่แล้วลืมบางที่ = ได้ตัวเลขผิดช่วงแบบเงียบๆ
+const DATE_PRESETS = ['today', 'yesterday', 'last_7d', 'last_30d', 'last_90d', 'maximum'];
+const pickDatePreset = (v) => (DATE_PRESETS.includes(v) ? v : 'maximum');
+
+// คุยเรื่อง token กับ FB (แลก code / แลกเป็น 60 วัน / ตรวจอายุ) — ทุกเส้นมี timeout
+// ไม่มี timeout แล้ว FB ค้าง = request ของหน้าเว็บค้างไปด้วยหลายนาที (fetch รอ header ~300 วิ)
+// ปรับผ่าน env ได้เฉพาะเพื่อให้เทสจำลอง FB ตอบช้าได้โดยไม่ต้องรอนาน
+const FB_AUTH_TIMEOUT_MS = Number(process.env.FB_AUTH_TIMEOUT_MS) || 15000;
+async function fbAuthGet(pathAndQuery) {
+  const res = await fetch(`${API}/${pathAndQuery}`, { signal: AbortSignal.timeout(FB_AUTH_TIMEOUT_MS) });
+  fbNoteUsage(res);   // เส้นนี้ไม่ผ่าน fb() — ต้องอ่านโควตาเองด้วย ไม่งั้นสัญญาณ "ให้พัก" จาก call พวกนี้หายเงียบ
+  const j = await res.json();
+  // โดนจำกัดความถี่ = พักการเรียกสั้นๆ (fb() ลองซ้ำก่อนค่อยพัก แต่เส้นนี้มีคนกดรออยู่ ไม่ลองซ้ำ)
+  // ไม่งั้นกด "เชื่อมต่อ" ซ้ำ 3 ครั้งระหว่างโดนกั้น = ยิง FB 3 ครั้ง มีแต่ยืดเวลาโดนแขวน
+  if (j && j.error && THROTTLE_CODES.has(j.error.code)) fbSetCool(Date.now() + 5 * 60000, true);
+  return j;
+}
+const fbHardCooling = () => Date.now() < fbCoolUntil && fbCoolHard;
+const fbExchangeLongLived = (appId, appSecret, token) => fbAuthGet('oauth/access_token?grant_type=fb_exchange_token'
+  + `&client_id=${encodeURIComponent(appId)}&client_secret=${encodeURIComponent(appSecret)}&fb_exchange_token=${encodeURIComponent(token)}`);
+const fbDebugToken = (appId, appSecret, token) => fbAuthGet(`debug_token?input_token=${encodeURIComponent(token)}`
+  + `&access_token=${encodeURIComponent(`${appId}|${appSecret}`)}`);
+const TOKEN_RENEW_BEFORE_MS = 14 * 864e5; // เหลือน้อยกว่านี้ถึงต่ออายุ (ทั้งตอนบันทึกการ์ดและ watchTick)
+
+// error จาก FB ที่ลองซ้ำไปก็ไม่ผ่าน ต้องให้คนไปจัดการก่อน (วัดจากบัญชีจริง 12 ต.ค. 2026)
+// เดิมระบบลองซ้ำทุก 20 นาที ทิ้งชุดโฆษณาเปล่าไว้ทุกรอบ และยิงคำขอใส่บัญชีที่ FB กำลังสงสัยอยู่ซ้ำๆ
+// 3858385 (code 31) = "โปรดยืนยันบัญชีของคุณ" — FB บล็อกการสร้างแอดผ่าน API (Ads Manager ยังกดเองได้)
+// 3858634 = "ไม่มีผู้ลงโฆษณา" — บัญชีถูกบังคับให้ระบุผู้ลงโฆษณาที่ยืนยันตัวตนแล้วก่อนยิงแอดเข้าไทย
+const FB_NEEDS_HUMAN = {
+  3858385: 'FB ให้ยืนยันบัญชีใน Ads Manager ก่อน (สงสัยว่ามีคนแอบเข้า — บล็อกการสร้างแอดผ่านโปรแกรม)',
+  3858634: 'FB บังคับให้ระบุผู้ลงโฆษณาที่ยืนยันตัวตนแล้ว (ยืนยันใน Ads Manager แล้วเลือกในหน้าขึ้นแอด)',
+};
 
 const OBJECTIVES = {
   OUTCOME_TRAFFIC: { optimization_goal: 'LINK_CLICKS' },
@@ -461,6 +497,17 @@ function saveCaptions(items) { fs.writeFileSync(CAPTION_PATH, JSON.stringify(ite
 
 app.get('/api/captions', (req, res) => res.json(loadCaptions()));
 
+// อัตราแลกเปลี่ยนบาท → สกุลที่ขอ (?cur=USD,VND) ให้หน้าขึ้นแอดโชว์ว่างบแต่ละบัญชีจะเป็นเท่าไหร่
+app.get('/api/fx', async (req, res) => {
+  const out = {};
+  const minor = {};   // หน่วยย่อยต่อหน่วยหลัก (1 = ไม่มีทศนิยม) — หน้าเว็บใช้ชุดเดียวกับที่ส่ง FB จริง ไม่ถือรายชื่อซ้ำเอง
+  for (const c of String(req.query.cur || '').split(',').map((x) => x.trim().toUpperCase()).filter(Boolean).slice(0, 30)) {
+    try { out[c] = await thbRate(c); } catch (e) { out[c] = { error: e.message }; }
+    minor[c] = curFactor(c);
+  }
+  res.json({ rates: out, minor, ts: fxCache ? fxCache.ts : null, asOf: fxCache ? fxCache.updated || fxCache.ts : null, source: 'ExchangeRate-API (open.er-api.com)' });
+});
+
 app.post('/api/captions', (req, res) => {
   const message = String(req.body.message || '').trim();
   if (!message) return res.status(400).json({ error: 'ต้องมีข้อความหลัก' });
@@ -495,6 +542,29 @@ app.post('/api/captions/delete', (req, res) => {
   items.splice(i, 1);
   saveCaptions(items);
   res.json({ ok: true });
+});
+
+// สร้างแคปชั่นภาษาเวียดนามสั้นๆ อัตโนมัติ (ปุ่มในหน้าคลังสื่อ) — สุ่มจับคู่ "คำนาม + สี/คำคุณศัพท์"
+// เช่น "Hoa đỏ" (ดอกไม้สีแดง), "Mèo trắng" (แมวสีขาว) • ใช้คลังคำในโปรแกรม ไม่เรียก AI: ฟรี ได้ทันที ไม่ต้องมี key
+const VI_NOUNS = ['Hoa', 'Mèo', 'Chó', 'Cá', 'Chim', 'Biển', 'Trời', 'Mây', 'Lá', 'Cây', 'Áo', 'Mũ', 'Giày', 'Túi', 'Xe', 'Nhà',
+  'Cửa', 'Ghế', 'Cốc', 'Bánh', 'Táo', 'Kẹo', 'Bóng', 'Sách', 'Bút', 'Đèn', 'Gối', 'Nến', 'Trăng', 'Sao', 'Váy', 'Nơ'];
+const VI_ADJS = ['đỏ', 'xanh', 'vàng', 'trắng', 'đen', 'hồng', 'tím', 'cam', 'nâu', 'xám', 'đẹp', 'xinh', 'nhỏ', 'to', 'mới',
+  'dễ thương', 'lấp lánh'];
+app.post('/api/captions/auto', (req, res) => {
+  const n = Number.parseInt(req.body.count, 10);
+  const count = Number.isNaN(n) ? 10 : Math.min(100, Math.max(1, n));
+  const items = loadCaptions();
+  // ไม่ซ้ำกับที่มีในคลังแล้ว — ตัวจัดแผนหยิบแคปชั่นไปใช้ทีละอัน ซ้ำกันก็ไม่ได้อะไรเพิ่ม
+  // เทียบแบบ normalize: ภาษาเวียดนามพิมพ์ได้ทั้งแบบประกอบสำเร็จ (NFC) และแยกวรรณยุกต์ (NFD) + ช่องว่างซ้อน
+  // เดิมเทียบดิบ แคปชั่นที่พิมพ์เองด้วยคีย์บอร์ดแบบ NFD ถูกสร้างซ้ำหน้าตาเหมือนกันเป๊ะ
+  const capNorm = (m) => String(m || '').normalize('NFC').replace(/\s+/g, ' ').trim().toLowerCase();
+  const have = new Set(items.map((c) => capNorm(c.message)));
+  const pool = VI_NOUNS.flatMap((a) => VI_ADJS.map((b) => `${a} ${b}`)).filter((m) => !have.has(capNorm(m)));
+  for (let i = pool.length - 1; i > 0; i--) { const j = crypto.randomInt(i + 1); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  const now = Date.now();
+  const added = pool.slice(0, count).map((message) => ({ id: 'c' + crypto.randomUUID(), message, headline: '', ts: now }));
+  if (added.length) { items.unshift(...added); saveCaptions(items); }
+  res.json({ added, left: pool.length - added.length });
 });
 
 // ---------- หน้า Landing (link-in-bio) + หลังบ้านแก้ลิงก์/พิกเซล ----------
@@ -1086,21 +1156,124 @@ app.post('/api/profiles', (req, res) => {
   res.json({ id });
 });
 
-app.post('/api/profiles/update', (req, res) => {
-  const cfg = loadConfig();
-  const p = cfg.profiles.find((x) => x.id === req.body.id);
-  if (!p) return res.status(404).json({ error: 'ไม่พบบัญชีนี้' });
-  // ความลับ (token/secret): ช่องว่าง = "ไม่เปลี่ยน" เพราะหน้าเว็บโชว์เป็น placeholder ไม่เคยส่งค่าเดิมกลับมา
-  for (const k of ['accessToken', 'appSecret']) {
-    if (req.body[k]) p[k] = req.body[k];
+app.post('/api/profiles/update', async (req, res) => {
+  // handler เป็น async: Express 4 ไม่จับ error ของ async — throw หลุด (เช่นดิสก์เต็มตอน saveConfig)
+  // = unhandled rejection = Node 20 ดับทั้งโปรเซส autopilot/watchTick ตายตาม จึงต้องห่อทั้งก้อนแล้วตอบ 500 เอง
+  try {
+    // token ใหม่ที่ FB ยืนยันว่าใช้ไม่ได้ (หมดอายุ/คนละแอป) ห้ามทับ token เดิมที่มีอยู่ — เดิมบันทึกก่อนแล้วค่อยตรวจ
+    // วางของเสียทีเดียว ระบบอัตโนมัติรวมถึงตัวปิดแอดขาดทุนต่อ FB ไม่ได้ทันที • ตรวจไม่ได้ (FB ช้า/ลิมิต) = บันทึกตามเดิม
+    const cur = loadConfig().profiles.find((x) => x.id === req.body.id);
+    if (!cur) return res.status(404).json({ error: 'ไม่พบบัญชีนี้' });
+    const effAppId = req.body.appId !== undefined ? req.body.appId : cur.appId;
+    const effSecret = req.body.appSecret || cur.appSecret;
+    let pre = null;   // ผล debug_token ของ token ใหม่ ส่งต่อให้ extendTokenOnSave ไม่ต้องยิงซ้ำ
+    if (req.body.accessToken && req.body.accessToken !== cur.accessToken && cur.accessToken
+      && effAppId && effSecret && !req.body.login && !fbHardCooling()) {
+      // ตรวจไม่ได้ (FB ช้า/ลิมิต) = บันทึกตามเดิม แต่ส่งผลต่อให้ extendTokenOnSave รายงาน ไม่ยิง/รอซ้ำอีกรอบ
+      try { pre = await fbDebugToken(effAppId, effSecret, req.body.accessToken); } catch (e) { pre = { thrown: e }; }
+      const d = pre && !pre.error && !pre.thrown ? (pre.data || {}) : null;
+      if (d && (!d.is_valid || (d.app_id && String(d.app_id) !== String(effAppId)))) {
+        const why = !d.is_valid ? 'token นี้หมดอายุหรือใช้ไม่ได้แล้ว' : `token นี้ออกจากแอป ${d.app_id} ไม่ใช่แอป ${effAppId}`;
+        return res.json({ error: `ไม่ได้บันทึก token ใหม่ — ${why} (token เดิมยังใช้งานต่อ)` });
+      }
+    }
+    // โหลดสดอีกรอบหลังรอ FB แล้วแก้+บันทึกทันทีไม่มี await คั่น — ระหว่างรออาจมีการเขียน config จากที่อื่น
+    const cfg = loadConfig();
+    const p = cfg.profiles.find((x) => x.id === req.body.id);
+    if (!p) return res.status(404).json({ error: 'ไม่พบบัญชีนี้' });
+    const before = { accessToken: p.accessToken, appId: p.appId, appSecret: p.appSecret };
+    // ความลับ (token/secret): ช่องว่าง = "ไม่เปลี่ยน" เพราะหน้าเว็บโชว์เป็น placeholder ไม่เคยส่งค่าเดิมกลับมา
+    for (const k of ['accessToken', 'appSecret']) {
+      if (req.body[k]) p[k] = req.body[k];
+    }
+    // ค่าธรรมดา: ช่องว่าง = ตั้งใจล้างค่า (เดิมล้าง appId/เพจ/บัญชีโฆษณาที่เลือกผิดไว้ไม่ได้เลย)
+    for (const k of ['label', 'adAccountId', 'pageId', 'appId']) {
+      if (req.body[k] !== undefined) p[k] = req.body[k];
+    }
+    saveConfig(cfg);
+    // ตรวจ/ต่ออายุทันทีเมื่อ: token หรือ Secret เปลี่ยนจริง (ไม่ใช่ส่งค่าเดิมซ้ำ) หรือกดปุ่ม "เชื่อมต่อ" (recheck)
+    // - แก้แค่ App ID ไม่ตรวจ — หน้าเว็บบันทึกทีละช่อง ตรวจตอนนี้คือเอา App ID ใหม่คู่ Secret เก่า ขึ้นแดงทั้งที่ยังกรอกไม่เสร็จ
+    // - recheck: ตรวจรอบก่อนพลาดชั่วคราว (FB ช้า/จำกัดความถี่) แล้วกดเชื่อมต่อซ้ำด้วย token เดิม ต้องได้ลองจริง ไม่ใช่ตอบ ok เงียบๆ
+    // - login: บันทึกก่อนเปิดหน้าล็อกอิน FB — token ใหม่กำลังมา ตรวจตัวเก่าเปล่าประโยชน์ และทำให้ popup ค้างรอ FB
+    const changed = ['accessToken', 'appSecret'].some((k) => req.body[k] && req.body[k] !== before[k]);
+    const check = !req.body.login && (changed || req.body.recheck === true);
+    if (!check || !p.accessToken || !p.appId || !p.appSecret) return res.json({ ok: true });
+    res.json({ ok: true, ...(await extendTokenOnSave(p, pre && p.accessToken === req.body.accessToken ? pre : null)) });
+  } catch (e) {
+    if (!res.headersSent) res.status(500).json({ error: 'บันทึกไม่สำเร็จ: ' + e.message });
   }
-  // ค่าธรรมดา: ช่องว่าง = ตั้งใจล้างค่า (เดิมล้าง appId/เพจ/บัญชีโฆษณาที่เลือกผิดไว้ไม่ได้เลย)
-  for (const k of ['label', 'adAccountId', 'pageId', 'appId']) {
-    if (req.body[k] !== undefined) p[k] = req.body[k];
-  }
-  saveConfig(cfg);
-  res.json({ ok: true });
 });
+
+// แลก token เป็นตัว 60 วันแล้วเขียนลง config — ตัวเดียวใช้ทั้งตอนบันทึกการ์ดและ watchTick
+// - ตรวจ token ที่ได้ด้วย debug_token ก่อนอ้างว่าต่อแล้ว: เดิมเชื่อเลยว่าได้ 60 วัน ถ้า FB คืนตัวที่อายุเท่าเดิม
+//   หน้าเว็บ/Telegram จะบอกว่าสำเร็จ แล้ว token ก็หมดอายุเงียบๆ ทั้งที่เพิ่งยืนยันไป
+// - เขียนเฉพาะถ้า token ที่เก็บยังเป็นตัวเดิม: ระหว่างรอ FB (หลายวินาที) ผู้ใช้อาจวาง token ใหม่/ล็อกอินใหม่
+//   เดิม watchTick ไม่เช็ค เอาตัวเก่าที่ต่อแล้วไปทับตัวใหม่เงียบๆ แถมส่ง Telegram ว่า "ต่ออายุแล้ว"
+// คืน { expiresAt } (วินาที, 0 = ไม่หมดอายุ) ตอนเขียนจริง • { superseded } token เปลี่ยนไปแล้ว ไม่แตะ • { error }
+// transient = พลาดชั่วคราว (โดนจำกัดความถี่/สั่งพัก/ตรวจ token ใหม่ไม่ได้) ลองใหม่ทีหลังได้ — ไม่ใช่เหตุให้บอกคนว่า "ล็อกอินใหม่"
+async function renewTokenNow(profId, appId, appSecret, oldToken, oldExp) {
+  // เช็คช่วงพักก่อนทุกขั้น — คำตอบของ call ก่อนหน้าอาจเพิ่งสั่งพักมา (header regain) ยิงต่อมีแต่ยืดเวลาโดนแขวน
+  const cooling = () => (fbHardCooling() ? { error: 'FB สั่งพักการเรียก API อยู่', transient: true } : null);
+  let stop = cooling();
+  if (stop) return stop;
+  const l = await fbExchangeLongLived(appId, appSecret, oldToken);
+  if (!l.access_token) {
+    const e = l.error || {};
+    return { error: e.message || 'FB ไม่ส่ง token กลับมา', transient: THROTTLE_CODES.has(e.code) };
+  }
+  if ((stop = cooling())) return stop;
+  const dbg = await fbDebugToken(appId, appSecret, l.access_token);
+  // ตรวจ token ใหม่ไม่ได้ (ลิมิต/FB สะดุด) ≠ token ใหม่ใช้ไม่ได้ — ไม่เขียนเพราะยังยืนยันไม่ได้ แต่บอกว่าลองใหม่ได้
+  if (dbg.error) return { error: `ตรวจ token ใหม่ไม่ได้ (${dbg.error.message})`, transient: true };
+  const d = dbg.data || {};
+  if (!d.is_valid) return { error: 'FB ส่ง token ที่ใช้ไม่ได้กลับมา' };
+  const exp = Number(d.expires_at) || 0;
+  if (exp && exp <= Number(oldExp || 0)) return { error: `FB ไม่ได้ต่ออายุให้ (ยังหมดอายุ ${fxDate(exp * 1000)} เท่าเดิม) — กด "เข้าสู่ระบบด้วย Facebook" เพื่อรับ token ใหม่` };
+  const cfgNow = loadConfig();
+  const pNow = cfgNow.profiles.find((x) => x.id === profId);
+  if (!pNow || pNow.accessToken !== oldToken) return { superseded: true };
+  pNow.accessToken = l.access_token;
+  saveConfig(cfgNow);
+  return { expiresAt: exp };
+}
+
+// ต่ออายุตอนบันทึกการ์ด — token จาก Graph API Explorer อายุแค่ ~1 ชม. รอ watchTick (ชั่วโมงละรอบ) อาจหมดก่อน
+// ตรวจด้วย debug_token ก่อนเหมือน watchTick: ไม่หมดอายุ/ยังเหลือนานไม่ต้องแลก • ผิดแอป/หมดอายุ บอกสาเหตุตรงตัว
+// คืน { extended, expiresAt } เฉพาะตอนเขียน token ใหม่ลงจริง, { extendError } ตอนทำไม่ได้, {} ตอนไม่ต้องทำ
+// ข้อผิดพลาดชั่วคราว (FB ช้า/จำกัดความถี่/สั่งพัก) บอกให้กด "เชื่อมต่อ" ซ้ำ — ปุ่มนั้นส่ง recheck ให้ลองจริง
+const RETRY_HINT = 'token บันทึกไว้แล้ว กด "เชื่อมต่อ" อีกครั้งเพื่อลองต่ออายุ';
+// pre = ผล debug_token ที่ /api/profiles/update ตรวจไว้แล้วตอนกันทับ token เดิม (ไม่ยิงซ้ำ)
+async function extendTokenOnSave(p, pre) {
+  // Meta สั่งพัก (hard) อยู่ = ไม่ยิง — ยิงตอนโดนกั้นมีแต่ยืดเวลาโดนแขวน (เส้นนี้ไม่ผ่าน fb() จึงต้องเช็คเอง)
+  if (fbHardCooling()) {
+    const until = new Date(fbCoolUntil).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' });
+    return { extendError: `FB สั่งพักการเรียก API อยู่ถึง ${until} — ${RETRY_HINT}หลังเวลานั้น` };
+  }
+  try {
+    if (pre && pre.thrown) throw pre.thrown;   // ตรวจตอนกันทับแล้ว FB ช้า/ต่อไม่ติด — รายงานผลเดิม ไม่รอซ้ำ
+    const dbg = pre || await fbDebugToken(p.appId, p.appSecret, p.accessToken);
+    if (dbg.error) {
+      // วัดกับ FB จริงแล้ว: App Secret ผิด / App ID ไม่มีจริง = code 190 — โค้ดอื่นไม่ใช่ความผิดของข้อมูลที่กรอก
+      // เดิมเหมารวมเป็น "App ID/Secret ใช้ไม่ได้" ทั้งหมด ตอนโดนจำกัดความถี่ผู้ใช้ไปแก้ Secret ที่ถูกอยู่แล้ว
+      if (THROTTLE_CODES.has(dbg.error.code)) return { extendError: `FB กำลังจำกัดความถี่การเรียก — ${RETRY_HINT}ในอีกสักครู่` };
+      if (dbg.error.code === 190) return { extendError: `App ID/Secret ใช้ไม่ได้ (${dbg.error.message})` };
+      return { extendError: `FB ตอบ error (${dbg.error.message}) — ${RETRY_HINT}` };
+    }
+    const d = dbg.data || {};
+    if (d.app_id && String(d.app_id) !== String(p.appId)) {
+      return { extendError: `token นี้ออกจากแอป ${d.app_id} ไม่ใช่แอป ${p.appId} — ใส่ App ID/Secret ของแอปที่ออก token` };
+    }
+    if (!d.is_valid) return { extendError: 'token หมดอายุหรือใช้ไม่ได้แล้ว — ขอใหม่จาก Graph API Explorer' };
+    if (!d.expires_at || d.expires_at * 1000 - Date.now() >= TOKEN_RENEW_BEFORE_MS) return {};
+    const r = await renewTokenNow(p.id, p.appId, p.appSecret, p.accessToken, d.expires_at);
+    if (r.error) return { extendError: r.transient ? `${r.error} — ${RETRY_HINT}` : r.error };
+    if (r.superseded) return {};   // มีการแก้การ์ดเข้ามาระหว่างรอ FB — ไม่ทับ และไม่อ้างว่าต่อแล้ว
+    return { extended: true, expiresAt: r.expiresAt };
+  } catch (e) {
+    if (e.name === 'TimeoutError') return { extendError: `FB ตอบช้าเกินไป — ${RETRY_HINT}` };
+    return { extendError: e.message };
+  }
+}
 
 app.post('/api/profiles/delete', (req, res) => {
   const cfg = loadConfig();
@@ -1149,18 +1322,14 @@ app.get('/auth/callback', async (req, res) => {
   if (!prof.appSecret) return done(false, 'ยังไม่ได้ใส่ App Secret');
   try {
     // แลก code → short-lived token
-    const s = await (await fetch(`${API}/oauth/access_token`
+    const s = await fbAuthGet('oauth/access_token'
       + `?client_id=${encodeURIComponent(prof.appId)}`
       + `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`
       + `&client_secret=${encodeURIComponent(prof.appSecret)}`
-      + `&code=${encodeURIComponent(req.query.code)}`)).json();
+      + `&code=${encodeURIComponent(req.query.code)}`);
     if (s.error) throw new Error(s.error.message);
     // แลก → long-lived token (~60 วัน)
-    const l = await (await fetch(`${API}/oauth/access_token`
-      + `?grant_type=fb_exchange_token`
-      + `&client_id=${encodeURIComponent(prof.appId)}`
-      + `&client_secret=${encodeURIComponent(prof.appSecret)}`
-      + `&fb_exchange_token=${encodeURIComponent(s.access_token)}`)).json();
+    const l = await fbExchangeLongLived(prof.appId, prof.appSecret, s.access_token);
     if (l.error) throw new Error(l.error.message);
     // โหลด config สดก่อนเขียน — ระหว่างรอ FB ตอบ (หลายวินาที) อาจมีการแก้ค่าอื่นเข้ามา
     // เช่น watchTick ต่ออายุ token ให้บัญชีอื่น ถ้าเขียนทับด้วย cfg ที่โหลดไว้ตั้งแต่ต้น ค่านั้นจะหาย
@@ -1301,7 +1470,7 @@ app.get('/api/campaigns', async (req, res) => {
   if (!acctId) return res.status(400).json({ error: `บัญชี "${prof.label}" ยังไม่ได้เลือกบัญชีโฆษณา` });
   const acct = `act_${acctId}`;
   const token = prof.accessToken;
-  const datePreset = ['today', 'last_7d', 'last_30d', 'last_90d', 'maximum'].includes(req.query.date) ? req.query.date : 'maximum';
+  const datePreset = pickDatePreset(req.query.date);
   try {
     const acctInfo = await fb(acct, { fields: 'currency' }, 'GET', token);
     const cf = curFactor(acctInfo.currency);   // งบจาก FB เป็นหน่วยย่อยของสกุลนั้น บางสกุลไม่มีหน่วยย่อย
@@ -1380,36 +1549,6 @@ app.get('/api/campaigns', async (req, res) => {
   }
 });
 
-// ใช้จ่ายรายวันระดับบัญชี (สำหรับกราฟหน้าแดชบอร์ด)
-app.get('/api/daily', async (req, res) => {
-  const cfg = loadConfig();
-  const prof = getProfile(cfg, req.query.profile);
-  if (!prof || !prof.accessToken) return res.status(400).json({ error: 'ยังไม่ได้เชื่อมต่อบัญชี' });
-  const acctId = String(req.query.account || prof.adAccountId || '').replace(/[^0-9]/g, '');
-  if (!acctId) return res.status(400).json({ error: 'ไม่ได้ระบุบัญชีโฆษณา' });
-  const datePreset = ['today', 'last_7d', 'last_30d', 'last_90d'].includes(req.query.date) ? req.query.date : 'last_7d';
-  try {
-    const rows = await fbAll(`act_${acctId}/insights`, {
-      level: 'account',
-      fields: 'spend,impressions,reach',
-      time_increment: 1,
-      date_preset: datePreset,
-      limit: 100,
-    }, prof.accessToken);
-    res.json({
-      account: acctId,
-      days: rows.map((r) => ({
-        date: r.date_start,
-        spend: Number(r.spend) || 0,
-        impressions: Number(r.impressions) || 0,
-        reach: Number(r.reach) || 0,
-      })),
-    });
-  } catch (e) {
-    res.status(400).json({ error: e.message });
-  }
-});
-
 // รายละเอียดแคมเปญ: ชุดโฆษณา + โฆษณา พร้อมสถิติ (ดูแบบ Ads Manager)
 app.get('/api/campaign-detail', async (req, res) => {
   const cfg = loadConfig();
@@ -1418,7 +1557,7 @@ app.get('/api/campaign-detail', async (req, res) => {
   const id = String(req.query.id || '');
   if (!/^\d+$/.test(id)) return res.status(400).json({ error: 'campaign id ไม่ถูกต้อง' });
   const token = prof.accessToken;
-  const datePreset = ['today', 'last_7d', 'last_30d', 'last_90d', 'maximum'].includes(req.query.date) ? req.query.date : 'maximum';
+  const datePreset = pickDatePreset(req.query.date);
   try {
     // ขอ account_currency มาด้วย เพื่อแปลงงบจากหน่วยย่อยได้ถูกกับทุกสกุล
     const camp = await fb(id, { fields: 'name,objective,account{currency}' }, 'GET', token);
@@ -1561,12 +1700,14 @@ app.get('/api/health-overview', async (req, res) => {
   const hidden = cfg.hidden || {};
   try {
     const [accts, pages] = await Promise.all([
-      fbAll('me/adaccounts', { fields: 'name,account_id,account_status,business{name},funding_source_details,adspixels.limit(15){id,name}', limit: 100 }, token),
+      fbAll('me/adaccounts', { fields: 'name,account_id,account_status,currency,business{name},funding_source_details,adspixels.limit(15){id,name}', limit: 100 }, token),
       fbAll('me/accounts', { fields: 'name,is_published,promotion_eligible,promotion_ineligible_reason', limit: 100 }, token),
     ]);
     // หน้าสุขภาพคือ "ตัวจัดการ" — โชว์ทุกตัวรวมที่ซ่อน/ถูกปิด พร้อมธง hidden ให้กดสลับได้
     const accounts = accts.map((a) => ({
       id: a.account_id, name: a.name, status: a.account_status,
+      // สกุล + หน่วยย่อย ให้หน้าเว็บโชว์ยอดเรียกเก็บ/วงเงินถูกสกุล (เดิม /100 และ ฿ ตายตัว บัญชีเยน/ดองเพี้ยน 100 เท่า)
+      currency: a.currency || 'THB', minor: curFactor(a.currency),
       business: a.business ? a.business.name : null,
       pixels: ((a.adspixels || {}).data || []).map((x) => ({ id: x.id, name: x.name })),
       funding: (a.funding_source_details && (a.funding_source_details.display_string || 'เชื่อมแล้ว')) || null,
@@ -1694,10 +1835,33 @@ app.post('/api/launch', upload.any(), async (req, res) => {
   const status = data.active ? 'ACTIVE' : 'PAUSED';
   const acct = `act_${acctId}`;
   const token = prof.accessToken;
-  // สกุลเงินของบัญชีกำหนดว่าต้องคูณเท่าไหร่ตอนส่งงบให้ FB — อ่านไม่ได้ก็ถือว่า 2 ทศนิยมตามค่าปกติ
-  let cf = 100;
-  try { cf = curFactor((await fb(acct, { fields: 'currency' }, 'GET', token)).currency); }
-  catch { /* ใช้ค่าปกติ */ }
+  // ช่องเงินในหน้าเว็บเป็นบาท — แปลงเป็นสกุลของบัญชีก่อนส่ง FB (บัญชี USD งบ 300 บาท ต้องเป็น ~9 ดอลลาร์ ไม่ใช่ 300)
+  // อ่านสกุลหรือเรตไม่ได้ = ไม่ขึ้นแอดบัญชีนี้ (เดิมเดาว่าเป็น 2 ทศนิยม บัญชีสกุลอื่นจะได้งบผิดหลายสิบเท่า)
+  // ใช้แคมเปญเดิม = ไม่ตั้งงบ/กฎใหม่ ไม่ต้องแปลงอะไร — ห้ามให้เรตหรือการอ่านสกุลล่มลากการเติมแอดเข้าแคมเปญเดิมพังไปด้วย
+  let money = null;
+  if (!data.campaignId) {
+    let cur;
+    try { cur = (await fb(acct, { fields: 'currency' }, 'GET', token)).currency; }
+    catch (e) {
+      // อ่านสดจาก FB ไม่ได้ (fb() ลองซ้ำให้แล้ว) → ใช้สกุลจากรายชื่อบัญชีที่หน้าเว็บดึงมาจาก FB เหมือนกัน
+      // สกุลของบัญชีโฆษณาไม่เปลี่ยนไปมา — ดีกว่าให้บัญชีบาทขึ้นแอดไม่ได้เพราะ FB สะดุดครั้งเดียว
+      if (!/^[A-Z]{3}$/.test(String(data.currency || ''))) {
+        send({ type: 'fatal', error: `อ่านสกุลเงินของบัญชีจาก FB ไม่ได้ (${e.message}) — ยังไม่ได้ขึ้นแอดบัญชีนี้` });
+        return res.end();
+      }
+      cur = data.currency;
+      send({ type: 'info', msg: `อ่านสกุลเงินจาก FB ไม่ได้ (${e.message}) — ใช้ ${cur} จากรายชื่อบัญชีแทน` });
+    }
+    try { money = await acctMoney(cur); }
+    catch (e) {
+      send({ type: 'fatal', error: `แปลงงบบาทเป็นสกุลเงินของบัญชีไม่ได้ (${e.message}) — ยังไม่ได้ขึ้นแอดบัญชีนี้` });
+      return res.end();
+    }
+    // บอกผู้ใช้ทุกครั้งว่าแปลงเป็นเท่าไหร่ ด้วยเรตไหน — เงินขยับข้ามสกุลแบบเงียบๆ ไม่ได้
+    if (money.cur !== 'THB' && data.campaignBudget) {
+      send({ type: 'info', msg: `บัญชีนี้ใช้ ${money.cur} — งบ ${money.both(data.campaignBudget)}/วัน (${money.rateText})` });
+    }
+  }
   const files = Object.fromEntries((req.files || []).map((f) => [f.fieldname, f]));
   const imageHashCache = {};
   let aborted = false;
@@ -1729,7 +1893,7 @@ app.post('/api/launch', upload.any(), async (req, res) => {
       };
       // CBO: ตั้งงบที่ระดับแคมเปญ (FB กระจายให้ชุดโฆษณาเอง)
       if (data.campaignBudget) {
-        campaignParams.daily_budget = Math.round(Number(data.campaignBudget) * cf);
+        campaignParams.daily_budget = money.toMinor(data.campaignBudget);
         campaignParams.bid_strategy = 'LOWEST_COST_WITHOUT_CAP';
       }
       const campaign = await fb(`${acct}/campaigns`, campaignParams, 'POST', token);
@@ -1747,13 +1911,13 @@ app.post('/api/launch', upload.any(), async (req, res) => {
                 { field: 'entity_type', value: 'CAMPAIGN', operator: 'EQUAL' },
                 { field: 'campaign.id', value: [campaignId], operator: 'IN' },
                 { field: 'time_preset', value: 'LIFETIME', operator: 'EQUAL' },
-                { field: 'spent', value: Math.round(Number(data.autoRule.minSpend || 0) * cf), operator: 'GREATER_THAN' },
-                { field: 'cpa', value: Math.round(Number(data.autoRule.cpr) * cf), operator: 'GREATER_THAN' },
+                { field: 'spent', value: money.toMinor(data.autoRule.minSpend || 0), operator: 'GREATER_THAN' },
+                { field: 'cpa', value: money.toMinor(data.autoRule.cpr), operator: 'GREATER_THAN' },
               ],
             },
             execution_spec: { execution_type: 'PAUSE' },
           }, 'POST', token);
-          send({ type: 'progress', msg: `ตั้งกฎหยุดอัตโนมัติแล้ว (CPA เกิน ${data.autoRule.cpr} บาท หลังใช้เกิน ${data.autoRule.minSpend || 0} บาท)` });
+          send({ type: 'progress', msg: `ตั้งกฎหยุดอัตโนมัติแล้ว (CPA เกิน ${money.both(data.autoRule.cpr)} หลังใช้เกิน ${money.both(data.autoRule.minSpend || 0)})` });
         } catch (e) {
           send({ type: 'warn', index: 0, msg: `ตั้งกฎหยุดอัตโนมัติไม่สำเร็จ (${e.message}) — แอดขึ้นต่อตามปกติ` });
         }
@@ -2016,19 +2180,19 @@ async function watchTick() {
     // 2) ใกล้หมดอายุ (<14 วัน) → ต่ออายุอัตโนมัติ (ต้องมี appId+appSecret ของโปรไฟล์)
     if (prof.appId && prof.appSecret) {
       try {
-        const appTok = `${prof.appId}|${prof.appSecret}`;
-        const dbg = await (await fetch(`${API}/debug_token?input_token=${encodeURIComponent(prof.accessToken)}&access_token=${encodeURIComponent(appTok)}`)).json();
+        const dbg = await fbDebugToken(prof.appId, prof.appSecret, prof.accessToken);
         const exp = dbg.data && dbg.data.expires_at; // 0 = ไม่หมดอายุ
-        if (exp && exp * 1000 - Date.now() < 14 * 864e5) {
-          const l = await (await fetch(`${API}/oauth/access_token?grant_type=fb_exchange_token&client_id=${encodeURIComponent(prof.appId)}&client_secret=${encodeURIComponent(prof.appSecret)}&fb_exchange_token=${encodeURIComponent(prof.accessToken)}`)).json();
-          if (l.access_token) {
-            const cfg2 = loadConfig(); // โหลดสดกันทับค่าที่เพิ่งแก้ระหว่างรอบ
-            const p2 = cfg2.profiles.find((x) => x.id === prof.id);
-            if (p2) { p2.accessToken = l.access_token; saveConfig(cfg2); alerts.push(`🔁 ${prof.label}: ต่ออายุ token ให้แล้ว (+60 วัน)`); }
-          } else if (state['exp:' + prof.id] !== 'warned') {
-            alerts.push(`🟠 ${prof.label}: token จะหมดอายุใน ${Math.max(1, Math.round((exp * 1000 - Date.now()) / 864e5))} วัน และต่ออัตโนมัติไม่ได้ — เข้าเว็บแล้วกดล็อกอินใหม่`);
+        if (exp && exp * 1000 - Date.now() < TOKEN_RENEW_BEFORE_MS) {
+          const r = await renewTokenNow(prof.id, prof.appId, prof.appSecret, prof.accessToken, exp);
+          if (r.expiresAt !== undefined) {
+            alerts.push(`🔁 ${prof.label}: ต่ออายุ token ให้แล้ว (${r.expiresAt ? `หมดอายุ ${fxDate(r.expiresAt * 1000)}` : 'ไม่หมดอายุ'})`);
+            state['exp:' + prof.id] = '';
+          } else if (r.error && !r.transient && state['exp:' + prof.id] !== 'warned') {
+            alerts.push(`🟠 ${prof.label}: token จะหมดอายุใน ${Math.max(1, Math.round((exp * 1000 - Date.now()) / 864e5))} วัน และต่ออัตโนมัติไม่ได้ (${r.error}) — เข้าเว็บแล้วกดล็อกอินใหม่`);
             state['exp:' + prof.id] = 'warned';
           }
+          // superseded = ผู้ใช้เพิ่งเปลี่ยน token ระหว่างรอบ — ไม่ทับ ไม่เตือน รอบหน้าตรวจตัวใหม่เอง
+          // transient = ลิมิต/FB สะดุด — เงียบไว้ รอบหน้า (ชั่วโมงถัดไป) ลองใหม่เอง
         } else state['exp:' + prof.id] = '';
       } catch { /* ตรวจอายุไม่ได้ก็ข้าม */ }
     }
@@ -2150,8 +2314,121 @@ function apLimits(cfg) {
 
 // FB ส่งจำนวนเงินมาเป็นหน่วยย่อยของสกุลนั้น ซึ่งบางสกุลไม่มีหน่วยย่อยเลย
 // หาร 100 ดื้อๆ กับ JPY/KRW/VND = อ่านงบต่ำกว่าจริง 100 เท่า แล้วเพดานงบจะไม่มีวันทำงาน
-const ZERO_DECIMAL_CUR = new Set(['BIF', 'CLP', 'DJF', 'GNF', 'ISK', 'JPY', 'KMF', 'KRW', 'PYG', 'RWF', 'UGX', 'VND', 'VUV', 'XAF', 'XOF', 'XPF']);
+// รายชื่อ = สกุลที่ offset 1 ในตารางของ Meta (developers.facebook.com/docs/marketing-api/currencies)
+// เดิมลอกรายชื่อของ Stripe มา ขาด COP/CRC/HUF/IDR/TWD — บัญชี IDR ตั้งงบ 3,333 บาทจะส่งไปเกิน 100 เท่า
+const ZERO_DECIMAL_CUR = new Set(['CLP', 'COP', 'CRC', 'HUF', 'ISK', 'IDR', 'JPY', 'KRW', 'PYG', 'TWD', 'VND']);
 const curFactor = (cur) => (ZERO_DECIMAL_CUR.has(String(cur || '').toUpperCase()) ? 1 : 100);
+
+// ---------- เงินบาท → สกุลเงินของบัญชีโฆษณา ----------
+// ช่องเงินทุกช่องกรอกเป็นบาท (งบ/วัน, หยุดเมื่อต้นทุน/ผลลัพธ์เกิน, เพดานขยายงบ) แต่ FB รับ/ตอบเป็นสกุลของบัญชี
+// เดิมเอาเลขไปใช้ตรงๆ: บัญชี USD งบ 300 = 300 ดอลลาร์/วัน (แพงขึ้น ~30 เท่า), บัญชี VND = 300 ดอง (FB ไม่รับ)
+// เรตจาก ExchangeRate-API (open.er-api.com ฟรี ไม่ต้องมี key อัปเดตวันละครั้ง) — ไม่ให้ AI เดาเรต งานเงินต้องใช้ตัวเลขจริง
+// แคช 12 ชม. + เก็บลงดิสก์ ดึงใหม่ไม่ได้ใช้เรตล่าสุดที่มี (ลองใหม่ทุก 10 นาที) • ไม่เคยมีเรตเลย = โยน error ไม่เดา
+// บัญชีบาทไม่ต้องใช้เรต จึงไม่กระทบเลยแม้ดึงเรตไม่ได้
+const FX_URL = process.env.FX_API_URL || 'https://open.er-api.com/v6/latest/THB';
+const FX_PATH = path.join(path.dirname(CONFIG_PATH), 'fx-rates.json');
+const FX_MAX_AGE_MS = 12 * 3600 * 1000;
+// เรตที่ผู้ให้บริการอัปเดตล่าสุดเกิน 3 วัน = ไม่ใช้ (ปกติอายุไม่เกิน ~1.5 วัน: อัปเดตวันละครั้ง + แคช 12 ชม.)
+// เดิมแหล่งเรตล่มนานเท่าไหร่ก็ใช้เรตเก่าไปเรื่อยๆ ไม่เตือน — เรตเก่า 2 เดือนเคยทำงบ USD เพี้ยน 66%
+const FX_STALE_MS = 3 * 864e5;
+// เรตสกุลเดียวกันขยับเกิน 20% จากชุดก่อนหน้าของผู้ให้บริการ = ไม่เชื่อ (บาท/ดอลลาร์/ดองปกติขยับวันละไม่ถึง 1%)
+// ตรวจรายสกุลตอนแปลง ไม่ใช่ทิ้งทั้งชุด: สกุลที่ผันผวนจริง (เช่นค่าเงินที่ลดค่าฉับพลัน) ต้องไม่ลากบัญชีสกุลอื่นหยุดไปด้วย
+// ปลดเองเมื่อผู้ให้บริการอัปเดตรอบถัดไป (ชุดที่กระโดดกลายเป็นชุดก่อนหน้า) — ไม่มีทางล็อกถาวร
+// (เดิมเทียบเฉพาะ USD กับแคช: VND เพี้ยน 100 เท่าหลุดผ่าน และแคชเก่าทำให้ปฏิเสธเรตจริงไปตลอด)
+const FX_JUMP = 1.2;
+let fxCache = null;   // { ts, updated, rates, prev, prevUpdated } — 1 บาท = rates[X] • ts = เวลาที่เราดึง, updated = เวลาที่ผู้ให้บริการอัปเดต
+                      // prev = ชุดก่อนหน้าของผู้ให้บริการ ไว้เทียบว่าเรตกระโดดไหม
+let fxNextTry = 0;    // ดึงได้อีกทีเมื่อไหร่ — ทุกบัญชีทุกรอบไม่ต้องยิงซ้ำ/รอ timeout ซ้ำ
+let fxLastErr = '';   // เหตุผลที่ดึง/รับเรตชุดล่าสุดไม่ได้ — ต้องโชว์คนตอนเรตเก่า ไม่ใช่ให้ไปเดาเอง
+// ต้องเป็นเรตฐานบาทจริง — ฐานผิด (ตั้ง FX_API_URL ผิด/ผู้ให้บริการพัง) แล้วเอาไปคูณ = งบเพี้ยนหลายสิบเท่าแบบเงียบๆ
+// (วัดแล้ว: ได้เรตฐาน USD มา บัญชี VND ได้งบเกินจริง ~33 เท่า) ใช้ตรวจทั้งของที่ดึงมาใหม่และแคชบนดิสก์
+const fxIsThbBase = (rates) => !!rates && Number(rates.THB) === 1;
+const fxDate = (ms) => new Date(ms).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', timeZone: 'Asia/Bangkok' });
+async function thbRate(cur) {
+  cur = String(cur || '').toUpperCase();
+  if (cur === 'THB') return 1;
+  if (!cur) throw new Error('ไม่รู้สกุลเงินของบัญชี');
+  if (!fxCache) {
+    try {
+      const c = JSON.parse(fs.readFileSync(FX_PATH, 'utf8'));
+      // ไฟล์เสีย/ฐานผิด/ไม่มีเวลา = ทิ้ง ดึงใหม่ (ไม่มี ts → เทียบเวลาได้ NaN = ไม่ดึงใหม่และไม่นับว่าเก่าตลอดไป)
+      if (fxIsThbBase(c.rates) && Number(c.ts) > 0) fxCache = c;
+    } catch { /* ยังไม่เคยดึง */ }
+  }
+  const asOfOf = (c) => Number(c.updated) || Number(c.ts);
+  const due = !fxCache || Date.now() - fxCache.ts > FX_MAX_AGE_MS || Date.now() - asOfOf(fxCache) > FX_STALE_MS;
+  if (due && Date.now() >= fxNextTry) {
+    fxNextTry = Date.now() + 10 * 60 * 1000;   // ทั้งสำเร็จและพลาด — อย่างมาก 10 นาทีครั้ง
+    try {
+      const d = await (await fetch(FX_URL, { signal: AbortSignal.timeout(10000) })).json();
+      if (d.result !== 'success' || !d.rates) throw new Error(d['error-type'] || 'ข้อมูลเรตไม่ถูกต้อง');
+      if (d.base_code !== 'THB' || !fxIsThbBase(d.rates)) throw new Error(`เรตที่ได้ไม่ใช่ฐานบาท (base ${d.base_code || '?'})`);
+      // กรอบความสมเหตุสมผลของทั้งชุด ใช้ได้แม้ไม่มีชุดก่อนหน้า (ติดตั้งใหม่): 1 ดอลลาร์ต้องอยู่ระหว่าง 10–100 บาท
+      // ชุดที่สเกลเพี้ยนทั้งชุดแต่ฐานยังเป็นบาท (THB=1) จะหลุดตัวตรวจฐาน แต่ไม่หลุดตัวนี้
+      const usd = Number(d.rates.USD);
+      if (!(usd >= 0.01 && usd <= 0.1)) throw new Error(`เรต USD ผิดปกติ (1 บาท = ${d.rates.USD} USD)`);
+      const updated = Number(d.time_last_update_unix) * 1000 || Date.now();
+      // ห้ามถอยหลัง: ข้อมูลที่เก่ากว่าที่มีอยู่ (แคช/ตัวกลางของผู้ให้บริการค้าง) ต้องไม่ทับชุดที่ใหม่กว่า
+      if (fxCache && updated < asOfOf(fxCache)) throw new Error('แหล่งเรตส่งข้อมูลที่เก่ากว่าชุดที่มีอยู่');
+      // ผู้ให้บริการอัปเดตจริง (เวลาใหม่กว่า) = ชุดเดิมกลายเป็น "ชุดก่อนหน้า" • เวลาเท่าเดิม = แค่ต่ออายุแคช คง prev เดิม
+      const newer = !fxCache || updated > asOfOf(fxCache);
+      fxCache = {
+        ts: Date.now(), updated, rates: d.rates,
+        prev: newer ? (fxCache && fxCache.rates) : fxCache.prev,
+        prevUpdated: newer ? (fxCache && asOfOf(fxCache)) : fxCache.prevUpdated,
+      };
+      fxLastErr = '';
+      try { fs.writeFileSync(FX_PATH, JSON.stringify(fxCache)); } catch { /* แคชในหน่วยความจำยังใช้ได้ */ }
+    } catch (e) {
+      fxLastErr = e.message;
+      console.warn('[fx] ดึงอัตราแลกเปลี่ยนไม่ได้:', e.message);
+      if (!fxCache) throw new Error(`ดึงอัตราแลกเปลี่ยนไม่ได้ (${e.message}) — ยังแปลงเงินบาทเป็น ${cur} ไม่ได้`);
+    }
+  }
+  if (!fxCache) throw new Error(`ยังไม่มีอัตราแลกเปลี่ยน${fxLastErr ? ` (${fxLastErr})` : ''} — ยังแปลงเงินบาทเป็น ${cur} ไม่ได้`);
+  const asOf = asOfOf(fxCache);
+  if (Date.now() - asOf > FX_STALE_MS) {
+    throw new Error(`อัตราแลกเปลี่ยนล่าสุดเก่าเกิน 3 วัน (อัปเดต ${fxDate(asOf)})${fxLastErr ? ` — รอบล่าสุดใช้เรตใหม่ไม่ได้: ${fxLastErr}` : ''} — ยังแปลงเงินบาทเป็น ${cur} ไม่ได้`);
+  }
+  const r = Number(fxCache.rates[cur]);
+  if (!(r > 0)) throw new Error(`ไม่มีอัตราแลกเปลี่ยนบาท → ${cur}`);
+  // เทียบกับชุดก่อนหน้า เฉพาะเมื่อชุดก่อนหน้าห่างไม่เกิน 3 วัน — หลังแหล่งเรตล่มนาน การเทียบกับของเก่าไม่มีความหมาย
+  const p = Number((fxCache.prev || {})[cur]);
+  if (p > 0 && asOf - Number(fxCache.prevUpdated || 0) <= FX_STALE_MS && !(r / p <= FX_JUMP && r / p >= 1 / FX_JUMP)) {
+    throw new Error(`เรต ${cur} เปลี่ยนผิดปกติจากรอบก่อน (1 บาท = ${p} → ${r}) — พักการแปลงไว้ก่อน ถ้าเป็นการเปลี่ยนจริงจะกลับมาใช้ได้เองเมื่อแหล่งเรตอัปเดตรอบถัดไป`);
+  }
+  return r;
+}
+// เงินในข้อความ: บัญชีบาทโชว์ "บาท" สกุลอื่นโชว์รหัสสกุล (เลขพวกนี้เป็นหน่วยของบัญชี ไม่ใช่บาท)
+const moneyText = (v, cur) => {
+  const c = String(cur || 'THB').toUpperCase();
+  return `${Number(v).toLocaleString('en-US', { maximumFractionDigits: curFactor(c) === 1 ? 0 : 2 })} ${c === 'THB' ? 'บาท' : c}`;
+};
+// ตัวแปลงเงินของบัญชีหนึ่ง: toAcct = บาท → หน่วยหลักของบัญชี, toMinor = บาท → หน่วยย่อยที่ FB รับ (daily_budget/กฎ)
+// both = "X บาท (= Y USD)" ด้วยยอดหลังปัดหน่วยย่อยตัวเดียวกับที่ส่ง FB จริง • rateText = เรตที่ใช้ + วันที่ของเรต
+// ข้อความที่บอกเงินทุกจุดต้องบอกยอดในสกุลบัญชีด้วย — บอกแต่บาท คนเปิด Ads Manager ไปเทียบจะเห็นเลขไม่ตรง
+async function acctMoney(cur) {
+  const c = String(cur || '').toUpperCase();
+  const fx = await thbRate(c);
+  const cf = curFactor(c);
+  const toMinor = (thb) => Math.round(Number(thb) * fx * cf);
+  return {
+    cur: c, fx, cf,
+    toAcct: (thb) => Number(thb) * fx,
+    toMinor,
+    text: (v) => moneyText(v, c),
+    both: (thb) => (c === 'THB' ? moneyText(thb, 'THB') : `${moneyText(thb, 'THB')} (= ${moneyText(toMinor(thb) / cf, c)})`),
+    rateText: c === 'THB' ? '' : `1 บาท = ${fx} ${c} • เรตวันที่ ${fxDate(fxCache.updated || fxCache.ts)}`,
+  };
+}
+// ดึงเรตไม่ได้ = บัญชีสกุลอื่นถูกพักการตัดสินเรื่องเงินทั้งหมด (ปิดแอดขาดทุน/ขยายงบ/สร้างแคมเปญ) — ต้องบอกคน
+// เดิมตัวปิดแอดขาดทุนกับตัวขยายงบ return เงียบ แอดขาดทุนของบัญชี USD เผาเงินต่อโดยไม่มีใครรู้
+// key เดียวกันทั้งสามจุด = บัญชีละหนึ่งข้อความต่อวัน ไม่สแปม
+function apFxWarn(s, a, alerts, e) {
+  if (s.warned['fx:' + a.account_id] === apToday()) return;
+  const m = `⚠️ ${a.name}: ${e.message} • ระหว่างนี้ระบบไม่ปิดแอดขาดทุน ไม่ขยายงบ และไม่สร้างแคมเปญใหม่ให้บัญชีนี้ — ปิดแอดเองได้ใน Ads Manager`;
+  alerts.push(m); apLog(s, 'warn', m, a.account_id); s.warned['fx:' + a.account_id] = apToday();
+}
 // 200 เดิมพอสำหรับบัญชีหลักสิบ — หลักร้อย รอบเดียวมีได้หลายร้อยบรรทัด ประวัติจะถูกล้างในรอบเดียว
 const AP_LOG_MAX = 1000;
 
@@ -2527,12 +2804,14 @@ const AP_COUNTS_AS_LIVE = new Set(['ACTIVE', 'PENDING_REVIEW', 'IN_PROCESS']);
 // ทุกแคมเปญที่สร้างเกินมาคือค่าโฆษณาอีกก้อนต่อวัน ที่ไม่มีใครไปเก็บกวาดให้
 const AP_CAMPAIGN_PREFIX = 'Autopilot ';
 
-async function apGetCampaign(acct, token, s, acctId, d, objInfo, cf) {
+// getMoney = ตัวแปลงเงินของบัญชี เรียกเฉพาะตอนต้องสร้างแคมเปญใหม่ (ตั้งงบ) — แคมเปญเดิมยังเปิดอยู่ไม่ต้องใช้เรต
+// คืน { id, created } created = { budgetText, rateText } ตอนสร้างใหม่ ไว้ให้ log บอกว่างบบาทกลายเป็นเท่าไหร่ในสกุลบัญชี
+async function apGetCampaign(acct, token, s, acctId, d, objInfo, getMoney) {
   const known = (s.campaign || {})[acctId];
   if (known) {
     try {
       const c = await fb(known, { fields: 'id,status,effective_status' }, 'GET', token);
-      if (c && c.status === 'ACTIVE') return known;
+      if (c && c.status === 'ACTIVE') return { id: known };
     } catch { /* อ่านไม่ได้ ไปหาตามชื่อต่อ */ }
     // ไม่ ACTIVE หรืออ่านไม่ได้ = ยังสรุปไม่ได้ว่าต้องสร้างใหม่
     // FB รวม "ถูกลบ" กับ "ไม่มีสิทธิ์/สะดุดชั่วคราว" ไว้ในข้อความเดียวกัน แยกไม่ออก
@@ -2545,7 +2824,7 @@ async function apGetCampaign(acct, token, s, acctId, d, objInfo, cf) {
     const all = await fbAll(`${acct}/campaigns`, { fields: 'id,name,status,objective', limit: 200 }, token);
     mine = all.filter((c) => String(c.name || '').startsWith(AP_CAMPAIGN_PREFIX));
   } catch {
-    return null;   // กวาดไม่ได้ก็ยังไม่ตัดสิน รอรอบหน้า ปลอดภัยกว่าสร้างมั่ว
+    return {};   // กวาดไม่ได้ก็ยังไม่ตัดสิน รอรอบหน้า ปลอดภัยกว่าสร้างมั่ว
   }
   // วัตถุประสงค์ต้องตรงกับที่ตั้งไว้ ไม่งั้น adset ที่สร้างจะยิงไม่ผ่านทุกตัวและวนเตือนทุกรอบ
   const want = d.objective || 'OUTCOME_SALES';
@@ -2556,7 +2835,7 @@ async function apGetCampaign(acct, token, s, acctId, d, objInfo, cf) {
     // ตั้งใจไม่ใส่ลง s.owned — ชื่อขึ้นต้นตรงกันไม่ใช่หลักฐานว่าเราสร้าง
     // แคมเปญที่ผู้ใช้ตั้งชื่อเองว่า "Autopilot อะไรสักอย่าง" จะได้ไม่โดนขยายงบหรือโดนปิดแอดข้างใน
     // ใช้เป็นที่เติมแอดได้ แต่ไม่ได้สิทธิ์ไปยุ่งกับงบของมัน
-    return live.id;
+    return { id: live.id };
   }
   // ไม่มีของระบบที่ยังเปิดอยู่เลย → สร้างใหม่ (เจ้าของเลือกให้ระบบดูแลเองเต็มที่)
 
@@ -2567,14 +2846,15 @@ async function apGetCampaign(acct, token, s, acctId, d, objInfo, cf) {
     special_ad_categories: [],
   };
   const budget = Number(d.campaignBudget) || 0;
-  if (budget > 0) { params.daily_budget = Math.round(budget * cf); params.bid_strategy = 'LOWEST_COST_WITHOUT_CAP'; }
+  const money = await getMoney();
+  if (budget > 0) { params.daily_budget = money.toMinor(budget); params.bid_strategy = 'LOWEST_COST_WITHOUT_CAP'; }
   const c = await fb(`${acct}/campaigns`, params, 'POST', token);
   s.campaign = s.campaign || {};
   s.campaign[acctId] = c.id;
   // จดไว้ว่าแคมเปญนี้ระบบเป็นคนสร้าง — apScale จะขึ้นงบได้เฉพาะของตัวเองเท่านั้น
   s.owned = s.owned || [];
   if (!s.owned.includes(c.id)) s.owned.push(c.id);
-  return c.id;
+  return { id: c.id, created: { budgetText: money.both(budget), rateText: money.rateText } };
 }
 
 async function apCreateOneAd(acct, token, campaignId, pageId, pixelId, d, objInfo, item, testMode, beneficiaryId) {
@@ -2633,6 +2913,17 @@ async function apCreateOneAd(acct, token, campaignId, pageId, pixelId, d, objInf
     }
   }
 
+  // ขั้นหลังจากนี้พัง = ชุดโฆษณาที่เพิ่งสร้างกลายเป็นชุดเปล่าค้างในบัญชี (เดิมค้างเพิ่มทุกรอบที่ลองซ้ำ)
+  // ลบทิ้งแบบพยายามเต็มที่ — เป็นชุดที่เราเพิ่งสร้างเมื่อครู่และยังไม่มีแอดข้างใน ลบไม่ได้ก็ไม่ใช่เหตุให้ล้มซ้ำ
+  try {
+    return await apFillAdset(acct, token, adset, d, item, pageId, testMode);
+  } catch (e) {
+    try { await fb(adset.id, { status: 'DELETED' }, 'POST', token); } catch { /* ข้าม */ }
+    throw e;
+  }
+}
+
+async function apFillAdset(acct, token, adset, d, item, pageId, testMode) {
   // อัปวิดีโอจากคลังขึ้น FB แล้วรอประมวลผล
   const m = resolveMedia(item.mediaId);
   if (!m) throw new Error('ไฟล์วิดีโอหายจากคลัง');
@@ -2774,7 +3065,9 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz, ta
   const nr = s.noRotate[acctId];
   if (nr) {
     if (s.warned['blocked:' + acctId] !== apToday()) {
-      const m = `🚧 ${a.name}: ไม่เติมแอดให้ — ติดเหตุผลเดิม "${nr.cat}" ซ้ำ ${nr.hits} ครั้ง ต้องแก้ต้นเหตุแล้วปลดล็อกเอง`;
+      const m = nr.action
+        ? `🚧 ${a.name}: ไม่เติมแอดให้ — ${nr.cat} • แก้แล้วกด "ปลดล็อก" ในหน้าตั้งค่า`
+        : `🚧 ${a.name}: ไม่เติมแอดให้ — ติดเหตุผลเดิม "${nr.cat}" ซ้ำ ${nr.hits} ครั้ง ต้องแก้ต้นเหตุแล้วปลดล็อกเอง`;
       alerts.push(m); apLog(s, 'blocked', m, acctId); s.warned['blocked:' + acctId] = apToday();
     }
     return;
@@ -2802,14 +3095,14 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz, ta
   const capKey = 'spend:' + acctId;
   if (spendRoom.capped) {
     if (s.warned[capKey] !== 'capped') {
-      const m = `🛑 ${a.name}: ใช้วงเงินสะสมของบัญชีครบแล้ว (${Math.round(spendRoom.capUsed).toLocaleString()}/${Math.round(spendRoom.capTotal).toLocaleString()} บาท) — บัญชีหยุดยิงจนกว่าจะเข้าไปขยายวงเงินใน Ads Manager`;
+      const m = `🛑 ${a.name}: ใช้วงเงินสะสมของบัญชีครบแล้ว (${Math.round(spendRoom.capUsed).toLocaleString()}/${moneyText(Math.round(spendRoom.capTotal), a.currency)}) — บัญชีหยุดยิงจนกว่าจะเข้าไปขยายวงเงินใน Ads Manager`;
       alerts.push(m); apLog(s, 'warn', m, acctId); s.warned[capKey] = 'capped';
     }
     return;
   }
   if (spendRoom.full) {
     if (s.warned[capKey] !== apToday()) {
-      const m = `💤 ${a.name}: ใช้งบวันนี้ครบแล้ว (${Math.round(spendRoom.spent).toLocaleString()}/${Math.round(spendRoom.budget).toLocaleString()} บาท) — ไม่เติมแอดเพิ่ม รอพรุ่งนี้`;
+      const m = `💤 ${a.name}: ใช้งบวันนี้ครบแล้ว (${Math.round(spendRoom.spent).toLocaleString()}/${moneyText(Math.round(spendRoom.budget), a.currency)}) — ไม่เติมแอดเพิ่ม รอพรุ่งนี้`;
       alerts.push(m); apLog(s, 'sleep', m, acctId); s.warned[capKey] = apToday();
     }
     return;
@@ -2903,13 +3196,19 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz, ta
     for (const list of lists) for (const v of list) if (!usedHere.has(v.id)) return v;
     return ranked[i % ranked.length];   // คลังเล็กกว่าจำนวนแอดที่ต้องเติม — ยอมซ้ำในรอบเดียว
   };
-  let campaignId;
-  try { campaignId = await apGetCampaign(acct, prof.accessToken, s, acctId, d, objInfo, cf); }
+  // งบในค่าตั้งต้นเป็นบาท — แปลงเป็นสกุลของบัญชีเฉพาะตอนต้องสร้างแคมเปญใหม่ ไม่มีเรต = ไม่สร้าง (ไม่เดาเรต) เตือนวันละครั้ง
+  // เดิมบังคับต้องมีเรตก่อนเสมอ แม้แคมเปญเดิมยังเปิดอยู่และไม่ต้องตั้งงบอะไร = เรตล่มแล้วการเติมแอดหยุดไปด้วยเปล่าๆ
+  let fxErr = null;
+  const getMoney = () => acctMoney(a.currency).catch((e) => { fxErr = e; throw e; });
+  let camp;
+  try { camp = await apGetCampaign(acct, prof.accessToken, s, acctId, d, objInfo, getMoney); }
   catch (e) {
+    if (fxErr) { apFxWarn(s, a, alerts, fxErr); return; }
     const m = `⚠️ ${a.name}: สร้างแคมเปญให้ไม่สำเร็จ (${e.message})`;
     alerts.push(m); apLog(s, 'warn', m, acctId);
     return;
   }
+  const campaignId = camp.id;
   if (!campaignId) {
     apLog(s, 'sleep', `${a.name}: ยังยืนยันแคมเปญของระบบไม่ได้รอบนี้ — ข้ามการเติมแอดไว้ก่อน`, acctId);
     return;
@@ -2941,15 +3240,30 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz, ta
       if (testMode) { s.tested = s.tested || {}; (s.tested[acctId] = s.tested[acctId] || []).push(Date.now()); }
       ok++;
     } catch (e) {
+      const need = FB_NEEDS_HUMAN[e.fbSubcode];
+      if (need) {
+        // หยุดเติมแอดให้บัญชีนี้จนกว่าคนจะแก้แล้วกดปลดล็อก — ลองซ้ำไปก็โดนข้อเดิม
+        s.noRotate[acctId] = { cat: need, hits: 1, ts: Date.now(), action: true };
+        const m = `🚧 ${a.name}: หยุดเติมแอดให้บัญชีนี้ — ${need}\n   FB ตอบ: ${e.message}\n   แก้แล้วกด "ปลดล็อก" ในหน้าตั้งค่า`;
+        alerts.push(m); apLog(s, 'blocked', m, acctId); s.warned['blocked:' + acctId] = apToday();
+        break;
+      }
       const m = `⚠️ ${a.name}: เติมแอด "${v.name}" ไม่สำเร็จ (${e.message})`;
       alerts.push(m); apLog(s, 'warn', m, acctId);
       break; // พลาดแล้วหยุดรอบนี้ ไม่รัวต่อ
     }
   }
   if (ok) {
+    // งบอยู่ที่แคมเปญ (CBO) เติมแอดไม่ได้เพิ่มเงิน • สร้างแคมเปญใหม่รอบนี้ = ต้องบอกยอดในสกุลบัญชีกับเรตที่ใช้
+    // (เดิมบอกแต่บาท ระบบอัตโนมัติไม่เคยจดว่าแปลงเป็นเท่าไหร่ เรตผิดทีเดียวเงียบสนิท)
+    const budgetNote = camp.created
+      ? `แคมเปญใหม่ งบ ${camp.created.budgetText}/วัน${camp.created.rateText ? ` • ${camp.created.rateText}` : ''}`
+      : String(a.currency || 'THB').toUpperCase() === 'THB'
+        ? `งบรวมยังคุมที่ ${Number(d.campaignBudget).toLocaleString()} บาท/วัน`
+        : 'งบรวมยังคุมที่งบของแคมเปญเดิม';
     const m = testMode
       ? `🧪 ${a.name}: สร้างแอดทดสอบ ${ok} ตัว — ปิดไว้ ยังไม่ใช้เงินสักบาท เข้า Ads Manager ดูได้เลย ชื่อขึ้นต้นด้วย [ทดสอบ]`
-      : `➕ ${a.name}: แอดยิงอยู่ ${activeCount}/${target} ตัว — เติมให้อีก ${ok} ตัว (เปิดยิงแล้ว งบรวมยังคุมที่ ${Number(d.campaignBudget).toLocaleString()} บาท/วัน)`;
+      : `➕ ${a.name}: แอดยิงอยู่ ${activeCount}/${target} ตัว — เติมให้อีก ${ok} ตัว (เปิดยิงแล้ว ${budgetNote})`;
     alerts.push(m); apLog(s, testMode ? 'test' : 'refill', m, acctId);
   }
 }
@@ -2965,8 +3279,12 @@ async function apPauseLosers(cfg, prof, a, ads, s, alerts) {
   // ruleCpr คือตัวเลขในช่อง "หยุดเมื่อต้นทุน/ผลลัพธ์เกิน" ซึ่งจะมีผลก็ต่อเมื่อเปิดสวิตช์ ruleOn
   // หน้าเว็บบอกผู้ใช้ตรงๆ ว่าปิดสวิตช์ = ระบบจะยิงต่อแม้แอดไม่เวิร์ก ถ้าเรามาปิดแอดเองก็ผิดคำพูด
   if (!d.ruleOn) return;
-  const targetCpa = Number(d.ruleCpr) || 0;
-  if (!targetCpa) return;                 // ไม่มีเกณฑ์ ก็ไม่มีสิทธิ์ตัดสินว่าอะไรขาดทุน
+  const targetCpaThb = Number(d.ruleCpr) || 0;
+  if (!targetCpaThb) return;              // ไม่มีเกณฑ์ ก็ไม่มีสิทธิ์ตัดสินว่าอะไรขาดทุน
+  // เกณฑ์กรอกเป็นบาท แต่ spend จาก insights เป็นสกุลของบัญชี — แปลงก่อนเทียบ ไม่มีเรต = ไม่ตัดสิน (ไม่ปิดแอดมั่ว) แต่ต้องเตือน
+  let money;
+  try { money = await acctMoney(a.currency); } catch (e) { apFxWarn(s, a, alerts, e); return; }
+  const targetCpa = money.toAcct(targetCpaThb);
 
   const acctId = a.account_id;
   const acct = `act_${acctId}`;
@@ -3011,9 +3329,9 @@ async function apPauseLosers(cfg, prof, a, ads, s, alerts) {
 
     const cpa = results > 0 ? spend / results : Infinity;
     const why = results === 0
-      ? `ใช้ไป ${Math.round(spend).toLocaleString()} บาทแล้วยังไม่มีผลลัพธ์เลย (เป้า ${targetCpa.toLocaleString()}/ผล)`
+      ? `ใช้ไป ${money.text(spend)} แล้วยังไม่มีผลลัพธ์เลย (เป้า ${money.text(targetCpa)}/ผล)`
       : cpa > targetCpa * lim.loserCpaMult
-        ? `ต้นทุน ${Math.round(cpa).toLocaleString()} บาท/ผล แพงกว่าเป้า ${targetCpa.toLocaleString()} เกิน ${lim.loserCpaMult} เท่า`
+        ? `ต้นทุน ${money.text(cpa)}/ผล แพงกว่าเป้า ${money.text(targetCpa)} เกิน ${lim.loserCpaMult} เท่า`
         : '';
     if (!why) continue;
 
@@ -3041,12 +3359,12 @@ const AP_SCALE_COOLDOWN = 20 * 3600 * 1000;   // ขยับแคมเปญ�
 async function apScale(cfg, prof, a, s, alerts) {
   const ap = cfg.autopilot || {};
   if (ap.testMode) return;                      // โหมดทดสอบห้ามขยับงบของจริง
-  const ceiling = Math.max(0, Number(ap.scaleMaxBudget) || 0);
-  if (!ceiling) return;                        // ไม่ตั้งเพดาน = ไม่ขยาย
+  const ceilingThb = Math.max(0, Number(ap.scaleMaxBudget) || 0);
+  if (!ceilingThb) return;                     // ไม่ตั้งเพดาน = ไม่ขยาย
 
   const d = cfg.launchDefaults || {};
-  const targetCpa = Number(d.ruleCpr) || 0;
-  if (!targetCpa) {
+  const targetCpaThb = Number(d.ruleCpr) || 0;
+  if (!targetCpaThb) {
     if (s.warned['scale:' + a.account_id] !== 'nocpa') {
       const m = `⚠️ ${a.name}: ขยายงบไม่ได้ — ยังไม่ได้ตั้ง "หยุดเมื่อต้นทุน/ผลลัพธ์เกิน" ในหน้าขึ้นแอด ระบบใช้ค่านั้นเป็นเกณฑ์ตัดสินตัวชนะ`;
       alerts.push(m); apLog(s, 'warn', m, a.account_id); s.warned['scale:' + a.account_id] = 'nocpa';
@@ -3054,9 +3372,16 @@ async function apScale(cfg, prof, a, s, alerts) {
     return;
   }
 
+  // เพดานกับเกณฑ์กรอกเป็นบาท แต่งบ/spend จาก FB เป็นสกุลของบัญชี — แปลงก่อนเทียบ ไม่มีเรต = ไม่ขยาย แต่ต้องเตือน
+  let money;
+  try { money = await acctMoney(a.currency); } catch (e) { apFxWarn(s, a, alerts, e); return; }
+  // เพดานเป็นหน่วยย่อยจำนวนเต็ม ปัดลง — เพดานที่มีเศษ (3,000 บาท = 9140.31 เซนต์) ทำให้งบไปจอดที่ 9140
+  // แล้วทุกรอบ "ยังต่ำกว่าเพดาน" ตลอด ยิงงบเดิมซ้ำ + แจ้ง "ขยายงบ 91.4 → 91.4 USD" ทุกวัน
+  const ceilingMinor = Math.floor(money.toAcct(ceilingThb) * money.cf + 1e-6);   // +1e-6 กันทศนิยมลอย (0.29 × 100 = 28.999…)
+  const targetCpa = money.toAcct(targetCpaThb);
   const acct = `act_${a.account_id}`;
   const token = prof.accessToken;
-  const cf = curFactor(a.currency);
+  const cf = money.cf;
   let camps = [], ins = [];
   try {
     camps = await fbAll(`${acct}/campaigns`, { fields: 'id,name,status,daily_budget,objective', limit: 200 }, token);
@@ -3087,15 +3412,17 @@ async function apScale(cfg, prof, a, s, alerts) {
     const cpa = spend / results;
     if (cpa > targetCpa * 0.7) continue;       // ต้องถูกกว่าเพดาน 30% ขึ้นไปถึงนับเป็นตัวชนะ
 
-    const cur = Number(c.daily_budget) / cf;
-    if (cur >= ceiling) continue;
-    const next = Math.min(Math.round(cur * apLimits(cfg).scaleStep), ceiling);
-    if (next <= cur) continue;
+    // คิดเป็นหน่วยย่อยจำนวนเต็มทั้งหมด (ที่ FB รับจริง) — USD เป็นเซนต์, VND เป็นดอง ไม่มีเศษให้เพี้ยน
+    const curMinor = Number(c.daily_budget);
+    if (curMinor >= ceilingMinor) continue;
+    const nextMinor = Math.min(Math.round(curMinor * apLimits(cfg).scaleStep), ceilingMinor);
+    if (nextMinor <= curMinor) continue;
+    const cur = curMinor / cf, next = nextMinor / cf;
 
     try {
-      await fb(c.id, { daily_budget: Math.round(next * cf) }, 'POST', token);
+      await fb(c.id, { daily_budget: nextMinor }, 'POST', token);
       s.scaled[c.id] = Date.now();
-      const m = `📈 ${a.name}: "${c.name}" ต้นทุน ${Math.round(cpa)} บาท/ผล (เพดาน ${targetCpa}) — ขยายงบ ${cur.toLocaleString()} → ${next.toLocaleString()} บาท/วัน`;
+      const m = `📈 ${a.name}: "${c.name}" ต้นทุน ${money.text(cpa)}/ผล (เพดาน ${money.text(targetCpa)}) — ขยายงบ ${money.text(cur)} → ${money.text(next)}/วัน`;
       alerts.push(m); apLog(s, 'scale', m, a.account_id);
     } catch (e) {
       apLog(s, 'warn', `${a.name}: ขยายงบ "${c.name}" ไม่สำเร็จ (${e.message})`, a.account_id);
@@ -3252,12 +3579,13 @@ async function autopilotTick(mode = 'full') {
       // ต้องอยู่ในบล็อก try นี้: ถ้าโยน exception ออกไป จะไม่ถึง saveApMerged ท้าย tick = state ทั้งรอบหาย
       apScoreCreatives(s, ads);
 
-      // รอบแรกของบัญชีนี้ = จดไว้เฉยๆ ไม่ลงมือ กันไปไล่แก้ของเก่าที่ค้างมานานรวดเดียว
+      // รอบแรกของบัญชีนี้ = แอดที่โดนปฏิเสธอยู่ก่อนแล้วจดไว้เฉยๆ ไม่แตะ กันไปไล่แก้ของเก่าที่ค้างมานานรวดเดียว
+      // (จดเป็น handled → ลูปข้างล่างข้ามเอง) แต่ไม่ข้ามทั้งบัญชี — เดิม continue ทิ้งการเติมแอด/ขยายงบไปด้วย
+      // เปิดระบบกับบัญชีที่ยังไม่มีแอดเลย รอบแรกเลยไม่ทำอะไร ต้องรออีก 20 นาทีถึงขึ้นแอด (ผู้ใช้เจอจริง 12 ต.ค. 2026)
       if (!s.baselined[acctId]) {
         rejected.forEach((x) => apMark(s.handled, x.id, 'baseline'));
         s.baselined[acctId] = Date.now();
         apLog(s, 'info', `เริ่มเฝ้า ${a.name} — แอดที่โดนปฏิเสธอยู่ก่อนแล้ว ${rejected.length} ตัว จะไม่แตะ`, acctId);
-        continue;
       }
 
       for (const ad of rejected) {
@@ -3528,7 +3856,10 @@ app.post('/api/autopilot', (req, res) => {
   const limBefore = apLimits(cfg);
   const enabledBefore = !!(cfg.autopilot || {}).enabled;
   const killBefore = !!s.killSwitch;
-  cfg.autopilot = { ...(cfg.autopilot || {}), enabled: !!req.body.enabled };
+  // ทุกช่องแตะเฉพาะตอนส่งมา — ปุ่มหยุดฉุกเฉินส่งแค่ { killSwitch } (กดได้ก่อนหน้าเว็บโหลดค่าเสร็จ)
+  // เดิม enabled ถูกตั้งจาก body เสมอ: ส่งมาแค่ killSwitch = ปิดระบบอัตโนมัติไปด้วยเงียบๆ
+  cfg.autopilot = { ...(cfg.autopilot || {}) };
+  if (typeof req.body.enabled === 'boolean') cfg.autopilot.enabled = req.body.enabled;
   if (req.body.minAds !== undefined) {
     cfg.autopilot.minAds = Math.max(0, Math.min(50, Number(req.body.minAds) || 0));
   }
@@ -3561,7 +3892,7 @@ app.post('/api/autopilot', (req, res) => {
   // ซึ่ง !== false เสมอ ถ้าเทียบดิบจะจด "ปลดหยุดฉุกเฉิน" ทุก POST
   if (!!s.killSwitch !== killBefore) {
     apLog(s, 'info', s.killSwitch ? '🛑 กดหยุดฉุกเฉิน' : '✅ ปลดหยุดฉุกเฉิน');
-  } else if (cfg.autopilot.enabled !== enabledBefore) {
+  } else if (!!cfg.autopilot.enabled !== enabledBefore) {   // !! — ไม่ส่ง enabled มา + config ไม่เคยมีคีย์นี้ = undefined ห้ามนับว่าเปลี่ยน
     apLog(s, 'info', cfg.autopilot.enabled ? '▶️ เปิดระบบอัตโนมัติ' : '⏸️ ปิดระบบอัตโนมัติ');
   }
   // เพดานคือเกราะกันบัญชีโดนแบน ใครขยับเมื่อไหร่ต้องมีร่องรอย ไม่ใช่เปลี่ยนเงียบๆ แล้วมางงทีหลัง
@@ -3571,7 +3902,7 @@ app.post('/api/autopilot', (req, res) => {
     .map((k) => `${AP_LIMIT_SPEC[k].label}: ${limBefore[k]} → ${limAfter[k]}`);
   if (changed.length) apLog(s, 'info', '⚙️ แก้เพดาน — ' + changed.join(' • '));
   saveAp(s);
-  res.json({ ok: true, enabled: cfg.autopilot.enabled, killSwitch: s.killSwitch, limits: limAfter });
+  res.json({ ok: true, enabled: !!cfg.autopilot.enabled, killSwitch: s.killSwitch, limits: limAfter });
 });
 // รอบตรวจหนึ่งกินเวลาเป็นนาที (ไล่ยิง FB ทุกบัญชี + เรียก AI ต่อแอดที่โดนปฏิเสธหนึ่งตัว)
 // สอง tick ที่ซ้อนกันจะอ่าน state ชุดเดียวกันแล้วต่างคนต่างลงมือ → สร้างแอดซ้ำ, แก้แอดซ้ำ,
@@ -3747,12 +4078,12 @@ async function tgContext(cfg) {
       const campLines = (camps || []).map((c) => {
         const ci = cmap[c.id] || {};
         const cres = pickResult(resultSpec(c.objective, d.conversionEvent), ci.actions);
-        return `  - แคมเปญ "${clean(c.name)}" (campaign_id ${c.id}, ${c.status}) งบ ${c.daily_budget ? (Number(c.daily_budget) / cf).toLocaleString() : '-'}/วัน • ใช้วันนี้ ${Number(ci.spend || 0).toLocaleString()} ${a.currency}${cres != null ? ` • ผลลัพธ์ ${cres}` : ''}`;
+        return `  - แคมเปญ "${clean(c.name)}" (campaign_id ${c.id}, ${c.status}) งบ ${c.daily_budget ? `${(Number(c.daily_budget) / cf).toLocaleString()} ${a.currency}` : '-'}/วัน • ใช้วันนี้ ${Number(ci.spend || 0).toLocaleString()} ${a.currency}${cres != null ? ` • ผลลัพธ์ ${cres}` : ''}`;
       });
       parts.push(
         `บัญชี "${a.name}" (account_id ${a.account_id}, profile_id ${prof.id}, สกุลเงิน ${a.currency})\n`
         + `  วันนี้: ${spend.toLocaleString()} ${a.currency} • ${Number(ins.impressions || 0).toLocaleString()} อิมเพรสชัน • ${Number(ins.clicks || 0).toLocaleString()} คลิก`
-        + (results != null ? ` • ${results} ผลลัพธ์ • ต้นทุน/ผล ${results > 0 ? Math.round(spend / results).toLocaleString() : '-'}` : '')
+        + (results != null ? ` • ${results} ผลลัพธ์ • ต้นทุน/ผล ${results > 0 ? moneyText(spend / results, a.currency) : '-'}` : '')
         + (campLines.length ? `\n${campLines.join('\n')}` : ''),
       );
     }
@@ -3767,8 +4098,10 @@ async function tgContext(cfg) {
     `รายละเอียดต่อบัญชี (วันนี้):\n${parts.join('\n') || 'ไม่มีบัญชีที่ใช้งานได้'}`,
     `ยอดเมื่อวาน:\n${yest.lines.join('\n') || 'ไม่มี'}${yest.totalLine ? `\nรวม: ${yest.totalLine}` : ''}`,
     `ยอด 7 วันล่าสุด:\n${week.lines.join('\n') || 'ไม่มี'}${week.totalLine ? `\nรวม: ${week.totalLine}` : ''}`,
-    `การตั้งค่า: เป้าต้นทุน/ผล (ruleCpr) ${d.ruleCpr || 'ไม่ตั้ง'} • สวิตช์ปิดแอดขาดทุน (ruleOn) ${d.ruleOn ? 'เปิด' : 'ปิด'} • งบตั้งต้น/แคมเปญ ${d.campaignBudget || '-'}`,
-    `ระบบอัตโนมัติ: ${ap.enabled ? 'เปิด' : 'ปิด'}${ap.testMode ? ' (โหมดทดสอบ)' : ''} • หยุดฉุกเฉิน: ${st.killSwitch ? 'กดอยู่' : 'ไม่ได้กด'} • minAds ${Number(ap.minAds) || 0} • ขยายงบสูงสุด ${Number(ap.scaleMaxBudget) || 0}`
+    // ค่าตั้งค่าเป็นบาทเสมอ (ระบบแปลงเป็นสกุลบัญชีให้เอง) ส่วนตัวเลขของแคมเปญ/บัญชีเป็นสกุลของบัญชี — ต้องติดหน่วยทุกตัว
+    // เดิมไม่มีหน่วย AI เห็นเลขบาทปนเลขดอลลาร์ แล้วเสนอ "ตั้งงบ 3000" ให้แคมเปญ USD (= 3,000 ดอลลาร์)
+    `การตั้งค่า (หน่วยบาท ระบบแปลงเป็นสกุลของแต่ละบัญชีเอง): เป้าต้นทุน/ผล (ruleCpr) ${d.ruleCpr ? `${d.ruleCpr} บาท` : 'ไม่ตั้ง'} • สวิตช์ปิดแอดขาดทุน (ruleOn) ${d.ruleOn ? 'เปิด' : 'ปิด'} • งบตั้งต้น/แคมเปญ ${d.campaignBudget ? `${d.campaignBudget} บาท` : '-'}`,
+    `ระบบอัตโนมัติ: ${ap.enabled ? 'เปิด' : 'ปิด'}${ap.testMode ? ' (โหมดทดสอบ)' : ''} • หยุดฉุกเฉิน: ${st.killSwitch ? 'กดอยู่' : 'ไม่ได้กด'} • minAds ${Number(ap.minAds) || 0} • ขยายงบสูงสุด ${Number(ap.scaleMaxBudget) || 0} บาท/วัน/แคมเปญ`
     + `\nเพดาน: ${Object.entries(lim).map(([k, v]) => `${k}=${v}`).join(' ')}`
     + `\nวันนี้: แก้ข้อความ ${apRecent(st.fixes, day).length} • เติมแอด ${Object.values(st.created || {}).reduce((n, arr) => n + apRecent(arr, day).length, 0)} • ปิดแอดขาดทุน ${apRecent((st.pausedLog || []).map((x) => x.ts), day).length}`
     + `\nบัญชีถูกหยุด (unfreeze ได้): ${Object.entries(st.frozen || {}).map(([id, f]) => `${id} (${f.reason})`).join(', ') || 'ไม่มี'}`
@@ -3809,10 +4142,11 @@ function tgValidAction(cfg, a) {
         ? { type: a.type, campaignId: String(a.campaignId), status: a.status, profileId: String(a.profileId) } : null;
     case 'setCampaignBudget': {
       const v = Number(a.value);
-      // เพดานแข็ง 1-1,000,000/วัน + เกราะสัมพัทธ์ (ไม่เกิน 10 เท่าของงบเดิม) เช็คใน tgVerifyBudget อีกชั้น
+      // ค่าเป็นสกุลของบัญชี (ดองหลักล้านเป็นเรื่องปกติ) — เพดานแข็งคิดเป็นบาทใน tgVerifyBudget ที่รู้สกุลแล้ว
+      // (เดิม 1–1,000,000 ทุกสกุล บัญชี VND/IDR แก้งบผ่านแชทไม่ได้เลยแม้แต่ลดงบ) + เกราะสัมพัทธ์ 10 เท่าของงบเดิม
       return digits(a.campaignId) && digits(a.accountId) && getProfile(cfg, a.profileId)
-        && Number.isFinite(v) && v >= 1 && v <= 1000000
-        ? { type: a.type, campaignId: String(a.campaignId), accountId: String(a.accountId), profileId: String(a.profileId), value: Math.round(v) } : null;
+        && Number.isFinite(v) && v > 0
+        ? { type: a.type, campaignId: String(a.campaignId), accountId: String(a.accountId), profileId: String(a.profileId), value: v } : null;
     }
     default: return null;
   }
@@ -3831,7 +4165,8 @@ function tgDescribeAction(cfg, a) {
     case 'campaignStatus': return `${a.status === 'PAUSED' ? 'หยุด' : 'เปิด'}แคมเปญ id ${a.campaignId}`;
     case 'setCampaignBudget':
       // ต้องเห็นงบเดิมเทียบใหม่ — เจ้าของประเมิน magnitude ไม่ได้ถ้าเห็นแต่เลขเดียว
-      return `ตั้งงบแคมเปญ id ${a.campaignId}: ${a.oldBudget != null ? a.oldBudget.toLocaleString() : '?'} → ${a.value.toLocaleString()} ${a.currency || ''}/วัน (บัญชี ${a.accountId})`;
+      return `ตั้งงบแคมเปญ id ${a.campaignId}: ${a.oldBudget != null ? a.oldBudget.toLocaleString() : '?'} → ${a.value.toLocaleString()} ${a.currency || ''}/วัน`
+        + `${a.thb != null ? ` (≈ ${Math.round(a.thb).toLocaleString()} บาท)` : ''} (บัญชี ${a.accountId})`;
     default: return a.type;
   }
 }
@@ -3846,12 +4181,29 @@ async function tgVerifyBudget(cfg, act) {
   if (owner !== act.accountId) throw new Error(`แคมเปญ ${act.campaignId} อยู่ในบัญชี ${owner} ไม่ใช่ ${act.accountId} ตามที่อ้าง`);
   const info = await fb(`act_${act.accountId}`, { fields: 'currency' }, 'GET', prof.accessToken);
   const cf = curFactor(info.currency);
-  const oldBudget = c.daily_budget ? Number(c.daily_budget) / cf : null;
-  // เกราะสัมพัทธ์: กระโดดเกิน 10 เท่าของงบเดิมไม่ได้ — พิมพ์ศูนย์เกินหนึ่งตัวแล้วเผลอยืนยัน ต้องไม่ผ่าน
-  if (oldBudget && act.value > oldBudget * 10) {
-    throw new Error(`งบใหม่ ${act.value.toLocaleString()} เกิน 10 เท่าของงบเดิม (${oldBudget.toLocaleString()}) — ถ้าตั้งใจจริงให้ทำในหน้าเว็บ`);
+  // ไม่มีงบรายวันระดับแคมเปญ (ใช้งบตลอดอายุ หรือตั้งงบที่ชุดโฆษณา) = ไม่รับคำสั่งจากแชท
+  // เดิมปล่อยผ่านโดยข้ามเกราะ 10 เท่า (ไม่มีงบเดิมให้เทียบ) เหลือแค่เพดานแข็งกับคนอ่านยอดตอนยืนยันเป็นด่านเดียว
+  if (!(Number(c.daily_budget) > 0)) {
+    throw new Error(`แคมเปญ ${act.campaignId} ไม่มีงบรายวันระดับแคมเปญให้เทียบ — ตั้งงบผ่านแชทไม่ได้ ทำในหน้าเว็บหรือ Ads Manager`);
   }
-  return { oldBudget, currency: info.currency, cf };
+  const oldBudget = Number(c.daily_budget) / cf;
+  // ปัดตามหน่วยย่อยของสกุลนี้ตั้งแต่ตอนเสนอ — เลขที่เจ้าของเห็นตอนยืนยันต้องเป็นเลขที่ส่ง FB จริงเป๊ะ
+  // (เดิมปัดเป็นจำนวนเต็มทุกสกุล 9.99 USD กลายเป็น 10)
+  const value = Math.round(act.value * cf) / cf;
+  if (!(value > 0)) throw new Error('งบใหม่ต้องมากกว่า 0');
+  // เกราะสัมพัทธ์: กระโดดเกิน 10 เท่าของงบเดิมไม่ได้ — พิมพ์ศูนย์เกินหนึ่งตัวแล้วเผลอยืนยัน ต้องไม่ผ่าน
+  if (value > oldBudget * 10) {
+    throw new Error(`งบใหม่ ${value.toLocaleString()} เกิน 10 เท่าของงบเดิม (${oldBudget.toLocaleString()}) — ถ้าตั้งใจจริงให้ทำในหน้าเว็บ`);
+  }
+  // ยอดเทียบเป็นบาทให้เจ้าของเห็นตอนยืนยัน — ด่านสุดท้ายที่จับ "คิดว่าบาทแต่จริงๆ ดอลลาร์" ได้
+  const isThb = String(info.currency || 'THB').toUpperCase() === 'THB';
+  let thb = isThb ? value : null;
+  if (!isThb) {
+    try { thb = value / (await thbRate(info.currency)); } catch { /* ไม่มีเรต */ }
+  }
+  // เพดานแข็ง 1,000,000 บาท/วัน (เทียบเป็นบาท ใช้ได้ทุกสกุล) — ไม่มีเรตให้เทียบ ยังมีเกราะ 10 เท่าของงบเดิมคุมอยู่
+  if (thb != null && thb > 1000000) throw new Error(`งบใหม่เกิน 1,000,000 บาท/วัน — ถ้าตั้งใจจริงให้ทำในหน้าเว็บ`);
+  return { oldBudget, currency: info.currency, cf, value, thb: isThb ? null : thb };
 }
 
 // ลงมือจริง — เรียกผ่าน endpoint ภายในตัวเอง เพื่อใช้ validate/clamp/log ชุดเดียวกับหน้าเว็บเป๊ะ
@@ -3863,7 +4215,7 @@ async function tgExecute(cfg, act) {
     return r;
   };
   if (['killSwitch', 'autopilotEnabled', 'testMode', 'setMinAds', 'setScaleMaxBudget', 'setLimit'].includes(act.type)) {
-    // endpoint นี้ตั้ง enabled จาก body เสมอ — ต้องส่งค่าปัจจุบันไปด้วย ไม่งั้นสั่งอย่างเดียวได้ผลสองอย่าง
+    // ส่งค่าปัจจุบันของสวิตช์ไปด้วย (เดิม endpoint ตั้ง enabled จาก body เสมอ ตอนนี้แตะเฉพาะช่องที่ส่ง — คงไว้กันพลาด)
     const cur = await (await fetch(`${local}/api/autopilot`)).json();
     const body = { enabled: cur.enabled, killSwitch: cur.killSwitch, testMode: cur.testMode };
     if (act.type === 'killSwitch') body.killSwitch = act.on;
@@ -3879,9 +4231,9 @@ async function tgExecute(cfg, act) {
     await jpost('/api/campaign-status', { profile: act.profileId, id: act.campaignId, status: act.status });
   } else if (act.type === 'setCampaignBudget') {
     // เช็คซ้ำตอนลงมือด้วย — ระหว่างรอยืนยัน 10 นาที สถานะบน FB เปลี่ยนได้
-    const { cf } = await tgVerifyBudget(cfg, act);
+    const { cf, value } = await tgVerifyBudget(cfg, act);
     const prof = getProfile(cfg, act.profileId);
-    await fb(act.campaignId, { daily_budget: Math.round(act.value * cf) }, 'POST', prof.accessToken);
+    await fb(act.campaignId, { daily_budget: Math.round(value * cf) }, 'POST', prof.accessToken);
   } else {
     throw new Error('ไม่รู้จักคำสั่งนี้');
   }
@@ -3925,7 +4277,8 @@ const TG_SYSTEM = `คุณคือผู้ช่วยดูแลระบ�
 - action จะยังไม่ถูกทำจริง — ระบบจะถามยืนยันเจ้าของเองเสมอ ห้ามเขียนใน answer ว่าทำไปแล้ว
 - ถ้าเป็นแค่คำถาม ไม่ได้ขอให้ทำอะไร ให้ action เป็น null
 - id ทุกตัว (account_id, campaign_id, profile_id) ต้องคัดจากข้อมูลที่แนบเท่านั้น
-- คำสั่งที่มีให้ใช้: killSwitch(on) หยุด/ปลดฉุกเฉิน • autopilotEnabled(on) • testMode(on) • setMinAds(value 0-50) • setScaleMaxBudget(value บาท, 0=ปิดขยายงบ) • setLimit(key, value) ปรับเพดาน • unfreeze(accountId) • campaignStatus(campaignId, status ACTIVE|PAUSED, profileId) • setCampaignBudget(campaignId, accountId, profileId, value ต่อวัน)
+- คำสั่งที่มีให้ใช้: killSwitch(on) หยุด/ปลดฉุกเฉิน • autopilotEnabled(on) • testMode(on) • setMinAds(value 0-50) • setScaleMaxBudget(value บาท, 0=ปิดขยายงบ) • setLimit(key, value) ปรับเพดาน • unfreeze(accountId) • campaignStatus(campaignId, status ACTIVE|PAUSED, profileId) • setCampaignBudget(campaignId, accountId, profileId, value ต่อวัน เป็นสกุลเงินของบัญชีนั้นตามที่แสดงในข้อมูล)
+- งบแคมเปญ (setCampaignBudget) ใช้สกุลของบัญชี ไม่ใช่บาท — ถ้าเจ้าของระบุเป็นบาทกับบัญชีที่ไม่ใช่ THB หรือไม่ชัดว่าหน่วยอะไร ให้ action เป็น null แล้วถามกลับ ห้ามแปลงสกุลเงินเอง
 - เรื่องที่ทำไม่ได้ (เช่น ลบแคมเปญ แก้ครีเอทีฟ) ให้บอกว่าทำผ่านแชทไม่ได้ ต้องทำในหน้าเว็บ`;
 
 async function tgAiAnswer(cfg, apiKey, question) {
@@ -3947,7 +4300,10 @@ async function tgAiAnswer(cfg, apiKey, question) {
   if (!b) throw new Error('AI ตอบว่าง');
   const out = JSON.parse(b.text);
   if (!out.answer) throw new Error('AI ไม่มีคำตอบ');
-  return { answer: out.answer, action: tgValidAction(cfg, out.action) };
+  const action = tgValidAction(cfg, out.action);
+  // AI เสนอคำสั่งแต่ไม่ผ่านการตรวจ = ต้องบอก ไม่งั้นเจ้าของเห็น "จะลดงบให้ครับ" แล้วรอคำถามยืนยันที่ไม่มีวันมา
+  const answer = out.action && !action ? `${out.answer}\n\n🚫 คำสั่งที่เสนอไม่ผ่านการตรวจ (ค่าหรือ id ไม่ถูกต้อง) — ยังไม่ได้ทำอะไร` : out.answer;
+  return { answer, action };
 }
 
 // คืนจำนวน ms ที่ควรรอก่อน poll รอบถัดไป — พังบ่อยต้องถอยห่าง ไม่ใช่ยิงรัวใส่ Telegram
@@ -4021,7 +4377,7 @@ async function tgPollOnce() {
       // และข้อเสนอที่จับคู่ผิดต้องตายตรงนี้ ไม่ใช่รอไปตายหลังเจ้าของกดยืนยันแล้ว
       try {
         const v = await tgVerifyBudget(cfg, action);
-        action.oldBudget = v.oldBudget; action.currency = v.currency;
+        action.oldBudget = v.oldBudget; action.currency = v.currency; action.value = v.value; action.thb = v.thb;
       } catch (e) {
         answer = `${answer}\n\n🚫 ข้อเสนอถูกยกเลิก: ${e.message}`;
         action = null;
@@ -4053,7 +4409,8 @@ function startTgPolling() {
 function startBackgroundJobs() {
   startAutopilotTimers();
   startTgPolling();
-  setTimeout(() => watchTick().catch(() => {}), 30 * 1000).unref();      // รอบแรกหลังบูต 30 วิ
+  // รอบแรกหลังบูต 30 วิ • ปรับผ่าน env ได้เฉพาะให้เทสสั่งรอบตรวจได้โดยไม่ต้องรอ
+  setTimeout(() => watchTick().catch(() => {}), Number(process.env.WATCH_FIRST_DELAY_MS) || 30 * 1000).unref();
   setInterval(() => watchTick().catch(() => {}), 60 * 60 * 1000).unref(); // แล้วทุก 1 ชม.
   setInterval(() => {
   const th = new Date(Date.now() + 7 * 3600 * 1000);

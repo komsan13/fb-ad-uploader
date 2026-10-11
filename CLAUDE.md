@@ -99,7 +99,7 @@
 
 ## บริบทของระบบที่ต้องรู้
 
-- **Deploy:** `git push` แล้ว ssh เข้า `root@31.97.105.21` รัน `bash redeploy.sh`
+- **Deploy:** `git push` แล้ว ssh เข้า `root@72.61.114.133` รัน `bash redeploy.sh`
   ข้อมูลจริงอยู่ที่ `/opt/fbad-data/` (config, autopilot-state, คลังสื่อ, landing)
 - **หน้า `/lp` ต้องเปิดสาธารณะเสมอ** ส่วน `/lp/admin` และ `/api/*` ต้องอยู่หลัง basic auth
   (router `fbadpub` ใน `redeploy.sh`)

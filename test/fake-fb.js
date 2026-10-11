@@ -21,12 +21,24 @@ function makeFakeFb(world) {
         res.writeHead(code, { 'content-type': 'application/json', ...(world.headers || {}) });
         res.end(JSON.stringify(obj));
       };
-      const fail = (message, code = 100) => send({ error: { message, code } }, 400);
+      const fail = (message, code = 100, subcode) => send({ error: { message, code, ...(subcode ? { error_subcode: subcode } : {}) } }, 400);
 
       // ให้เทสแทรกพฤติกรรมเฉพาะเคสได้ (เช่น บังคับให้ endpoint หนึ่งพัง)
       // hook.errorCode = ใส่ code ของ FB เองได้ (เช่น 200 = API access blocked) ไม่งั้น default 100
       const hook = world.route && world.route(req.method, path, params);
-      if (hook) return hook.error ? fail(hook.error, hook.errorCode || 100) : send(hook);
+      if (hook) {
+        // hook.errorSubcode = error_subcode ของ FB (เช่น 3858385 = ต้องยืนยันบัญชีก่อน)
+        const reply = () => (hook.error ? fail(hook.error, hook.errorCode || 100, hook.errorSubcode) : send(hook));
+        // hook.delay = หน่วงก่อนตอบ (ms) จำลอง FB ค้าง — ใช้เทสว่าฝั่งเรามี timeout
+        return hook.delay ? setTimeout(reply, hook.delay) : reply();
+      }
+
+      // อัตราแลกเปลี่ยนปลอม (helpers ชี้ FX_API_URL มาที่นี่) — เทสต้องไม่วิ่งไปเว็บจริง และเรตต้องคงที่
+      // world.fx = ทับเรตเอง, world.fxDown = จำลองแหล่งเรตล่ม
+      if (path === 'fx') {
+        if (world.fxDown) return send({ result: 'error', 'error-type': 'จำลองแหล่งเรตล่ม' }, 503);
+        return send({ result: 'success', base_code: 'THB', rates: world.fx || { THB: 1, USD: 0.03, JPY: 4.5, VND: 768 } });
+      }
 
       // ---- อ่าน ----
       if (req.method === 'GET') {

@@ -25,8 +25,8 @@ const config = (extra = {}) => ({
   ...extra,
 });
 
-async function bootTg(t, { cfg = config(), aiAnswer = 'คำตอบจาก AI' } = {}) {
-  const fb = await makeFakeFb(world());
+async function bootTg(t, { cfg = config(), aiAnswer = 'คำตอบจาก AI', fbWorld = world() } = {}) {
+  const fb = await makeFakeFb(fbWorld);
   const tg = await makeFakeTg();
   const ai = await makeFakeAi(aiAnswer);
   const dir = tmpDir();
@@ -212,6 +212,57 @@ describe('รูที่รีวิวเจอ — เส้นเงิน�
     assert.strictEqual(call.params.daily_budget, '900000', 'THB ต้องคูณ 100 (9000 → 900000 สตางค์)');
   });
 
+  test('ตั้งงบบัญชี USD: ทศนิยมต้องไม่ถูกปัดทิ้ง ยืนยันต้องโชว์ยอดเทียบบาท และข้อมูลให้ AI ต้องติดหน่วย', async (t) => {
+    // เดิมปัดเป็นจำนวนเต็มทุกสกุล 9.99 USD → 10 • และข้อมูลที่ส่งให้ AI ไม่มีหน่วย เลขบาทปนเลขดอลลาร์
+    const fbWorld = { ...world(), accounts: [{ name: 'บัญชีดอลลาร์', account_id: ACCT, account_status: 1, currency: 'USD' }] };
+    const { tg, srv, ai } = await bootTg(t, {
+      fbWorld,
+      cfg: config({ anthropicKey: 'sk-test', launchDefaults: { campaignBudget: '3333', ruleCpr: '100' }, autopilot: { enabled: false, scaleMaxBudget: 20000 } }),
+      aiAnswer: proposal(mkAct({ type: 'setCampaignBudget', campaignId: '888009', accountId: ACCT, profileId: 'p1', value: 9.99 })),
+    });
+    srv.fbWorld.campaigns.push({ id: '888009', acct: ACCT, account_id: ACCT, name: 'งบดอลลาร์', status: 'ACTIVE', daily_budget: '1000' });
+    await until(() => tg.state.polls >= 1);
+    tg.push(CHAT, 'ตั้งงบแคมเปญเป็น 9.99 ดอลลาร์');
+    await until(() => tg.state.sent.length >= 2);
+    assert.match(tg.state.sent[1].text, /10 → 9\.99 USD\/วัน \(≈ 333 บาท\)/, tg.state.sent[1].text);
+    const sentToAi = JSON.stringify(ai.state.requests[0]);
+    assert.ok(sentToAi.includes('10 USD/วัน'), 'งบแคมเปญต้องติดสกุลของบัญชี');
+    assert.ok(sentToAi.includes('20000 บาท/วัน/แคมเปญ') && sentToAi.includes('3333 บาท'), 'ค่าตั้งค่าต้องบอกว่าเป็นบาท');
+    tg.push(CHAT, 'ยืนยัน');
+    await until(() => tg.state.sent.some((m) => /ทำแล้ว/.test(m.text)), 20000);
+    const call = srv.fbWorld.calls.find((c) => c.method === 'POST' && c.path === '888009' && c.params.daily_budget);
+    assert.strictEqual(call.params.daily_budget, '999', '9.99 ดอลลาร์ = 999 เซนต์ ไม่ใช่ 1000');
+  });
+
+  test('ตั้งงบบัญชี VND: งบหลักล้านดองต้องสั่งผ่านแชทได้ (เพดานคิดเป็นบาท ไม่ใช่ 1,000,000 ทุกสกุล)', async (t) => {
+    const fbWorld = { ...world(), accounts: [{ name: 'บัญชีดอง', account_id: ACCT, account_status: 1, currency: 'VND' }] };
+    const { tg, srv } = await bootTg(t, {
+      fbWorld,
+      cfg: config({ anthropicKey: 'sk-test' }),
+      aiAnswer: proposal(mkAct({ type: 'setCampaignBudget', campaignId: '888010', accountId: ACCT, profileId: 'p1', value: 2000000 })),
+    });
+    srv.fbWorld.campaigns.push({ id: '888010', acct: ACCT, account_id: ACCT, name: 'งบดอง', status: 'ACTIVE', daily_budget: '2559744' });
+    await until(() => tg.state.polls >= 1);
+    tg.push(CHAT, 'ลดงบเหลือ 2 ล้านดอง');
+    await until(() => tg.state.sent.length >= 2);
+    assert.match(tg.state.sent[1].text, /2,559,744 → 2,000,000 VND\/วัน/, tg.state.sent[1].text);
+    tg.push(CHAT, 'ยืนยัน');
+    await until(() => tg.state.sent.some((m) => /ทำแล้ว/.test(m.text)), 20000);
+    const call = srv.fbWorld.calls.find((c) => c.method === 'POST' && c.path === '888010' && c.params.daily_budget);
+    assert.strictEqual(call.params.daily_budget, '2000000', 'ดองไม่มีหน่วยย่อย ไม่คูณ 100');
+  });
+
+  test('AI เสนอคำสั่งที่ไม่ผ่านการตรวจ ต้องบอกเจ้าของว่ายังไม่ได้ทำ (ไม่ใช่เงียบแล้วรอคำถามยืนยันที่ไม่มา)', async (t) => {
+    const { tg } = await bootTg(t, {
+      cfg: config({ anthropicKey: 'sk-test' }),
+      aiAnswer: proposal(mkAct({ type: 'setCampaignBudget', campaignId: '888011', accountId: ACCT, profileId: 'p1', value: -5 }), 'จะลดงบให้ครับ'),
+    });
+    await until(() => tg.state.polls >= 1);
+    tg.push(CHAT, 'ลดงบ');
+    await until(() => tg.state.sent.length >= 2);
+    assert.match(tg.state.sent[1].text, /ไม่ผ่านการตรวจ/);
+  });
+
   test('ตั้งงบ: แคมเปญไม่ได้อยู่ในบัญชีที่อ้าง ต้องตายตั้งแต่ตอนเสนอ', async (t) => {
     const { tg, srv } = await bootTg(t, {
       cfg: config({ anthropicKey: 'sk-test' }),
@@ -227,6 +278,19 @@ describe('รูที่รีวิวเจอ — เส้นเงิน�
     tg.push(CHAT, 'ยืนยัน');
     await until(() => tg.state.sent.some((m) => /ไม่มีคำสั่งค้าง/.test(m.text)), 20000);
     assert.ok(!srv.fbWorld.calls.some((c) => c.method === 'POST' && c.path === '888002'), 'FB ต้องไม่ถูกแตะ');
+  });
+
+  test('ตั้งงบ: แคมเปญไม่มีงบรายวัน (งบตลอดอายุ/งบที่ชุดโฆษณา) ต้องไม่รับ — ไม่มีงบเดิมให้เกราะ 10 เท่าเทียบ', async (t) => {
+    const { tg, srv } = await bootTg(t, {
+      cfg: config({ anthropicKey: 'sk-test' }),
+      aiAnswer: proposal(mkAct({ type: 'setCampaignBudget', campaignId: '888012', accountId: ACCT, profileId: 'p1', value: 500000 })),
+    });
+    srv.fbWorld.campaigns.push({ id: '888012', acct: ACCT, account_id: ACCT, name: 'งบตลอดอายุ', status: 'ACTIVE', lifetime_budget: '1000000' });
+    await until(() => tg.state.polls >= 1);
+    tg.push(CHAT, 'ตั้งงบ 500000');
+    await until(() => tg.state.sent.length >= 2);
+    assert.match(tg.state.sent[1].text, /ไม่มีงบรายวัน/);
+    assert.ok(!/พิมพ์ "ยืนยัน"/.test(tg.state.sent[1].text));
   });
 
   test('ตั้งงบ: กระโดดเกิน 10 เท่าของงบเดิม ต้องถูกปัดตก', async (t) => {

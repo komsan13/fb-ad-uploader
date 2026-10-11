@@ -6,6 +6,9 @@ const { curFactor, apPrune, apMark, apRecent, apFence, resultSpec, pickResult, a
 test('curFactor: สกุลที่ไม่มีหน่วยย่อยต้องได้ 1 ไม่ใช่ 100', () => {
   for (const c of ['THB', 'USD', 'EUR', 'thb']) assert.strictEqual(curFactor(c), 100, `${c} ควรเป็น 100`);
   for (const c of ['JPY', 'KRW', 'VND', 'CLP', 'isk']) assert.strictEqual(curFactor(c), 1, `${c} ควรเป็น 1`);
+  // ตาราง offset 1 ของ Meta (developers.facebook.com/docs/marketing-api/currencies) — 5 ตัวนี้เคยหลุด
+  // เพราะรายชื่อลอกมาจาก Stripe: บัญชี IDR ตั้งงบ 3,333 บาท จะส่งไปเกิน 100 เท่า
+  for (const c of ['IDR', 'TWD', 'HUF', 'COP', 'CRC', 'PYG']) assert.strictEqual(curFactor(c), 1, `${c} ควรเป็น 1`);
   // อ่านสกุลไม่ได้ = ใช้ค่าปกติ ไม่ใช่ NaN
   assert.strictEqual(curFactor(''), 100);
   assert.strictEqual(curFactor(undefined), 100);

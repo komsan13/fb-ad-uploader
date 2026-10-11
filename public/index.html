@@ -236,8 +236,6 @@
   .date-pill.active { background: var(--brand); color: #fff; }
 
   /* ---------- บัญชี FB (profiles) ---------- */
-  .prof-card { border-radius: var(--r-lg); padding: 16px; margin-bottom: 12px; background: #fff; transition: border-color 150ms var(--ease), background 150ms var(--ease); }
-  .prof-card.active-prof { background: #fbfefd; }
   .prof-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
   .prof-star { cursor: pointer; font-size: 12px; font-weight: 700; padding: 5px 12px; border-radius: var(--r-md); background: #f0f2f5; color: var(--muted); white-space: nowrap; transition: background 150ms var(--ease), color 150ms var(--ease); }
   .prof-star:hover { background: #e8ebef; }
@@ -266,6 +264,109 @@
   .btn-fblogin svg { width: 18px; height: 18px; }
   .pc-empty { text-align: center; padding: 40px 20px; color: var(--muted); }
   .pc-empty svg { width: 40px; height: 40px; margin: 0 auto 10px; color: #c3c8d1; }
+
+  /* ---------- หน้าตั้งค่า: เมนูย่อยซ้าย + หมวดเรียงลงมา แถวละ ชื่อซ้าย/ช่องขวา ----------
+     แยกส่วนด้วยระยะห่างกับสีพื้นล้วน ไม่มีเส้นคั่น/กรอบ (ภาษาเดียวกับทั้งระบบ) */
+  .set-wrap { display: flex; gap: 20px; align-items: flex-start; }
+  .set-nav { width: 220px; flex-shrink: 0; position: sticky; top: 14px; }
+  .set-nav [hidden] { display: none !important; }
+  .set-kill { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--red-soft); border-radius: var(--r-md); padding: 10px 12px; margin: 0 0 10px; cursor: pointer; font-size: inherit; font-weight: 400; color: inherit; transition: background 150ms var(--ease); }
+  .set-kill .sr-label { color: var(--red); font-size: 13.5px; }
+  .set-kill .sr-desc { font-size: 12px; }
+  .set-kill .switch input:checked + .sl { background: var(--red); }
+  .set-kill:has(input:checked) { background: var(--red); }
+  .set-kill:has(input:checked) .sr-label, .set-kill:has(input:checked) .sr-desc { color: #fff; }
+  .set-kill:has(input:checked) .switch input:checked + .sl { background: rgba(255,255,255,.35); }
+  .set-search { display: flex; align-items: center; gap: 8px; background: var(--card); border-radius: var(--r-md); padding: 0 11px; margin-bottom: 8px; color: var(--muted); }
+  .set-search svg { width: 16px; height: 16px; flex-shrink: 0; }
+  .set-search input { background: transparent; padding: 9px 0; }
+  .set-search input:hover, .set-search input:focus { background: transparent; outline: none; }
+  .set-glabel { font-size: 11.5px; font-weight: 700; color: var(--muted); padding: 14px 10px 5px; }
+  .set-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--r-md); font-size: 13.5px; font-weight: 600; color: #4c5058; cursor: pointer; text-decoration: none; transition: background 150ms var(--ease), color 150ms var(--ease); }
+  .set-item svg { width: 17px; height: 17px; flex-shrink: 0; color: #8a909c; }
+  .set-item:hover { background: #eceef2; color: var(--text); }
+  .set-item.on { background: #e4e7ec; color: var(--text); }
+  .set-item.on svg { color: var(--brand); }
+
+  .set-main { flex: 1; min-width: 0; background: var(--card); border-radius: var(--r-lg); padding: 4px 40px 36px; }
+  .set-main > .set-sec { max-width: 780px; }
+  .set-sec { padding-top: 30px; }
+  .set-sec[hidden] { display: none; }
+  .set-main > #setAccounts { max-width: none; }
+
+  /* ตารางบัญชี FB — แยกแถวด้วยสีพื้นสลับ ไม่มีเส้น */
+  .pt-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .pt-search { flex: 1; min-width: 200px; max-width: 360px; display: flex; align-items: center; gap: 8px; background: #f7f9fb; border-radius: var(--r-md); padding: 0 11px; color: var(--muted); }
+  .pt-search svg { width: 15px; height: 15px; flex-shrink: 0; }
+  .pt-search input { background: transparent; padding: 8px 0; }
+  .pt-search input:hover, .pt-search input:focus { background: transparent; outline: none; }
+  .pt-count { margin-left: auto; font-size: 12.5px; color: var(--muted); }
+  .pt-wrap { overflow-x: auto; }
+  .ptable { width: 100%; min-width: 640px; border-collapse: separate; border-spacing: 0; font-size: 13.5px; } /* ทับ table{min-width:960px} ของตารางแคมเปญ */
+  .ptable td.pt-act, .ptable th.pt-act { width: 1%; }
+  .ptable th { text-align: left; font-size: 12px; font-weight: 700; color: var(--muted); padding: 10px 12px; background: #f4f6f8; white-space: nowrap; }
+  .ptable th:first-child, .ptable td:first-child { border-radius: var(--r-md) 0 0 var(--r-md); }
+  .ptable th:last-child, .ptable td:last-child { border-radius: 0 var(--r-md) var(--r-md) 0; }
+  .ptable td { padding: 11px 12px; vertical-align: middle; transition: background 150ms var(--ease); }
+  .ptable td:nth-child(2), .ptable td.pt-act { white-space: nowrap; }
+  .ptable tbody tr:nth-child(even) td { background: #fafbfc; }
+  .ptable tbody tr:hover td { background: #f3f5f8; }
+  .ptable tbody tr.on td { background: #f1f8f5; }
+  .ptable .pt-act { text-align: right; }
+  .ptable td.pt-act > * { margin-left: 4px; vertical-align: middle; }
+  .ptable .icon-btn:disabled { opacity: .45; cursor: default; }
+  .ptable code { font-size: 12px; color: var(--muted); background: transparent; }
+  .fx-hint { display: inline-flex; align-items: center; padding: 5px 11px; border-radius: 999px; background: var(--blue-soft); color: var(--blue); font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .fx-hint.bad { background: var(--red-soft); color: var(--red); }
+  .ptable .opt-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 999px; margin-left: 6px; }
+  .ptable .muted { color: var(--muted); }
+  .pt-acc { display: flex; align-items: center; gap: 10px; }
+  .pt-acc .pc-avatar { width: 34px; height: 34px; font-size: 14px; }
+  .pt-name { font-weight: 700; }
+  .pt-sub { font-size: 12px; color: var(--muted); }
+  .pt-sub b { color: var(--brand); }
+  .pt-none { text-align: center; color: var(--muted); padding: 26px 12px !important; white-space: normal !important; }
+  .set-h { font-size: 20px; font-weight: 700; letter-spacing: -.015em; color: var(--text); margin-bottom: 4px; }
+  .set-desc { font-size: 13px; color: var(--muted); margin-bottom: 14px; line-height: 1.55; }
+  .set-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 11px 0; }
+  label.set-row { font-size: inherit; font-weight: 400; color: inherit; margin: 0; cursor: pointer; }
+  .sr-text { min-width: 0; flex: 1; }
+  .sr-label { display: block; font-size: 14px; font-weight: 600; color: var(--text); }
+  .sr-desc { display: block; font-size: 12.5px; color: var(--muted); margin-top: 2px; line-height: 1.5; }
+  .sr-ctrl { flex: 0 0 320px; display: flex; gap: 8px; align-items: center; justify-content: flex-end; min-width: 0; }
+  .sr-ctrl.narrow { flex-basis: 140px; }
+  .sr-ctrl.auto { flex-basis: auto; }
+  .sr-ctrl > input, .sr-ctrl > select { flex: 1; min-width: 0; }
+  .sr-ctrl > button { flex-shrink: 0; }
+  .sr-ctrl .btn-fblogin { width: 100%; padding: 9px 14px; }
+  .set-row .switch { flex-shrink: 0; }
+  .set-note { display: flex; gap: 10px; align-items: flex-start; font-size: 12.5px; line-height: 1.6; border-radius: var(--r-md); padding: 11px 14px; margin-top: 10px; }
+  .set-note svg { width: 17px; height: 17px; flex-shrink: 0; margin-top: 1px; }
+  .set-note.warn { background: var(--amber-soft); color: #7a4a10; }
+  .set-alert { background: var(--red-soft); color: var(--red); border-radius: var(--r-md); padding: 12px 14px; margin-bottom: 14px; font-size: 13px; line-height: 1.9; }
+  .set-alert .btn-sm { margin-left: 4px; }
+  .set-note.warn svg { color: var(--amber); }
+  details.set-more { margin-top: 10px; }
+  details.set-more > summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 11px 14px; margin: 0 -14px; border-radius: var(--r-md); transition: background 150ms var(--ease); }
+  details.set-more > summary::-webkit-details-marker { display: none; }
+  details.set-more > summary:hover { background: #f4f6f8; }
+  details.set-more > summary::after { content: ''; width: 9px; height: 9px; flex-shrink: 0; border-right: 2px solid #8a909c; border-bottom: 2px solid #8a909c; transform: rotate(-45deg); transition: transform 200ms var(--ease); }
+  details.set-more[open] > summary::after { transform: rotate(45deg); }
+  .set-subh { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 700; color: var(--muted); margin: 18px 0 2px; }
+  .set-subh svg { width: 15px; height: 15px; }
+  .set-log { max-height: 280px; overflow-y: auto; border-radius: var(--r-md); padding: 8px 10px; background: #f7f9fb; }
+  @media (max-width: 860px) {
+    .set-wrap { display: block; }
+    .set-nav { position: static; width: auto; margin-bottom: 10px; }
+    .set-navlist { display: flex; gap: 6px; overflow-x: auto; }
+    .set-search, .set-glabel { display: none; }
+    .set-group { display: contents; }
+    .set-item { white-space: nowrap; background: var(--card); }
+    .set-main { padding: 4px 16px 28px; }
+    .set-row { flex-wrap: wrap; gap: 8px 16px; }
+    .sr-ctrl, .sr-ctrl.narrow { flex: 1 1 100%; }
+    .sr-ctrl.auto { flex: 0 0 auto; }
+  }
   .setup-list { list-style: none; counter-reset: step; padding: 0; }
   .setup-list li { counter-increment: step; display: flex; gap: 11px; align-items: baseline; font-size: 13.5px; padding: 7px 0; }
   .setup-list li::before { content: counter(step); width: 22px; height: 22px; flex-shrink: 0; border-radius: 50%; background: var(--brand-soft); color: var(--brand); font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; transform: translateY(4px); }
@@ -570,7 +671,7 @@
             <input id="campaignName" placeholder="เช่น โปรกรกฎาคม 2026">
           </div>
           <div class="field">
-            <label>งบแคมเปญ/วัน (บาท) <span class="h-desc">— CBO</span></label>
+            <label>งบแคมเปญ/วัน (บาท) <span class="h-desc">— CBO • บัญชีสกุลอื่นแปลงให้ตามเรตวันนี้</span></label>
             <input id="campaignBudget" type="number" min="1" value="300" oninput="updateStats()">
           </div>
           <div class="field">
@@ -627,7 +728,7 @@
             <div class="field"><label>หยุดเมื่อต้นทุน/ผลลัพธ์เกิน (บาท)</label><input id="ruleCpr" type="number" min="1" value="100"></div>
             <div class="field"><label>เริ่มเช็คหลังใช้จ่ายเกิน (บาท)</label><input id="ruleSpend" type="number" min="0" value="150"></div>
           </div>
-          <div class="hint">ตัวอย่าง: ค่าข้างบน = ถ้าใช้เงินเกิน 150 บาทแล้ว CPA ยังแพงกว่า 100 บาท แคมเปญโดนหยุดอัตโนมัติ — เปิดกลับเองได้ใน Ads Manager</div>
+          <div class="hint">ตัวอย่าง: ค่าข้างบน = ถ้าใช้เงินเกิน 150 บาทแล้ว CPA ยังแพงกว่า 100 บาท แคมเปญโดนหยุดอัตโนมัติ — เปิดกลับเองได้ใน Ads Manager • บัญชีสกุลอื่น (USD/VND ฯลฯ) ระบบแปลงตัวเลขบาทเป็นสกุลของบัญชีให้เอง</div>
         </div>
         <div class="hint" style="margin-top:9px">ตั้งให้อัตโนมัติทุกครั้ง: ภาษาไทย • เฉพาะ Facebook บนมือถือ • กลยุทธ์วงจรลูกค้า = ตามที่เลือกด้านบน • ไม่จำกัดวงเงินใช้จ่ายชุดโฆษณา — <b>หลังขึ้นเสร็จระบบอ่านค่าจริงจาก FB กลับมาแสดงยืนยันที่แถบล่าง</b></div>
       </div>
@@ -716,6 +817,7 @@
           <div class="field" style="margin:0;flex:1;min-width:280px">
             <div style="display:flex;gap:7px;flex-wrap:wrap">
               <button class="date-pill" onclick="setDashDate('today', this)">วันนี้</button>
+              <button class="date-pill" onclick="setDashDate('yesterday', this)">เมื่อวาน</button>
               <button class="date-pill active" onclick="setDashDate('last_7d', this)">7 วันล่าสุด</button>
               <button class="date-pill" onclick="setDashDate('last_30d', this)">30 วันล่าสุด</button>
               <button class="date-pill" onclick="setDashDate('last_90d', this)">90 วันล่าสุด</button>
@@ -804,6 +906,7 @@
         <div class="filter-bar">
           <select id="campDate" style="display:none">
             <option value="today" selected>วันนี้</option>
+            <option value="yesterday">เมื่อวาน</option>
             <option value="last_7d">7 วันล่าสุด</option>
             <option value="last_30d">30 วันล่าสุด</option>
             <option value="maximum">ทั้งหมด</option>
@@ -811,6 +914,7 @@
           <div class="field" style="margin:0;flex:1;min-width:280px">
             <div style="display:flex;gap:7px;flex-wrap:wrap">
               <button class="date-pill active" onclick="setCampDate('today', this)">วันนี้</button>
+              <button class="date-pill" onclick="setCampDate('yesterday', this)">เมื่อวาน</button>
               <button class="date-pill" onclick="setCampDate('last_7d', this)">7 วันล่าสุด</button>
               <button class="date-pill" onclick="setCampDate('last_30d', this)">30 วันล่าสุด</button>
               <button class="date-pill" onclick="setCampDate('maximum', this)">ทั้งหมด</button>
@@ -973,7 +1077,11 @@
 
       <div class="card">
         <h2><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>คลังแคปชั่น <span class="h-desc" id="capCount"></span>
-          <button class="btn-primary btn-sm" style="margin-left:auto" onclick="openCapModal()">+ เพิ่มแคปชั่น</button>
+          <span style="margin-left:auto;display:inline-flex;align-items:center;gap:6px">
+            <input id="capAutoN" type="number" min="1" max="100" value="10" title="จำนวนแคปชั่นที่จะสร้าง (1–100)" style="width:68px;padding:6px 8px">
+            <button class="btn-light btn-sm" onclick="autoCaptions(this)" title="สุ่มวลีภาษาเวียดนามสั้นๆ เช่น Hoa đỏ (ดอกไม้สีแดง) ไม่ซ้ำกับที่มีในคลัง">สร้างอัตโนมัติ (เวียดนาม)</button>
+            <button class="btn-primary btn-sm" onclick="openCapModal()">+ เพิ่มแคปชั่น</button>
+          </span>
         </h2>
         <div class="hint" style="margin-bottom:10px">เตรียมข้อความไว้ล่วงหน้า แล้วตัวจัดแผนจะหยิบไปใส่แอดให้เอง — ยิ่งมีหลายอันยิ่งไม่ต้องใช้ซ้ำ • คลิกแถวเพื่อดู/แก้ไข</div>
         <input id="capSearch" placeholder="ค้นหาแคปชั่น..." style="max-width:300px;margin-bottom:10px" oninput="renderCaptions()">
@@ -1073,111 +1181,174 @@
 
     <!-- ========== PAGE: บัญชี FB ========== -->
     <section class="page" id="page-settings">
-      <!-- ลำดับการ์ด: เชื่อมบัญชี (พร้อมคู่มือ) → ระบบอัตโนมัติ → ช่องทางแจ้งเตือน/AI
-           เรียงตามลำดับที่ผู้ใช้ต้องตั้งจริง และของที่เปิดบ่อยสุด (autopilot) อยู่ใกล้บนสุด -->
-      <div class="card">
-        <h2><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/><path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3"/></svg></span>บัญชี FB ทั้งหมด <span class="h-desc">— เพิ่มได้หลายบัญชี แต่ละบัญชีมี token + บัญชีโฆษณา + เพจของตัวเอง</span></h2>
-        <div id="profList"></div>
-        <button class="btn-primary" onclick="addProfile()">+ เพิ่มบัญชี FB</button>
-        <details style="margin-top:14px;border-radius:var(--r-md);padding:8px 12px">
-          <summary style="cursor:pointer;font-weight:600">คู่มือตั้งค่า "เข้าสู่ระบบด้วย Facebook" — ทำครั้งเดียวต่อแอป หลังจากนั้นกดปุ่มเดียวจบ</summary>
-          <ol class="setup-list" style="margin-top:10px">
-            <li><span>เปิดแอปที่ <a href="https://developers.facebook.com/apps" target="_blank">developers.facebook.com/apps</a> → "เพิ่มผลิตภัณฑ์" → เพิ่ม <b>Facebook Login</b> (Login ด้วย Facebook)</span></li>
-            <li><span>ไปที่ Facebook Login → <b>การตั้งค่า (Settings)</b> → ช่อง <b>Valid OAuth Redirect URIs</b> วาง: <code id="redirectUriText">http://localhost:4000/auth/callback</code> → บันทึก</span></li>
-            <li><span>เมนู การตั้งค่าแอป → <b>พื้นฐาน (Basic)</b> → คัดลอก <b>App ID</b> และ <b>App Secret</b> (กด "แสดง") มาวางในการ์ดบัญชีด้านบน</span></li>
-            <li><span>กดปุ่ม <b>เข้าสู่ระบบด้วย Facebook</b> → login → กดยอมรับ → เสร็จ! token มาเองและต่ออายุ 60 วันอัตโนมัติ</span></li>
-          </ol>
-          <div class="hint"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#b8860b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg> บัญชี FB ที่ login ต้องเป็นแอดมิน/ผู้ทดสอบของแอปนั้น (เฟสที่สร้างแอปเองเป็นแอดมินอยู่แล้ว ไม่ต้องส่ง App Review) • ถ้าหลาย ad account อยู่ใต้ FB เดียวกัน login ครั้งเดียวเห็นครบทุกบัญชี</div>
-        </details>
-      </div>
+      <!-- เลย์เอาต์แบบหน้าตั้งค่า: เมนูย่อยซ้าย (ค้นหา + หมวด) • ขวาเป็นหมวดเรียงลงมา แถวละ "ชื่อ/คำอธิบาย ซ้าย — ช่องกรอก/ปุ่ม ขวา"
+           ลำดับหมวด: เชื่อมบัญชี → ระบบอัตโนมัติ → ช่องทางแจ้งเตือน/AI เรียงตามลำดับที่ผู้ใช้ต้องตั้งจริง -->
+      <div class="set-wrap">
+        <aside class="set-nav">
+          <!-- หยุดฉุกเฉินอยู่นอกหมวด: ตอนระบบเผาเงิน ต้องกดได้ทันทีที่เปิดหน้า ไม่ใช่ต้องหาเมนูก่อน -->
+          <label class="set-kill" title="หยุดทุกการกระทำของระบบอัตโนมัติทันที (ทับสวิตช์เปิดระบบ)">
+            <span class="sr-text"><span class="sr-label">หยุดฉุกเฉิน</span><span class="sr-desc">หยุดระบบอัตโนมัติทุกอย่างทันที</span></span>
+            <span class="switch"><input type="checkbox" id="apKill" onchange="apSetKill(this)"><span class="sl"></span></span>
+          </label>
+          <div class="set-search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input id="setSearch" placeholder="ค้นหา" oninput="setFilter(this.value)">
+          </div>
+          <div class="set-navlist">
+          <div class="set-group">
+            <a class="set-item" data-sec="setAccounts" onclick="setGo('setAccounts')"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm0 2c-5 0-9 2.5-9 6v1a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-1c0-3.5-4-6-9-6Z"/></svg>บัญชี FB</a>
+          </div>
+          <div class="set-group">
+            <div class="set-glabel">ระบบอัตโนมัติ</div>
+            <a class="set-item" data-sec="setApSwitch" onclick="setGo('setApSwitch')"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.5 2 4 14h7l-1.5 8L19 10h-7l1.5-8Z"/></svg>สวิตช์หลัก</a>
+            <a class="set-item" data-sec="setApTarget" onclick="setGo('setApTarget')"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 2a1 1 0 0 1 1 1v1h12.5a1 1 0 0 1 .8 1.6L16.5 9l2.8 3.4a1 1 0 0 1-.8 1.6H6v7a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1Z"/></svg>เติมแอดและขยายงบ</a>
+            <a class="set-item" data-sec="setApLimits" onclick="setGo('setApLimits')"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Z"/></svg>เพดานกันพัง</a>
+            <a class="set-item" data-sec="setApLog" onclick="setGo('setApLog')"><svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd"><path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm3 4a1 1 0 0 0 0 2h8a1 1 0 1 0 0-2H8Zm0 4a1 1 0 1 0 0 2h8a1 1 0 1 0 0-2H8Zm0 4a1 1 0 1 0 0 2h5a1 1 0 1 0 0-2H8Z"/></svg>บันทึกการทำงาน</a>
+          </div>
+          <div class="set-group">
+            <div class="set-glabel">การเชื่อมต่อ</div>
+            <a class="set-item" data-sec="setTelegram" onclick="setGo('setTelegram')"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a6 6 0 0 0-6 6c0 6-3 8-3 8h18s-3-2-3-8a6 6 0 0 0-6-6Z"/><path d="M9.7 19a2.5 2.5 0 0 0 4.6 0Z"/></svg>แจ้งเตือน Telegram</a>
+            <a class="set-item" data-sec="setAi" onclick="setGo('setAi')"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4L12 2Z"/></svg>AI ช่วยวิเคราะห์</a>
+          </div>
+          </div>
+        </aside>
 
-      <div class="card">
-        <h2><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><circle cx="12" cy="12" r="4"/><path d="M4.9 19.1 7.8 16.2"/><path d="M2 12h4"/><path d="M4.9 4.9 7.8 7.8"/></svg></span>ระบบอัตโนมัติ (Autopilot) <span class="h-desc">— เฝ้าแอดทุก 2 นาที เจอแอดโดนปฏิเสธก็วินิจฉัยและแก้ให้เอง</span></h2>
-        <label class="switch-row" style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
-          <span class="switch"><input type="checkbox" id="apEnabled" onchange="saveAutopilot()"><span class="sl"></span></span>
-          <span><b>เปิดระบบอัตโนมัติ</b> — ให้มันลงมือแก้เองโดยไม่ต้องถาม</span>
-        </label>
-        <label class="switch-row" style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
-          <span class="switch"><input type="checkbox" id="apTest" onchange="saveAutopilot()"><span class="sl"></span></span>
-          <span><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#b8860b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M14 2v6a2 2 0 0 0 .245.96l5.51 10.08A2 2 0 0 1 18 22H6a2 2 0 0 1-1.755-2.96l5.51-10.08A2 2 0 0 0 10 8V2"/><path d="M6.453 15h11.094"/><path d="M8.5 2h7"/></svg> <b>โหมดทดสอบ</b> — สร้างแอดจริงบัญชีละ 1 ตัวแต่<b>ปิดไว้ ไม่ใช้เงินสักบาท</b> ให้ดูฝีมือก่อน • ไม่ปิดแอดขาดทุนและไม่ขยายงบ</span>
-        </label>
-        <label class="switch-row" style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
-          <span class="switch"><input type="checkbox" id="apAutoPx" onchange="saveAutopilot()"><span class="sl"></span></span>
-          <span><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--brand-dark,#1a73e8)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> <b>เชื่อมพิกเซลกับหน้า Landing ให้อัตโนมัติ</b> — ปิดไว้ถ้า<b>คุณไปเชื่อมพิกเซลเอง</b>ที่ปลายทาง (เช่น heylink) ระบบจะไม่ฝังพิกเซลลงหน้า <code>/lp</code> และไม่เตือนซ้ำทุกวัน • ยังสร้าง Pixel ให้บัญชีที่ยังไม่มีเหมือนเดิม</span>
-        </label>
-        <label class="switch-row" style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
-          <span class="switch"><input type="checkbox" id="apKill" onchange="saveAutopilot()"><span class="sl"></span></span>
-          <span><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="var(--red,#d93025)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M12 16h.01"/><path d="M12 8v4"/><path d="M15.312 2a2 2 0 0 1 1.414.586l4.688 4.688A2 2 0 0 1 22 8.688v6.624a2 2 0 0 1-.586 1.414l-4.688 4.688a2 2 0 0 1-1.414.586H8.688a2 2 0 0 1-1.414-.586l-4.688-4.688A2 2 0 0 1 2 15.312V8.688a2 2 0 0 1 .586-1.414l4.688-4.688A2 2 0 0 1 8.688 2z"/></svg> <b>หยุดฉุกเฉิน</b> — หยุดทุกการกระทำทันที (ทับสวิตช์ด้านบน)</span>
-        </label>
-        <div class="fgrid" style="align-items:flex-end;margin-bottom:6px">
-          <div class="field" style="max-width:340px">
-            <label>เติมแอดให้แต่ละบัญชีมีแอดยิงอยู่อย่างน้อย (ตัว)</label>
-            <input id="apMinAds" type="number" min="0" max="50" value="0" onchange="saveAutopilot()">
+        <div class="set-main">
+          <!-- สถานะระดับเสี่ยงโดนแบน (บัญชีถูกหยุด/หยุดเติมแอด) อยู่นอกหมวด — เดิมซ่อนอยู่ในหมวด "บันทึกการทำงาน"
+               เปิดหน้าตั้งค่ามาที่หมวดบัญชี FB แล้วไม่เห็น ต้องรู้เองว่าต้องกดเข้าไปดู -->
+          <div id="apAlert" class="set-alert" hidden></div>
+          <div class="set-sec" id="setAccounts">
+            <h2 class="set-h">บัญชี FB</h2>
+            <div class="set-desc">เพิ่มได้หลายบัญชี แต่ละบัญชีมี token + บัญชีโฆษณา + เพจของตัวเอง</div>
+            <div class="pt-bar">
+              <div class="pt-search">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                <input id="profSearch" placeholder="ค้นหาบัญชี / บัญชีโฆษณา / เพจ" oninput="renderProfTable()">
+              </div>
+              <span class="pt-count" id="profCount"></span>
+              <button class="btn-primary" onclick="addProfile()">+ เพิ่มบัญชี FB</button>
+            </div>
+            <div class="pt-wrap">
+              <table class="ptable">
+                <thead><tr><th>บัญชี</th><th>สถานะ</th><th>บัญชีโฆษณา</th><th>เพจ</th><th class="pt-act">จัดการ</th></tr></thead>
+                <tbody id="profRows"></tbody>
+              </table>
+            </div>
+            <details class="set-more">
+              <summary><span><span class="sr-label">คู่มือตั้งค่า "เข้าสู่ระบบด้วย Facebook"</span><span class="sr-desc">ทำครั้งเดียวต่อแอป หลังจากนั้นกดปุ่มเดียวจบ</span></span></summary>
+              <ol class="setup-list" style="margin-top:10px">
+                <li><span>เปิดแอปที่ <a href="https://developers.facebook.com/apps" target="_blank">developers.facebook.com/apps</a> → "เพิ่มผลิตภัณฑ์" → เพิ่ม <b>Facebook Login</b> (Login ด้วย Facebook)</span></li>
+                <li><span>ไปที่ Facebook Login → <b>การตั้งค่า (Settings)</b> → ช่อง <b>Valid OAuth Redirect URIs</b> วาง: <code id="redirectUriText">http://localhost:4000/auth/callback</code> → บันทึก</span></li>
+                <li><span>เมนู การตั้งค่าแอป → <b>พื้นฐาน (Basic)</b> → คัดลอก <b>App ID</b> และ <b>App Secret</b> (กด "แสดง") มาวางในหน้าต่าง "แก้ไข" ของบัญชีนั้น (ปุ่มในตารางด้านบน)</span></li>
+                <li><span>กดปุ่ม <b>เข้าสู่ระบบด้วย Facebook</b> → login → กดยอมรับ → เสร็จ! token มาเองและต่ออายุ 60 วันอัตโนมัติ</span></li>
+              </ol>
+              <div class="hint">บัญชี FB ที่ login ต้องเป็นแอดมิน/ผู้ทดสอบของแอปนั้น (เฟสที่สร้างแอปเองเป็นแอดมินอยู่แล้ว ไม่ต้องส่ง App Review) • ถ้าหลาย ad account อยู่ใต้ FB เดียวกัน login ครั้งเดียวเห็นครบทุกบัญชี</div>
+            </details>
           </div>
-          <div class="field" style="max-width:340px">
-            <label>ขยายงบตัวชนะได้สูงสุดถึง (บาท/วัน/แคมเปญ)</label>
-            <input id="apScaleMax" type="number" min="0" value="0" onchange="saveAutopilot()">
-          </div>
-        </div>
-        <details style="margin-bottom:10px;border-radius:var(--r-md);padding:8px 12px">
-          <summary style="cursor:pointer;font-weight:600">วิธีทำงานของระบบ — อ่านครั้งแรกครั้งเดียวพอ</summary>
-          <div class="hint" style="margin:10px 0 8px">
-            <b>เติมแอด:</b> ใส่ <b>0</b> = ไม่เติมให้ • ถ้าใส่เลข มันจะหยิบวิดีโอ+แคปชั่นจากคลังขึ้นแอดเองจนครบ <b>เปิดยิงทันที</b> โดยใช้ค่าตั้งต้นในหน้าขึ้นแอด (งบ/ลิงก์/วัตถุประสงค์/กลุ่มเป้าหมาย) — งบอยู่ระดับแคมเปญ (CBO) เพิ่มแอดกี่ตัวก็ไม่ใช้จ่ายเกินงบที่ตั้งไว้
-          </div>
-          <div class="hint" style="margin-bottom:8px">
-            <b>ขยายงบ:</b> ใส่ <b>0</b> = ไม่ขยาย • ถ้าใส่เลข แคมเปญที่ต้นทุน/ผลลัพธ์ถูกกว่าเพดานที่ตั้งไว้ 30%+ (และมีผลลัพธ์อย่างน้อย 3 ครั้ง) จะถูกเพิ่มงบ <b>+20% วันละครั้ง</b> จนถึงเลขนี้แล้วหยุด — เพิ่มทีละน้อยเพราะขยับแรงกว่านี้ FB รีเซ็ต learning phase แล้วผลตก
-          </div>
-          <div class="hint" style="margin-bottom:4px">
-            <b>แก้แอดโดนปฏิเสธ:</b> อ่านเหตุผลที่ FB ปฏิเสธ → ถ้าปัญหาอยู่ที่ข้อความและระบุได้ชัด จะแก้แล้วขึ้นใหม่ให้ <b>ครั้งเดียวต่อครีเอทีฟ</b> • ถ้าปัญหาอยู่ที่วิดีโอ/หน้าขาย/ระดับบัญชี จะไม่แตะ แค่เตือนคุณ<br>
-            <b>ปิดตัวขาดทุนเอง:</b> แอดที่ใช้เงินเกิน <b id="apLoserSpend">2</b> เท่าของเพดาน CPA แล้วยังไม่มีผลลัพธ์ หรือต้นทุนแพงกว่าเพดาน <b id="apLoserMult">1.5</b> เท่า จะถูกปิด (ไม่เกิน <b id="apPauseCap">10</b> ตัว/บัญชี/วัน) แล้วเติมครีเอทีฟใหม่เข้าไปแทน — ใช้เลขจากช่อง "หยุดเมื่อต้นทุน/ผลลัพธ์เกิน" ในหน้าขึ้นแอด ถ้าไม่ได้ตั้งไว้จะไม่ปิดอะไรเลย<br>
-            <b>เพดานกันพัง:</b> แก้ได้ไม่เกิน <b id="apCap">10</b> ครั้ง/วันทั้งระบบ • บัญชีไหนโดนปฏิเสธ <b id="apFreezeCap">3</b> ตัวใน 24 ชม. จะ<b>หยุดบัญชีนั้นทันที</b>เพื่อกันโดนแบน • แจ้งทุกอย่างเข้า Telegram
-          </div>
-        </details>
 
-        <details id="apLimitsBox" style="margin-bottom:10px;border-radius:var(--r-md);padding:8px 12px">
-          <summary style="cursor:pointer;font-weight:600"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg> ปรับเพดานเอง</summary>
-          <div class="hint" style="margin:10px 0">
-            ทุกช่องมีกรอบต่ำสุด–สูงสุดบังคับไว้ ใส่นอกกรอบระบบจะบีบกลับให้เอง เพราะค่าพวกนี้คือเกราะกันบัญชีโดนแบนและกันเงินไหล<br>
-            เว้นว่างหรือกดปุ่มคืนค่าตั้งต้น = กลับไปใช้ค่าเดิมของระบบ • ทุกการแก้ถูกจดไว้ในบันทึกด้านล่าง
+          <div class="set-sec" id="setApSwitch">
+            <h2 class="set-h">ระบบอัตโนมัติ (Autopilot)</h2>
+            <div class="set-desc">เฝ้าแอดทุก 2 นาที เจอแอดโดนปฏิเสธก็วินิจฉัยและแก้ให้เอง</div>
+            <label class="set-row">
+              <span class="sr-text"><span class="sr-label">เปิดระบบอัตโนมัติ</span><span class="sr-desc">ให้มันลงมือแก้เองโดยไม่ต้องถาม</span></span>
+              <span class="switch"><input type="checkbox" id="apEnabled" onchange="saveAutopilot()"><span class="sl"></span></span>
+            </label>
+            <label class="set-row">
+              <span class="sr-text"><span class="sr-label">โหมดทดสอบ</span><span class="sr-desc">สร้างแอดจริงบัญชีละ 1 ตัวแต่<b>ปิดไว้ ไม่ใช้เงินสักบาท</b> ให้ดูฝีมือก่อน • ไม่ปิดแอดขาดทุนและไม่ขยายงบ</span></span>
+              <span class="switch"><input type="checkbox" id="apTest" onchange="saveAutopilot()"><span class="sl"></span></span>
+            </label>
+            <label class="set-row">
+              <span class="sr-text"><span class="sr-label">เชื่อมพิกเซลกับหน้า Landing ให้อัตโนมัติ</span><span class="sr-desc">ปิดไว้ถ้า<b>คุณไปเชื่อมพิกเซลเอง</b>ที่ปลายทาง (เช่น heylink) ระบบจะไม่ฝังพิกเซลลงหน้า <code>/lp</code> และไม่เตือนซ้ำทุกวัน • ยังสร้าง Pixel ให้บัญชีที่ยังไม่มีเหมือนเดิม</span></span>
+              <span class="switch"><input type="checkbox" id="apAutoPx" onchange="saveAutopilot()"><span class="sl"></span></span>
+            </label>
+            <div class="set-note warn">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10.3 3.9a2 2 0 0 1 3.4 0l8 14A2 2 0 0 1 20 21H4a2 2 0 0 1-1.7-3.1l8-14ZM12 9a1 1 0 0 0-1 1v3a1 1 0 1 0 2 0v-3a1 1 0 0 0-1-1Zm0 7.5a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4Z"/></svg>
+              <div><b>วิธีหยุดระบบคือปุ่มในหน้านี้เท่านั้น</b> — ระบบถูกตั้งให้ดูแลตัวเองเต็มที่ ถ้าไม่มีแคมเปญที่เปิดอยู่ มันจะสร้างใหม่ให้เสมอ ดังนั้นการเข้าไป <b>pause แคมเปญใน Ads Manager จะไม่ได้ผล</b> เพราะมันจะสร้างตัวใหม่มาแทนภายในไม่กี่นาที<br>
+              จะหยุดจริงต้องปิดสวิตช์ "เปิดระบบอัตโนมัติ" ด้านบน หรือกด "หยุดฉุกเฉิน" ที่มุมซ้ายบนของหน้านี้ (เห็นได้ทุกหมวด)</div>
+            </div>
           </div>
-          <div id="apLimitsSafety"></div>
-          <div id="apLimitsMoney"></div>
-          <button class="btn-light btn-sm" onclick="apResetLimits()" style="margin-top:8px">คืนค่าตั้งต้นทั้งหมด</button>
-        </details>
-        <div class="hint" style="margin-bottom:10px;background:#fff6e5;border-radius:var(--r-md);padding:10px 12px">
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#b45309" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg> <b>วิธีหยุดระบบคือปุ่มในหน้านี้เท่านั้น</b> — ระบบถูกตั้งให้ดูแลตัวเองเต็มที่ ถ้าไม่มีแคมเปญที่เปิดอยู่ มันจะสร้างใหม่ให้เสมอ ดังนั้นการเข้าไป <b>pause แคมเปญใน Ads Manager จะไม่ได้ผล</b> เพราะมันจะสร้างตัวใหม่มาแทนภายในไม่กี่นาที<br>
-          จะหยุดจริงต้องปิดสวิตช์ "เปิดระบบอัตโนมัติ" หรือกด "หยุดฉุกเฉิน" ที่นี่
-        </div>
-        <div style="display:flex;gap:8px;margin-bottom:10px">
-          <button class="btn-light btn-sm" onclick="apRunNow(this)">ตรวจเดี๋ยวนี้</button>
-          <button class="btn-light btn-sm" onclick="loadAutopilot()">รีเฟรชบันทึก</button>
-        </div>
-        <div id="apStatus" style="font-size:13px;margin-bottom:10px"></div>
-        <div id="apLog" style="max-height:280px;overflow-y:auto;border-radius:var(--r-md);padding:8px"></div>
-      </div>
 
-      <div class="card">
-        <h2><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></span>แจ้งเตือน Telegram <span class="h-desc">— เตือนทันทีเมื่อแอดโดนปฏิเสธ / บัญชีถูกปิด-ค้างชำระ / token มีปัญหา (ต่ออายุให้อัตโนมัติ) + สรุปยอดทุกเช้า 8 โมง</span></h2>
-        <div class="fgrid">
-          <div class="field"><label>Bot Token</label><input id="tgToken" placeholder="123456789:ABCdef..."></div>
-          <div class="field"><label>Chat ID</label><input id="tgChat" placeholder="เช่น 123456789"></div>
-          <div class="field" style="display:flex;align-items:flex-end;gap:8px">
-            <button class="btn-primary" onclick="saveTelegram()">บันทึก</button>
-            <button class="btn-light" onclick="testTelegram(this)">ส่งทดสอบ</button>
+          <div class="set-sec" id="setApTarget">
+            <h2 class="set-h">เติมแอดและขยายงบ</h2>
+            <div class="set-row">
+              <span class="sr-text"><span class="sr-label">จำนวนแอดขั้นต่ำต่อบัญชี</span><span class="sr-desc">เติมแอดให้แต่ละบัญชีมีแอดยิงอยู่อย่างน้อยเท่านี้ (ตัว) • 0 = ไม่เติม</span></span>
+              <span class="sr-ctrl narrow"><input id="apMinAds" type="number" min="0" max="50" value="0" onchange="saveAutopilot()"></span>
+            </div>
+            <div class="set-row">
+              <span class="sr-text"><span class="sr-label">เพดานขยายงบตัวชนะ</span><span class="sr-desc">ขยายงบได้สูงสุดถึง (บาท/วัน/แคมเปญ) • 0 = ไม่ขยาย • บัญชีสกุลอื่นแปลงเป็นสกุลของบัญชีให้เอง</span></span>
+              <span class="sr-ctrl narrow"><input id="apScaleMax" type="number" min="0" value="0" onchange="saveAutopilot()"></span>
+            </div>
+            <details class="set-more">
+              <summary><span><span class="sr-label">วิธีทำงานของระบบ</span><span class="sr-desc">อ่านครั้งแรกครั้งเดียวพอ</span></span></summary>
+              <div class="hint" style="margin:10px 0 8px">
+                <b>เติมแอด:</b> ใส่ <b>0</b> = ไม่เติมให้ • ถ้าใส่เลข มันจะหยิบวิดีโอ+แคปชั่นจากคลังขึ้นแอดเองจนครบ <b>เปิดยิงทันที</b> โดยใช้ค่าตั้งต้นในหน้าขึ้นแอด (งบ/ลิงก์/วัตถุประสงค์/กลุ่มเป้าหมาย) — งบอยู่ระดับแคมเปญ (CBO) เพิ่มแอดกี่ตัวก็ไม่ใช้จ่ายเกินงบที่ตั้งไว้
+              </div>
+              <div class="hint" style="margin-bottom:8px">
+                <b>ขยายงบ:</b> ใส่ <b>0</b> = ไม่ขยาย • ถ้าใส่เลข แคมเปญที่ต้นทุน/ผลลัพธ์ถูกกว่าเพดานที่ตั้งไว้ 30%+ (และมีผลลัพธ์อย่างน้อย 3 ครั้ง) จะถูกเพิ่มงบ <b>+20% วันละครั้ง</b> จนถึงเลขนี้แล้วหยุด — เพิ่มทีละน้อยเพราะขยับแรงกว่านี้ FB รีเซ็ต learning phase แล้วผลตก
+              </div>
+              <div class="hint" style="margin-bottom:4px">
+                <b>แก้แอดโดนปฏิเสธ:</b> อ่านเหตุผลที่ FB ปฏิเสธ → ถ้าปัญหาอยู่ที่ข้อความและระบุได้ชัด จะแก้แล้วขึ้นใหม่ให้ <b>ครั้งเดียวต่อครีเอทีฟ</b> • ถ้าปัญหาอยู่ที่วิดีโอ/หน้าขาย/ระดับบัญชี จะไม่แตะ แค่เตือนคุณ<br>
+                <b>ปิดตัวขาดทุนเอง:</b> แอดที่ใช้เงินเกิน <b id="apLoserSpend">2</b> เท่าของเพดาน CPA แล้วยังไม่มีผลลัพธ์ หรือต้นทุนแพงกว่าเพดาน <b id="apLoserMult">1.5</b> เท่า จะถูกปิด (ไม่เกิน <b id="apPauseCap">10</b> ตัว/บัญชี/วัน) แล้วเติมครีเอทีฟใหม่เข้าไปแทน — ใช้เลขจากช่อง "หยุดเมื่อต้นทุน/ผลลัพธ์เกิน" ในหน้าขึ้นแอด ถ้าไม่ได้ตั้งไว้จะไม่ปิดอะไรเลย<br>
+                <b>เพดานกันพัง:</b> แก้ได้ไม่เกิน <b id="apCap">10</b> ครั้ง/วันทั้งระบบ • บัญชีไหนโดนปฏิเสธ <b id="apFreezeCap">3</b> ตัวใน 24 ชม. จะ<b>หยุดบัญชีนั้นทันที</b>เพื่อกันโดนแบน • แจ้งทุกอย่างเข้า Telegram
+              </div>
+            </details>
           </div>
-        </div>
-        <div class="hint" style="margin-top:8px">วิธีตั้ง (ครั้งเดียว): ① ใน Telegram แชทกับ <b>@BotFather</b> → พิมพ์ /newbot → ได้ <b>Bot Token</b> มาวางช่องแรก ② แชทกับ <b>@userinfobot</b> → ได้เลข <b>Id</b> มาวางช่องสอง ③ เข้าไปกด <b>Start</b> ในแชทบอทที่เพิ่งสร้าง ④ กดบันทึก → ส่งทดสอบ</div>
-      </div>
 
-      <div class="card">
-        <h2><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg></span>AI ช่วยวิเคราะห์ <span class="h-desc">— ให้ Claude อ่านตัวเลขแคมเปญแล้วบอกว่าตัวไหนควรขยาย/หยุด</span></h2>
-        <div class="fgrid">
-          <div class="field" style="flex:2"><label>Anthropic API Key</label><input id="aiKey" type="password" placeholder="sk-ant-..."></div>
-          <div class="field" style="display:flex;align-items:flex-end;gap:8px">
-            <button class="btn-primary" onclick="saveAiKey(this)">บันทึก</button>
+          <div class="set-sec" id="setApLimits">
+            <h2 class="set-h">เพดานกันพัง</h2>
+            <div class="set-desc">ทุกช่องมีกรอบต่ำสุด–สูงสุดบังคับไว้ ใส่นอกกรอบระบบจะบีบกลับให้เอง เพราะค่าพวกนี้คือเกราะกันบัญชีโดนแบนและกันเงินไหล</div>
+            <details id="apLimitsBox" class="set-more">
+              <summary><span><span class="sr-label">ปรับเพดานเอง</span><span class="sr-desc">เว้นว่างหรือกดปุ่มคืนค่าตั้งต้น = กลับไปใช้ค่าเดิมของระบบ • ทุกการแก้ถูกจดไว้ในบันทึก</span></span></summary>
+              <div id="apLimitsSafety"></div>
+              <div id="apLimitsMoney"></div>
+              <button class="btn-light btn-sm" onclick="apResetLimits()" style="margin-top:8px">คืนค่าตั้งต้นทั้งหมด</button>
+            </details>
+          </div>
+
+          <div class="set-sec" id="setApLog">
+            <h2 class="set-h">บันทึกการทำงาน</h2>
+            <div class="set-row">
+              <span class="sr-text"><span class="sr-label">สถานะ</span><span class="sr-desc" id="apStatus"></span></span>
+              <span class="sr-ctrl auto">
+                <button class="btn-light btn-sm" onclick="loadAutopilot()">รีเฟรชบันทึก</button>
+                <button class="btn-primary btn-sm" onclick="apRunNow(this)">ตรวจเดี๋ยวนี้</button>
+              </span>
+            </div>
+            <div id="apLog" class="set-log"></div>
+          </div>
+
+          <div class="set-sec" id="setTelegram">
+            <h2 class="set-h">แจ้งเตือน Telegram</h2>
+            <div class="set-desc">เตือนทันทีเมื่อแอดโดนปฏิเสธ / บัญชีถูกปิด-ค้างชำระ / token มีปัญหา (ต่ออายุให้อัตโนมัติ) + สรุปยอดทุกเช้า 8 โมง</div>
+            <div class="set-row">
+              <span class="sr-text"><span class="sr-label">Bot Token</span><span class="sr-desc">แชทกับ <b>@BotFather</b> → พิมพ์ /newbot</span></span>
+              <span class="sr-ctrl"><input id="tgToken" placeholder="123456789:ABCdef..."></span>
+            </div>
+            <div class="set-row">
+              <span class="sr-text"><span class="sr-label">Chat ID</span><span class="sr-desc">แชทกับ <b>@userinfobot</b> → ได้เลข <b>Id</b> • แล้วเข้าไปกด <b>Start</b> ในแชทบอทที่เพิ่งสร้าง</span></span>
+              <span class="sr-ctrl"><input id="tgChat" placeholder="เช่น 123456789"></span>
+            </div>
+            <div class="set-row">
+              <span class="sr-text"><span class="sr-label">บันทึกและทดสอบ</span><span class="sr-desc">กดบันทึก แล้วส่งทดสอบเพื่อยืนยันว่าถึงมือถือจริง</span></span>
+              <span class="sr-ctrl auto">
+                <button class="btn-light" onclick="testTelegram(this)">ส่งทดสอบ</button>
+                <button class="btn-primary" onclick="saveTelegram()">บันทึก</button>
+              </span>
+            </div>
+          </div>
+
+          <div class="set-sec" id="setAi">
+            <h2 class="set-h">AI ช่วยวิเคราะห์</h2>
+            <div class="set-desc">ให้ Claude อ่านตัวเลขแคมเปญแล้วบอกว่าตัวไหนควรขยาย/หยุด</div>
+            <div class="set-row">
+              <span class="sr-text"><span class="sr-label">Anthropic API Key</span><span class="sr-desc" id="aiKeyHint">เอา key จาก <b>console.anthropic.com</b> → API Keys → Create Key • คิดเงินตามการใช้งานจริง (วิเคราะห์รอบละประมาณ 1 บาท) • ปล่อยว่างแล้วกดบันทึก = ลบ key ออก</span></span>
+              <span class="sr-ctrl">
+                <input id="aiKey" type="password" placeholder="sk-ant-...">
+                <button class="btn-primary" onclick="saveAiKey(this)">บันทึก</button>
+              </span>
+            </div>
           </div>
         </div>
-        <div class="hint" style="margin-top:8px" id="aiKeyHint">เอา key จาก <b>console.anthropic.com</b> → API Keys → Create Key • คิดเงินตามการใช้งานจริง (วิเคราะห์รอบละประมาณ 1 บาท) • ปล่อยว่างแล้วกดบันทึก = ลบ key ออก</div>
       </div>
     </section>
   </main>
@@ -1217,6 +1388,17 @@
       <button class="icon-btn btn-light" onclick="closeLibPick()"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </div>
     <div class="modal-body"><div id="libPickGrid" class="lib-grid" style="margin-top:0"></div></div>
+  </div>
+</div>
+
+<!-- ========== Modal จัดการบัญชี FB (เปิดจากปุ่ม "แก้ไข" ในตารางบัญชี) ========== -->
+<div id="profModal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeProfEdit()">
+  <div class="modal-box" style="max-width:760px">
+    <div class="modal-head">
+      <h3><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm0 2c-5 0-9 2.5-9 6v1a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-1c0-3.5-4-6-9-6Z"/></svg>จัดการบัญชี FB</h3>
+      <button class="icon-btn btn-light" onclick="closeProfEdit()"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div id="profModalBody" class="modal-body"></div>
   </div>
 </div>
 
@@ -1330,6 +1512,10 @@ let activeProfileId = null;
 const accountCache = {};      // pid -> {name, adAccounts, pages}
 const cardResults = new Map();      // cardId -> {ok:Set<pid>, fail:Map<pid,error>}
 const lastCampaignByAcct = {};   // "pid:acctId" -> {id, name, objective}
+const fxRates = {};   // สกุล -> เรต (1 บาท = x) หรือ { error, at } — ใช้โชว์งบที่แปลงแล้วในหน้าขึ้นแอด
+const fxMinor = {};   // สกุล -> หน่วยย่อยต่อหน่วยหลัก (1 = ไม่มีทศนิยม) จากเซิร์ฟเวอร์ — ชุดเดียวกับที่ส่ง FB จริง
+let fxAsOf = null;    // เวลาที่ผู้ให้บริการอัปเดตเรตชุดที่ใช้
+let fxLoading = null;
 
 function esc(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
@@ -1426,7 +1612,7 @@ const PAGE_META = {
   health: ['สุขภาพบัญชี & เพจ', 'เพจไหนใช้ได้/บิน • บัญชีไหนยังไม่มี Pixel หรือยังไม่เชื่อมบัตร'],
   library: ['คลังสื่อ', 'วิดีโอ + แคปชั่นที่เตรียมไว้ล่วงหน้า — ตัวจัดแผนขึ้นแอดหยิบจากที่นี่'],
   landing: ['หน้า Landing', 'หน้าที่ลูกค้าเห็นเมื่อกดจากโฆษณา — แก้ปุ่ม ลิงก์ และพิกเซล'],
-  settings: ['บัญชี FB', 'เพิ่ม/จัดการบัญชี FB, บัญชีโฆษณา และเพจ'],
+  settings: ['ตั้งค่า', 'บัญชี FB • ระบบอัตโนมัติ • แจ้งเตือน • AI'],
 };
 function showPage(name, fromRoute) {
   if (!PAGE_META[name]) name = 'dashboard';
@@ -1484,6 +1670,7 @@ function renderProfileUI() {
   campFiltersBuilt = false;
   launchAccountsBuilt = false;
   updateStats();
+  renderProfTable();
 }
 async function setActiveProfile(id) {
   if (!id) return;
@@ -1494,9 +1681,10 @@ async function setActiveProfile(id) {
 }
 async function addProfile() {
   const res = await fetch('/api/profiles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
-  await res.json();
+  const { id } = await res.json();
   await loadProfiles();
   renderSettings();
+  openProfEdit(id); // บัญชีใหม่ยังว่าง — เปิดหน้าต่างกรอกให้เลย
 }
 async function deleteProfile(id) {
   const p = profiles.find(x => x.id === id);
@@ -1507,11 +1695,42 @@ async function deleteProfile(id) {
   await loadProfiles();
   renderSettings();
 }
+// ผลบันทึกการ์ดบัญชี — เซิร์ฟเวอร์ต่ออายุ token ให้ทันทีเมื่อ token/App ID/Secret เปลี่ยนและใกล้หมดอายุ
+// เหตุผลที่ต่อไม่ได้ (คนละแอป/หมดอายุ/FB ช้า) มาจากเซิร์ฟเวอร์ที่ตรวจแล้ว — โชว์ตรงๆ ไม่เดาเพิ่ม
+function toastProfileSave(r) {
+  if (r.error) toast('บันทึกไม่สำเร็จ: ' + r.error, 'err');
+  // วันหมดอายุมาจาก token ใหม่ที่เซิร์ฟเวอร์ตรวจแล้วจริง — ไม่อ้าง "60 วัน" ลอยๆ
+  else if (r.extended) toast('✓ ต่ออายุ token แล้ว — ' + (r.expiresAt
+    ? 'หมดอายุ ' + new Date(r.expiresAt * 1000).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })
+    : 'ไม่มีวันหมดอายุ'), 'ok');
+  else if (r.extendError) toast('ต่ออายุ token ไม่สำเร็จ: ' + r.extendError, 'err');
+}
+// ยิงบันทึกการ์ด — คำตอบที่ไม่ใช่ JSON (proxy ตอบ 401/502 เป็น HTML ตอนรหัสหมดอายุ/เซิร์ฟเวอร์รีสตาร์ท)
+// ต้องกลายเป็น error ที่โชว์ได้ เดิม .json() throw หลุดเงียบๆ กดแล้วหน้าจอไม่บอกอะไรเลย
+async function postProfileUpdate(body) {
+  try {
+    const res = await fetch('/api/profiles/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const text = await res.text();
+    try { return JSON.parse(text); }
+    catch { return { error: `เซิร์ฟเวอร์ตอบผิดปกติ (HTTP ${res.status}) — ลองรีเฟรชหน้า` }; }
+  } catch (e) { return { error: 'ต่อเซิร์ฟเวอร์ไม่ได้ (' + e.message + ')' }; }
+}
 async function saveProfileField(id, fields) {
-  await fetch('/api/profiles/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, ...fields }) });
+  const r = await postProfileUpdate({ id, ...fields });
+  // วาง Secret แล้วกด "เข้าสู่ระบบด้วย Facebook" ทันที: ช่อง Secret เสียโฟกัส (บันทึก+ตรวจ token เก่า) ก่อนปุ่มทำงาน
+  // ผลตรวจ token เก่าที่กำลังจะถูกแทนไม่มีความหมาย — โชว์แล้วผู้ใช้งงว่าล็อกอินพังทั้งที่กำลังล็อกอินอยู่
+  if (fbLoginPid === id) delete r.extendError;
+  toastProfileSave(r);
+  if (r.error) return r;
   const p = profiles.find(x => x.id === id);
-  Object.assign(p, fields);
+  if (p) Object.assign(p, fields);
   renderProfileUI();
+  return r;
+}
+// ดาว "ใช้บัญชีนี้" ในหน้าต่างแก้ไข — ที่เดียว ใช้ทั้งตอนวาดการ์ดและตอนสลับบัญชี (เดิมก๊อปมาร์กอัปไว้สองที่)
+function profStarHTML(p) {
+  const on = p.id === activeProfileId;
+  return `<span class="prof-star ${on ? 'on' : ''}" onclick="setActiveProfileAndRender(${jsStr(p.id)})">${on ? '★ ใช้งานอยู่' : '☆ ใช้บัญชีนี้'}</span>`;
 }
 function profCardHTML(p) {
   const initial = esc(((p.label || '?').trim().charAt(0) || '?').toUpperCase());
@@ -1520,36 +1739,35 @@ function profCardHTML(p) {
       <div class="pc-avatar">${initial}</div>
       <input class="pc-name" value="${esc(p.label)}" title="คลิกเพื่อแก้ชื่อ" onchange="saveProfileField(${jsStr(p.id)}, {label: this.value})">
       <span class="p-status ${p.hasToken ? 'ok' : ''}">${p.hasToken ? '● เชื่อมต่อแล้ว' : '○ ยังไม่เชื่อมต่อ'}</span>
-      <span class="prof-star ${p.id === activeProfileId ? 'on' : ''}" onclick="setActiveProfileAndRender(${jsStr(p.id)})">${p.id === activeProfileId ? '★ ใช้งานอยู่' : '☆ ใช้บัญชีนี้'}</span>
+      ${profStarHTML(p)}
       <button class="btn-danger-light pc-del" onclick="deleteProfile(${jsStr(p.id)})" title="ลบบัญชีนี้ออกจากโปรแกรม"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
     </div>
-    <div class="pc-body">
-      <div class="pc-col">
-        <div class="pc-step"><span class="pc-step-num">1</span> เชื่อมต่อด้วยแอป Meta</div>
-        <div class="row">
-          <div class="field"><label>App ID</label><input class="p-appid" value="${esc(p.appId || '')}" placeholder="เช่น 1719021692348316" onchange="saveProfileField(${jsStr(p.id)}, {appId: this.value})"></div>
-          <div class="field"><label>App Secret</label><input type="password" class="p-appsecret" placeholder="${p.hasSecret ? 'บันทึกแล้ว — ใส่ใหม่เมื่อต้องการเปลี่ยน' : 'คัดลอกจากหน้า Basic Settings'}" onchange="saveProfileField(${jsStr(p.id)}, {appSecret: this.value})"></div>
-        </div>
-        <button class="btn-fblogin" onclick="fbLogin(${jsStr(p.id)})"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M22 12a10 10 0 1 0-11.6 9.9v-7H7.9V12h2.5V9.8c0-2.5 1.5-3.9 3.8-3.9 1.1 0 2.2.2 2.2.2v2.5h-1.3c-1.2 0-1.6.8-1.6 1.6V12h2.8l-.4 2.9h-2.4v7A10 10 0 0 0 22 12z"/></svg>เข้าสู่ระบบด้วย Facebook</button>
-        <details class="target">
-          <summary>หรือวาง Access Token เอง (ทางเลือก)</summary>
-          <div class="row" style="margin-top:8px">
-            <div style="flex:3"><input type="password" class="p-token" placeholder="${p.hasToken ? 'มี token แล้ว — วางใหม่เฉพาะตอนต้องการเปลี่ยน' : 'วาง Access Token (EAA...)'}"></div>
-            <div style="flex:0 0 auto;min-width:auto"><button class="btn-primary btn-sm" onclick="connectProfile(${jsStr(p.id)})" style="padding:8px 14px">${p.hasToken ? '⟳ โหลดบัญชี' : 'เชื่อมต่อ'}</button></div>
-          </div>
-        </details>
-      </div>
-      <div class="pc-col">
-        <div class="pc-step"><span class="pc-step-num">2</span> เลือกบัญชีโฆษณาและเพจ</div>
-        <div class="field">
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <label style="margin:0">บัญชีโฆษณา (Ad Account)</label>
-            <a onclick="openHealth(${jsStr(p.id)})" style="font-size:12px;font-weight:600;cursor:pointer"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-1px"><path d="M11 2v2"/><path d="M5 2v2"/><path d="M5 3H4a2 2 0 0 0-2 2v4a6 6 0 0 0 12 0V5a2 2 0 0 0-2-2h-1"/><path d="M8 15a6 6 0 0 0 12 0v-3"/><circle cx="20" cy="10" r="2"/></svg> ตรวจบัตร/Pixel</a>
-          </div>
-          <select class="p-adaccount" onchange="saveProfileField(${jsStr(p.id)}, {adAccountId: this.value})" style="margin-top:5px"><option value="">— เชื่อมต่อในขั้นตอนที่ 1 ก่อน —</option></select>
-        </div>
-        <div class="field"><label>เพจ (Facebook Page)</label><select class="p-page" onchange="saveProfileField(${jsStr(p.id)}, {pageId: this.value})"><option value="">— เชื่อมต่อในขั้นตอนที่ 1 ก่อน —</option></select></div>
-      </div>
+    <div class="set-row">
+      <span class="sr-text"><span class="sr-label">App ID</span><span class="sr-desc">หน้า การตั้งค่าแอพ → ข้อมูลพื้นฐาน ของแอป Meta</span></span>
+      <span class="sr-ctrl"><input class="p-appid" value="${esc(p.appId || '')}" placeholder="เช่น 1719021692348316" onchange="saveProfileField(${jsStr(p.id)}, {appId: this.value})"></span>
+    </div>
+    <div class="set-row">
+      <span class="sr-text"><span class="sr-label">App Secret</span><span class="sr-desc">ใส่ไว้แล้วระบบต่ออายุ token ให้เอง • ต้องเป็นของแอปเดียวกับที่ออก token</span></span>
+      <span class="sr-ctrl"><input type="password" class="p-appsecret" placeholder="${p.hasSecret ? 'บันทึกแล้ว — ใส่ใหม่เมื่อต้องการเปลี่ยน' : 'คัดลอกจากหน้า Basic Settings'}" onchange="saveProfileField(${jsStr(p.id)}, {appSecret: this.value})"></span>
+    </div>
+    <div class="set-row">
+      <span class="sr-text"><span class="sr-label">เชื่อมต่อ Facebook</span><span class="sr-desc">ล็อกอินด้วยเฟสที่เป็นแอดมินของบัญชีโฆษณา</span></span>
+      <span class="sr-ctrl"><button class="btn-fblogin" onclick="fbLogin(${jsStr(p.id)})"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M22 12a10 10 0 1 0-11.6 9.9v-7H7.9V12h2.5V9.8c0-2.5 1.5-3.9 3.8-3.9 1.1 0 2.2.2 2.2.2v2.5h-1.3c-1.2 0-1.6.8-1.6 1.6V12h2.8l-.4 2.9h-2.4v7A10 10 0 0 0 22 12z"/></svg>เข้าสู่ระบบด้วย Facebook</button></span>
+    </div>
+    <div class="set-row">
+      <span class="sr-text"><span class="sr-label">Access Token</span><span class="sr-desc">หรือวางเองจาก Graph API Explorer (ทางเลือก)</span></span>
+      <span class="sr-ctrl">
+        <input type="password" class="p-token" placeholder="${p.hasToken ? 'มี token แล้ว — วางใหม่เมื่อต้องการเปลี่ยน' : 'วาง Access Token (EAA...)'}">
+        <button class="btn-primary btn-sm" onclick="connectProfile(${jsStr(p.id)}, this)">${p.hasToken ? '⟳ โหลด' : 'เชื่อมต่อ'}</button>
+      </span>
+    </div>
+    <div class="set-row">
+      <span class="sr-text"><span class="sr-label">บัญชีโฆษณา</span><span class="sr-desc"><a onclick="openHealth(${jsStr(p.id)})" style="font-weight:600;cursor:pointer">ตรวจบัตร/Pixel</a></span></span>
+      <span class="sr-ctrl"><select class="p-adaccount" onchange="saveProfileField(${jsStr(p.id)}, {adAccountId: this.value})"><option value="">— เชื่อมต่อ Facebook ก่อน —</option></select></span>
+    </div>
+    <div class="set-row">
+      <span class="sr-text"><span class="sr-label">เพจ</span><span class="sr-desc">เพจที่ใช้ลงโฆษณา</span></span>
+      <span class="sr-ctrl"><select class="p-page" onchange="saveProfileField(${jsStr(p.id)}, {pageId: this.value})"><option value="">— เชื่อมต่อ Facebook ก่อน —</option></select></span>
     </div>
   </div>`;
 }
@@ -1558,32 +1776,52 @@ function fbLogin(pid) {
   const appId = card.querySelector('.p-appid').value.trim();
   const appSecret = card.querySelector('.p-appsecret').value.trim();
   if (!appId) return toast('ใส่ App ID ก่อนครับ (หาได้ในหน้า Basic Settings ของแอป)');
-  const body = { id: pid, appId };
+  // login: token ใหม่กำลังมา — บอกเซิร์ฟเวอร์ไม่ต้องตรวจตัวเก่า (เดิม popup ค้างหน้าว่างรอ FB ได้ถึง 30 วิ)
+  const body = { id: pid, appId, login: true };
   if (appSecret) body.appSecret = appSecret;
-  fetch('/api/profiles/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(() => {
-    const w = 600, h = 720, left = (screen.width - w) / 2, top = (screen.height - h) / 2;
-    const popup = window.open('/auth/login?profile=' + pid, 'fblogin', `width=${w},height=${h},left=${left},top=${top}`);
-    if (!popup) toast('เบราว์เซอร์บล็อก popup — อนุญาต popup ให้ localhost แล้วลองใหม่ครับ');
+  // เปิดหน้าต่างทันทีในจังหวะที่กด — ถ้ารอบันทึกเสร็จก่อน (อาจรอ FB หลายวินาที) เบราว์เซอร์จะบล็อก popup
+  const w = 600, h = 720, left = (screen.width - w) / 2, top = (screen.height - h) / 2;
+  const popup = window.open('about:blank', 'fblogin', `width=${w},height=${h},left=${left},top=${top}`);
+  if (!popup) return toast('เบราว์เซอร์บล็อก popup — อนุญาต popup ให้ localhost แล้วลองใหม่ครับ');
+  fbLoginPid = pid;
+  postProfileUpdate(body).then(r => {
+    if (r.error) { popup.close(); return toastProfileSave(r); }
+    popup.location.href = '/auth/login?profile=' + encodeURIComponent(pid);
   });
 }
+let fbLoginPid = null; // บัญชีที่กำลังล็อกอิน FB อยู่ — หลังล็อกอินเสร็จต้องล้างข้อมูลเก่าของบัญชีนี้
 window.addEventListener('message', async (e) => {
   if (e.data === 'fb-auth-done') {
     bustCaches(); // login ใหม่ = token ใหม่ ข้อมูลต้องดึงใหม่
+    const pid = fbLoginPid;
+    fbLoginPid = null;
+    // force = เปิดคำขอใหม่ด้วย token ใหม่ — คำขอเก่าที่ยังวิ่งค้าง (ยิงด้วย token เก่า) กลับมาทีหลังจะถูกทิ้ง
+    // เดิมไม่ force ตาราง/หน้าต่างแก้ไขไปรอคำขอเก่า แล้วขึ้น "เชื่อมต่อไม่ได้" ทั้งที่ token ใหม่ใช้ได้
+    if (pid) { delete accountCache[pid]; delete accountErr[pid]; fetchProfAccounts(pid, true); }
     await loadProfiles();
     renderSettings();
+    // หน้าต่างแก้ไขของบัญชีที่เพิ่งล็อกอินเปิดอยู่ → วาดใหม่ให้เห็นสถานะ/บัญชีโฆษณาของ token ใหม่
+    if (pid && profEditId === pid) openProfEdit(pid);
   }
 });
 async function setActiveProfileAndRender(id) {
   await setActiveProfile(id);
   renderSettings();
+  const card = document.querySelector('#profModal .prof-card');
+  const p = card && profiles.find(x => x.id === card.dataset.pid);
+  if (p) {
+    card.classList.toggle('active-prof', p.id === activeProfileId);
+    card.querySelector('.prof-star').outerHTML = profStarHTML(p);
+  }
 }
 
 // ---------- Modal ตรวจสภาพบัญชี (บัตร/Pixel) ----------
 let healthCtx = null;
 function closeHealth() { document.getElementById('healthModal').style.display = 'none'; }
 async function openHealth(pid) {
+  // เปิดจากหน้าต่างแก้ไข = ใช้ค่าที่เลือกอยู่ในช่อง • เปิดจากตาราง = ใช้ค่าที่บันทึกไว้
   const card = document.querySelector(`.prof-card[data-pid="${pid}"]`);
-  const acct = card.querySelector('.p-adaccount').value;
+  const acct = card ? card.querySelector('.p-adaccount').value : (profiles.find(x => x.id === pid) || {}).adAccountId;
   if (!acct) return toast('เลือกบัญชีโฆษณาก่อนครับ');
   healthCtx = { pid, acct };
   document.getElementById('healthModal').style.display = 'flex';
@@ -1635,16 +1873,88 @@ async function createPixel(btn) {
   await renderHealth();
 }
 function renderSettings() {
-  const el = document.getElementById('profList');
-  el.innerHTML = profiles.length
-    ? profiles.map(profCardHTML).join('')
-    : `<div class="pc-empty">
+  renderProfTable();
+  // ดึงบัญชีโฆษณา/เพจของทุกบัญชีที่มี token มาโชว์ในตาราง (มีในแคชแล้วไม่ดึงซ้ำ)
+  profiles.filter(p => p.hasToken).forEach(p => populateProfileCard(p.id));
+  // ไม่วาดหน้าต่างแก้ไขใหม่ตรงนี้ — จะทับค่าที่ผู้ใช้พิมพ์ค้างไว้ (ปิดเฉพาะตอนบัญชีนั้นถูกลบไปแล้ว)
+  if (profEditId && !profiles.some(p => p.id === profEditId)) closeProfEdit();
+  loadTelegramUI();
+}
+// ---------- ตารางบัญชี FB + หน้าต่างแก้ไข ----------
+const accountErr = {};   // pid -> error ล่าสุดตอนดึงบัญชีโฆษณา/เพจ (โชว์เป็นสถานะในตาราง)
+let profEditId = null;
+function openProfEdit(pid) {
+  const p = profiles.find(x => x.id === pid);
+  if (!p) return;
+  profEditId = pid;
+  document.getElementById('profModalBody').innerHTML = profCardHTML(p);
+  document.getElementById('profModal').style.display = 'flex';
+  if (p.hasToken) populateProfileCard(pid);
+}
+function closeProfEdit() {
+  profEditId = null;
+  document.getElementById('profModal').style.display = 'none';
+  document.getElementById('profModalBody').innerHTML = '';
+  renderProfTable();
+}
+function renderProfTable() {
+  const body = document.getElementById('profRows');
+  const q = document.getElementById('profSearch').value.trim().toLowerCase();
+  const ready = profiles.filter(p => p.hasToken).length;
+  document.getElementById('profCount').textContent = profiles.length ? `${profiles.length} บัญชี • พร้อมใช้ ${ready}` : '';
+  if (!profiles.length) {
+    body.innerHTML = `<tr><td colspan="5" class="pt-none"><div class="pc-empty">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/></svg>
         <div style="font-weight:700;font-size:15px;color:var(--text);margin-bottom:3px">ยังไม่มีบัญชี FB</div>
-        <div style="font-size:13px">กดปุ่ม "+ เพิ่มบัญชี FB" ด้านล่าง แล้วทำตามขั้นตอน 1-2 ในการ์ด</div>
-      </div>`;
-  profiles.filter(p => p.hasToken).forEach(p => populateProfileCard(p.id));
-  loadTelegramUI();
+        <div style="font-size:13px">กดปุ่ม "+ เพิ่มบัญชี FB" แล้วกรอก App ID / เชื่อมต่อ Facebook ในหน้าต่างที่เปิดขึ้นมา</div>
+      </div></td></tr>`;
+    return;
+  }
+  const rows = profiles.map(p => {
+    const d = accountCache[p.id], err = accountErr[p.id];
+    const acct = d && d.adAccounts.find(a => a.account_id === p.adAccountId);
+    const page = d && d.pages.find(x => x.id === p.pageId);
+    const hay = [p.label, d && d.name, acct && acct.name, page && page.name, p.appId, p.adAccountId].join(' ').toLowerCase();
+    return { p, d, err, acct, page, hay };
+  }).filter(r => !q || r.hay.includes(q));
+  if (!rows.length) { body.innerHTML = `<tr><td colspan="5" class="pt-none">ไม่พบบัญชีที่ตรงกับ "${esc(q)}"</td></tr>`; return; }
+  body.innerHTML = rows.map(({ p, d, err, acct, page }) => {
+    const on = p.id === activeProfileId;
+    const [stCls, stTxt] = !p.hasToken ? ['', '○ ยังไม่เชื่อมต่อ'] : err ? ['err', '✗ เชื่อมต่อไม่ได้'] : d ? ['ok', '● เชื่อมต่อแล้ว'] : ['', 'กำลังโหลด...'];
+    const [aCls, aTxt] = acct ? (ACCT_STATUS[acct.account_status] || ['warn', 'สถานะ ' + acct.account_status]) : [];
+    const initial = esc(((p.label || '?').trim().charAt(0) || '?').toUpperCase());
+    return `<tr class="${on ? 'on' : ''}">
+      <td><div class="pt-acc ${on ? 'active-prof' : ''}"><span class="pc-avatar">${initial}</span><div>
+        <div class="pt-name">${esc(p.label)}</div>
+        <div class="pt-sub">${on ? '<b>★ ใช้งานอยู่</b> ' : ''}${d ? 'FB: ' + esc(d.name) : ''}</div>
+      </div></div></td>
+      <td><span class="p-status ${stCls}" title="${esc(err || '')}">${stTxt}</span></td>
+      <td>${acct ? `${esc(acct.name)} <span class="opt-badge ${aCls}">${aTxt}</span>` : p.adAccountId ? `<code>act_${esc(p.adAccountId)}</code>` : '<span class="muted">—</span>'}</td>
+      <td>${page ? esc(page.name) : p.pageId ? `<code>${esc(p.pageId)}</code>` : '<span class="muted">—</span>'}</td>
+      <td class="pt-act">
+        <button class="btn-light btn-sm" onclick="openProfEdit(${jsStr(p.id)})">แก้ไข</button>
+        <button class="icon-btn btn-light" title="${on ? 'ใช้งานอยู่' : 'ใช้บัญชีนี้'}" onclick="setActiveProfileAndRender(${jsStr(p.id)})" ${on ? 'disabled' : ''}><svg viewBox="0 0 24 24" fill="${on ? 'var(--brand)' : 'none'}" stroke="${on ? 'var(--brand)' : 'currentColor'}" stroke-width="2" stroke-linejoin="round"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1L12 2Z"/></svg></button>
+        <button class="icon-btn btn-light" title="ตรวจบัตร/Pixel" onclick="openHealth(${jsStr(p.id)})" ${p.adAccountId ? '' : 'disabled'}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><path d="M2 10h20"/></svg></button>
+        <button class="icon-btn btn-danger-light" title="ลบบัญชีนี้ออกจากโปรแกรม" onclick="deleteProfile(${jsStr(p.id)})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+// ---------- เมนูย่อยซ้ายของหน้าตั้งค่า: กดแล้วโชว์เฉพาะหมวดนั้น (ไม่เรียงยาวทุกหมวด) • ค้นหา ----------
+function setGo(id) {
+  document.querySelectorAll('.set-main > .set-sec').forEach(sec => { sec.hidden = sec.id !== id; });
+  document.querySelectorAll('.set-nav [data-sec]').forEach(a => a.classList.toggle('on', a.dataset.sec === id));
+  window.scrollTo(0, 0);
+}
+setGo('setAccounts');
+// ค้นทั้งชื่อเมนูและข้อความในหมวดนั้น — พิมพ์ "token" ก็เจอหมวดบัญชี FB แม้ชื่อเมนูไม่มีคำนี้
+function setFilter(q) {
+  q = q.trim().toLowerCase();
+  document.querySelectorAll('.set-nav [data-sec]').forEach(a => {
+    const sec = document.getElementById(a.dataset.sec);
+    a.hidden = !!q && !(a.textContent + ' ' + (sec ? sec.textContent : '')).toLowerCase().includes(q);
+  });
+  document.querySelectorAll('.set-nav .set-group').forEach(g => { g.hidden = !g.querySelector('[data-sec]:not([hidden])'); });
 }
 async function loadTelegramUI() {
   try {
@@ -1674,12 +1984,26 @@ async function testTelegram(btn) {
   btn.disabled = false; btn.textContent = 'ส่งทดสอบ';
   toast(r.ok ? '✓ ส่งสำเร็จ! เช็คข้อความในแชท Telegram' : '✗ ' + r.error);
 }
-async function connectProfile(pid) {
+async function connectProfile(pid, btn) {
   const card = document.querySelector(`.prof-card[data-pid="${pid}"]`);
-  const token = card.querySelector('.p-token').value.trim();
+  const inp = card.querySelector('.p-token');
+  const token = inp.value.trim();
   const st = card.querySelector('.p-status');
+  // บอกสถานะ + ปิดปุ่มระหว่างรอ — เซิร์ฟเวอร์อาจรอ FB ได้หลายสิบวินาที กดซ้ำ = ต่ออายุซ้อนกันสองรอบ
+  st.textContent = 'กำลังเชื่อมต่อ...';
+  st.className = 'p-status hint';
+  if (btn) btn.disabled = true;
+  // recheck = ให้เซิร์ฟเวอร์ตรวจ/ต่ออายุจริงแม้เป็น token เดิม — รอบก่อนอาจพลาดเพราะ FB ช้า/จำกัดความถี่
+  // (เดิมกดซ้ำด้วย token เดิมได้แค่ ok เงียบๆ token สั้นหมดอายุใน 1 ชม. โดยไม่มีใครรู้)
+  const r = await postProfileUpdate(token ? { id: pid, accessToken: token, recheck: true } : { id: pid, recheck: true });
+  if (btn) btn.disabled = false;
+  toastProfileSave(r);
+  if (r.error) { populateProfileCard(pid); return; }   // คืนสถานะเดิมของการ์ด (ไม่ค้าง "กำลังเชื่อมต่อ...")
   if (token) {
-    await fetch('/api/profiles/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: pid, accessToken: token }) });
+    // ล้างช่องทันทีที่บันทึกแล้ว — ถ้าค้างไว้ กด "⟳ โหลด" ทีหลัง token สั้นตัวเก่า (หมดอายุแล้ว)
+    // จะถูกส่งไปทับตัว 60 วันที่เพิ่งแลกได้ ระบบอัตโนมัติต่อ FB ไม่ได้ทันที
+    inp.value = '';
+    inp.placeholder = 'มี token แล้ว — วางใหม่เมื่อต้องการเปลี่ยน';
     profiles.find(x => x.id === pid).hasToken = true;
     delete accountCache[pid];
     bustCaches(); // token ใหม่ = ข้อมูลชุดใหม่
@@ -1689,46 +2013,83 @@ async function connectProfile(pid) {
   await populateProfileCard(pid, true);
   renderProfileUI();
 }
+// account_status จาก FB: 1=ใช้ได้, 2=ถูกปิดใช้งาน, 3=ค้างชำระ, 7=รอตรวจความเสี่ยง, 9=ช่วงผ่อนผัน, 100/101=ปิดแล้ว
+const ACCT_STATUS = {
+  1: ['ok', 'ใช้ได้'], 2: ['bad', 'ถูกปิดใช้งาน'], 3: ['warn', 'ค้างชำระ'],
+  7: ['warn', 'รอตรวจความเสี่ยง'], 8: ['warn', 'รอชำระ'], 9: ['warn', 'ช่วงผ่อนผัน'],
+  100: ['bad', 'กำลังปิด'], 101: ['bad', 'ปิดแล้ว'],
+};
+// คำขอที่กำลังวิ่งต่อบัญชี — หลายจุดขอพร้อมกัน (ตาราง + หน้าต่างแก้ไข) ใช้คำขอเดียวกัน ไม่ยิง FB ซ้ำ
+// force = ต้องการข้อมูลใหม่จริง (เช่นเพิ่งเปลี่ยน token) → ยิงใหม่ และผลของคำขอเก่าที่กลับมาทีหลังถูกทิ้ง
+const accountReq = {};
+let accountSeq = 0;
+function fetchProfAccounts(pid, force) {
+  if (accountReq[pid] && !force) return accountReq[pid].promise;
+  const seq = ++accountSeq;
+  const promise = (async () => {
+    let data;
+    try { data = await (await fetch('/api/accounts?profile=' + pid)).json(); }
+    catch (e) { data = { error: e.message }; }
+    // มีคำขอใหม่กว่าแล้ว — ผลนี้ทิ้ง แต่ผู้ที่รอคำขอนี้ต้องได้ผลของคำขอใหม่ (เดิมจบมือเปล่า
+    // แดชบอร์ดที่รออยู่ข้ามบัญชีนั้นไปเงียบๆ แล้วจำยอดรวมที่ขาดไว้ 5 นาทีเหมือนเป็นของสด)
+    if (!accountReq[pid] || accountReq[pid].seq !== seq) return accountReq[pid] && accountReq[pid].promise;
+    delete accountReq[pid];
+    // แคช = ผลสำเร็จล่าสุด (เก็บไว้แม้รอบหลังพลาด), error = รอบล่าสุดพลาด (สำเร็จเมื่อไหร่ล้างทิ้ง)
+    // เดิม error ครั้งเดียว (FB จำกัดความถี่ชั่วคราว) ลบรายชื่อทิ้งทั้งก้อน ตารางไม่มีชื่อบัญชี หน้าแคมเปญเหลือแต่เลข id
+    if (data.error) accountErr[pid] = data.error;
+    else { accountCache[pid] = data; delete accountErr[pid]; }
+  })();
+  accountReq[pid] = { seq, promise };
+  return promise;
+}
 async function populateProfileCard(pid, force) {
-  const card = document.querySelector(`.prof-card[data-pid="${pid}"]`);
-  if (!card) return;
-  const st = card.querySelector('.p-status');
   if (!accountCache[pid] || force) {
-    const res = await fetch('/api/accounts?profile=' + pid);
-    const data = await res.json();
-    if (data.error) {
-      st.textContent = '✗ ' + data.error;
-      st.className = 'p-status err';
-      return;
-    }
-    accountCache[pid] = data;
+    await fetchProfAccounts(pid, force);
+    renderProfTable();
   }
-  const data = accountCache[pid];
   const p = profiles.find(x => x.id === pid);
-  st.textContent = '✓ เชื่อมต่อแล้ว: ' + data.name;
-  st.className = 'p-status ok';
-  const accSel = card.querySelector('.p-adaccount');
-  // account_status จาก FB: 1=ใช้ได้, 2=ถูกปิดใช้งาน, 3=ค้างชำระ, 7=รอตรวจความเสี่ยง, 9=ช่วงผ่อนผัน, 100/101=ปิดแล้ว
-  const ACCT_STATUS = {
-    1: ['ok', 'ใช้ได้'], 2: ['bad', 'ถูกปิดใช้งาน'], 3: ['warn', 'ค้างชำระ'],
-    7: ['warn', 'รอตรวจความเสี่ยง'], 8: ['warn', 'รอชำระ'], 9: ['warn', 'ช่วงผ่อนผัน'],
-    100: ['bad', 'กำลังปิด'], 101: ['bad', 'ปิดแล้ว'],
-  };
-  const okCount = data.adAccounts.filter(a => a.account_status === 1).length;
-  accSel.innerHTML = data.adAccounts.map(a => {
-    const [cls, txt] = ACCT_STATUS[a.account_status] || ['warn', 'สถานะ ' + a.account_status];
-    return `<option value="${a.account_id}"><span class="opt-name">${esc(a.name)} (${a.currency})</span> <span class="opt-badge ${cls}">${txt}</span></option>`;
-  }).join('');
-  if (p.adAccountId) accSel.value = p.adAccountId;
-  st.textContent += ` • บัญชีโฆษณาใช้ได้ ${okCount}/${data.adAccounts.length}`;
-  const pageSel = card.querySelector('.p-page');
-  pageSel.innerHTML = data.pages.length
-    ? data.pages.map(pg => `<option value="${pg.id}">${esc(pg.name)}</option>`).join('')
-    : '<option value="">— ไม่มีเพจที่ลงโฆษณาได้ (เพจบิน/ถูกจำกัด หรือ token ขาดสิทธิ์เพจ) —</option>';
-  if (p.pageId) pageSel.value = p.pageId;
-  // บันทึกค่าที่ dropdown เลือกอัตโนมัติ (ตัวแรก) ถ้ายังไม่เคยตั้ง
-  if (!p.adAccountId && accSel.value) saveProfileField(pid, { adAccountId: accSel.value });
-  if (!p.pageId && pageSel.value) saveProfileField(pid, { pageId: pageSel.value });
+  const data = accountCache[pid];
+  if (!p) return;
+  const card = document.querySelector(`.prof-card[data-pid="${pid}"]`);
+  if (card) {
+    const st = card.querySelector('.p-status');
+    if (data) {
+      st.textContent = '✓ เชื่อมต่อแล้ว: ' + data.name;
+      st.className = 'p-status ok';
+      const accSel = card.querySelector('.p-adaccount');
+      const okCount = data.adAccounts.filter(a => a.account_status === 1).length;
+      accSel.innerHTML = data.adAccounts.map(a => {
+        const [cls, txt] = ACCT_STATUS[a.account_status] || ['warn', 'สถานะ ' + a.account_status];
+        return `<option value="${a.account_id}"><span class="opt-name">${esc(a.name)} (${a.currency})</span> <span class="opt-badge ${cls}">${txt}</span></option>`;
+      }).join('');
+      if (p.adAccountId) accSel.value = p.adAccountId;
+      st.textContent += ` • บัญชีโฆษณาใช้ได้ ${okCount}/${data.adAccounts.length}`;
+      const pageSel = card.querySelector('.p-page');
+      pageSel.innerHTML = data.pages.length
+        ? data.pages.map(pg => `<option value="${pg.id}">${esc(pg.name)}</option>`).join('')
+        : '<option value="">— ไม่มีเพจที่ลงโฆษณาได้ (เพจบิน/ถูกจำกัด หรือ token ขาดสิทธิ์เพจ) —</option>';
+      if (p.pageId) pageSel.value = p.pageId;
+    }
+    // รอบล่าสุดพลาด = สถานะต้องบอกตามจริง (dropdown ยังใช้รายชื่อที่เคยดึงได้)
+    if (accountErr[pid]) {
+      st.textContent = '✗ ' + accountErr[pid];
+      st.className = 'p-status err';
+    }
+  }
+  // บันทึกตัวแรกให้อัตโนมัติถ้ายังไม่เคยตั้ง (เหมือน dropdown ที่เลือกตัวแรกไว้ให้)
+  if (!data || accountErr[pid]) return;
+  const auto = {};
+  if (!p.adAccountId && data.adAccounts[0]) auto.adAccountId = data.adAccounts[0].account_id;
+  if (!p.pageId && data.pages[0]) auto.pageId = data.pages[0].id;
+  if (!Object.keys(auto).length) return;
+  // ตั้งค่าในเครื่องก่อนยิงบันทึก — ตาราง + หน้าต่างแก้ไขรอคำขอเดียวกันแล้วมาถึงตรงนี้พร้อมกัน
+  // ถ้ารอผลบันทึกก่อนค่อยตั้ง ทุกตัวเห็นว่ายังว่างแล้วบันทึกซ้ำกันหมด (เดิมยิง 2×2 ครั้ง)
+  Object.assign(p, auto);
+  saveProfileField(pid, auto).then(r => {
+    if (!r.error) return;
+    for (const k of Object.keys(auto)) if (p[k] === auto[k]) p[k] = '';
+    renderProfileUI();   // ไม่วาดใหม่ = ตารางโชว์ค่าที่ไม่ได้บันทึกค้างไว้
+  });
 }
 
 // นาฬิกาบนแถบเขียว
@@ -1871,14 +2232,9 @@ async function loadDashboard(force) {
     topRows.innerHTML = '<tr><td colspan="6" class="tbl-msg"><span class="spin"></span>กำลังโหลด...</td></tr>';
   }
 
-  // รายชื่อบัญชีโฆษณาของทุก profile (ใช้แคชเดียวกับหน้าแคมเปญ)
-  await Promise.all(tokenProfiles.map(async (p) => {
-    if (accountCache[p.id]) return;
-    try {
-      const d = await (await fetch('/api/accounts?profile=' + p.id)).json();
-      if (!d.error) accountCache[p.id] = d;
-    } catch { /* ข้าม โชว์เป็น error รายบัญชีไม่ได้เพราะไม่รู้รายชื่อ */ }
-  }));
+  // รายชื่อบัญชีโฆษณาของทุก profile — ตัวดึงกลางตัวเดียวกับตาราง/หน้าต่างแก้ไข/หน้าแคมเปญ
+  // (คำขอที่วิ่งอยู่ใช้ร่วมกัน ไม่ยิง FB ซ้อน และ error ถูกเก็บให้ตารางบัญชีโชว์ ไม่ค้าง "กำลังโหลด...")
+  await Promise.all(tokenProfiles.map(p => (accountCache[p.id] ? null : fetchProfAccounts(p.id))));
   // จำนวนที่ถูกซ่อนจากหน้าสุขภาพ — ต้องบอกไว้ว่ามีของถูกซ่อน ไม่ใช่ปล่อยให้ดูเหมือนบัญชีหาย
   dashHiddenN = tokenProfiles.reduce((n, p) => n + ((accountCache[p.id] || {}).hiddenAccounts || 0), 0);
   const targets = [];
@@ -2052,9 +2408,13 @@ async function toggleHidden(kind, id, hide, btn) {
 // ที่ /api/am-limits (เคยลองแล้ว Meta สั่ง checkpoint ทั้งบัญชี)
 
 // โชว์ค่าดิบใน tooltip ด้วย เพราะหน่วยของ adtrust_dsl ยังไม่ได้เทียบกับหน้า Billing ด้วยตาตัวเอง
-// (เชื่อว่าเป็นบาท ส่วน threshold_amount เป็นสตางค์) ถ้าหน่วยผิดจะเห็นตั้งแต่ครั้งแรกที่เปิด
+// (เชื่อว่าเป็นหน่วยหลักของสกุลบัญชี ส่วน threshold_amount เป็นหน่วยย่อย เหมือน spend_cap) ถ้าหน่วยผิดจะเห็นตั้งแต่ครั้งแรกที่เปิด
+// สกุล/หน่วยย่อยมาจากเซิร์ฟเวอร์ (curFactor ตัวเดียวกับที่ส่ง FB) — เดิม /100 และ ฿ ตายตัว บัญชีเยน/ดอง/รูเปียห์เพี้ยน 100 เท่า
 function limitCell(a) {
-  const bt = (n) => '฿' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const cur = a.currency || 'THB';
+  const minor = a.minor || 100;   // แคชรุ่นเก่าที่ยังไม่มีฟิลด์นี้ = บาทแบบเดิม
+  const digits = minor === 1 ? 0 : 2;
+  const bt = (n) => (cur === 'THB' ? '฿' : cur + ' ') + Number(n).toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
   // ส่วนขยายดึง token ตอนหน้า Ads Manager เปิดอยู่ ปุ่มนี้จึงเป็นตัวกระตุ้นให้มันได้ token ใหม่
   // ผูก ?act= ไว้ด้วยเพื่อให้เปิดตรงเข้าบัญชีนั้นเลย ไม่ต้องมานั่งเลือกในหน้า Ads Manager อีกที
   const openBtn = (label, title, cls) => `<a class="btn-light ${cls}" style="text-decoration:none;white-space:nowrap"`
@@ -2066,7 +2426,7 @@ function limitCell(a) {
     return openBtn('เปิด Ads Manager ↗', 'ยังไม่มีตัวเลข — เปิดหน้านี้ให้ส่วนขยายดึง token แล้วกด "เช็คใหม่"', 'btn-sm');
   }
   const th = (a.threshold === undefined || a.threshold === null) ? ''
-    : `<div class="res-label">เรียกเก็บที่ ${bt(a.threshold / 100)}</div>`;
+    : `<div class="res-label">เรียกเก็บที่ ${bt(a.threshold / minor)}</div>`;
   const val = a.dsl === -1
     ? '<span class="st-pill on">ไม่จำกัด</span>'
     : `<span style="font-weight:600" title="ค่าดิบจาก Meta: adtrust_dsl=${esc(String(a.dsl))}">${bt(a.dsl)}</span>`;
@@ -2320,6 +2680,7 @@ function renderLaunchAccounts() {
           <option value="">— ผู้ลงโฆษณา: ไม่ระบุ —</option>
           ${a.beneficiaryOptions.map(b => `<option value="${b.id}" ${b.id === a.beneficiaryId ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}
         </select>
+        ${a.currency && a.currency !== 'THB' ? `<span class="fx-hint" data-cur="${esc(a.currency)}"></span>` : ''}
       </div>` : '';
       return `<label class="acct-row ${r.ready ? '' : 'row-off'}" title="${esc(tip)}">
         <input type="checkbox" value="${v}" ${isChecked ? 'checked' : ''} ${r.ready ? '' : 'disabled'} onchange="launchRowToggled()">
@@ -2339,6 +2700,7 @@ function renderLaunchAccounts() {
   el.innerHTML = html || '<span class="hint">ไม่พบบัญชีโฆษณา</span>';
   scroller.scrollTop = scroll;
   document.getElementById('launchAcctSummary').textContent = `พร้อม ${readyCount}/${launchAccounts.length} บัญชี`;
+  ensureFxRates();
   updateStats();
 }
 function launchRowToggled() { renderLaunchAccounts(); }
@@ -2376,12 +2738,10 @@ async function buildCampFilters() {
 
   const groups = [];
   await Promise.all(tokenProfiles.map(async (p) => {
+    if (!accountCache[p.id]) await fetchProfAccounts(p.id);   // ตัวดึงกลาง — ใช้คำขอร่วมกับหน้าอื่น
     if (!accountCache[p.id]) {
-      try {
-        const d = await (await fetch('/api/accounts?profile=' + p.id)).json();
-        if (d.error) { groups.push({ title: `${p.label} — โหลดไม่สำเร็จ: ${d.error}`, rows: '', count: 0 }); return; }
-        accountCache[p.id] = d;
-      } catch { return; }
+      if (accountErr[p.id]) groups.push({ title: `${p.label} — โหลดไม่สำเร็จ: ${accountErr[p.id]}`, rows: '', count: 0 });
+      return;
     }
     const data = accountCache[p.id];
     const byBm = {};
@@ -2593,7 +2953,7 @@ async function renderCampaignDetail() {
       <td class="num-cell">${money(a.spend)}</td>
       <td class="num-cell">${num(a.impressions)}</td>
     </tr>`).join('');
-  const dateTxt = { today: 'วันนี้', last_7d: '7 วันล่าสุด', last_30d: '30 วันล่าสุด', last_90d: '90 วันล่าสุด', maximum: 'ทั้งหมด' }[d.datePreset] || d.datePreset;
+  const dateTxt = { today: 'วันนี้', yesterday: 'เมื่อวาน', last_7d: '7 วันล่าสุด', last_30d: '30 วันล่าสุด', last_90d: '90 วันล่าสุด', maximum: 'ทั้งหมด' }[d.datePreset] || d.datePreset;
   body.innerHTML = `
     <div class="hint" style="margin-bottom:10px">สถิติช่วง: ${dateTxt} (ตามช่วงเวลาที่เลือกอยู่) • ${OBJ_TH[d.objective] || d.objective}</div>
     <h2 style="margin-bottom:10px">ชุดโฆษณา <span class="h-desc">— ${d.adsets.length} ชุด</span></h2>
@@ -3321,14 +3681,13 @@ function apRenderLimits(d) {
     const head = { safety: `${ic('shield')} เกราะกันบัญชีโดนแบน`, money: `${ic('coins')} เพดานฝั่งเงิน` };
     for (const g of ['safety', 'money']) {
       const rows = Object.entries(spec).filter(([, s]) => s.group === g).map(([k, s]) => `
-        <div class="field" style="max-width:none;margin-bottom:10px">
-          <label>${esc(s.label)} <span class="muted">(${s.min}–${s.max}, ตั้งต้น ${s.def})</span></label>
-          <input id="apLim_${esc(k)}" type="number" min="${s.min}" max="${s.max}"
-                 step="${s.int ? 1 : 0.05}" onchange="saveAutopilot()">
-          <div class="hint" style="margin-top:4px">${esc(s.hint)}</div>
+        <div class="set-row">
+          <span class="sr-text"><span class="sr-label">${esc(s.label)}</span><span class="sr-desc">${esc(s.hint)} • ช่วง ${s.min}–${s.max} ตั้งต้น ${s.def}</span></span>
+          <span class="sr-ctrl narrow"><input id="apLim_${esc(k)}" type="number" min="${s.min}" max="${s.max}"
+                 step="${s.int ? 1 : 0.05}" onchange="saveAutopilot()"></span>
         </div>`).join('');
       document.getElementById(g === 'safety' ? 'apLimitsSafety' : 'apLimitsMoney').innerHTML =
-        `<div style="font-weight:600;margin:12px 0 8px">${head[g]}</div>${rows}`;
+        `<div class="set-subh">${head[g]}</div>${rows}`;
     }
     apLimitsBuilt = true;
   }
@@ -3359,10 +3718,15 @@ function apConfirmLoosen(sending) {
   return confirm('กำลังหย่อนเกราะกันบัญชีโดนแบน\n\n' + lines.join('\n')
     + '\n\nบัญชีจะสะสมประวัติเสียได้มากขึ้นก่อนระบบหยุดตัวเอง\nบัญชีที่โดนแบนแล้วเอาคืนไม่ได้ — แน่ใจไหม?');
 }
+let apLoaded = false;   // โหลดค่าจริงจากเซิร์ฟเวอร์มาแล้วหรือยัง — ก่อนหน้านั้นห้ามส่งทุกช่องไปบันทึก
+let apLast = {};        // ค่าที่โหลดมาล่าสุด — บันทึกส่งเฉพาะช่องที่ผู้ใช้เปลี่ยนจริง
 async function loadAutopilot() {
   if (!document.getElementById('apEnabled')) return;
   let d;
   try { d = await (await fetch('/api/autopilot')).json(); } catch { return; }
+  apLoaded = true;
+  apLast = { enabled: !!d.enabled, testMode: !!d.testMode, autoLinkPixel: d.autoLinkPixel !== false,
+    minAds: d.minAds || 0, scaleMaxBudget: d.scaleMaxBudget || 0 };
   document.getElementById('apEnabled').checked = d.enabled;
   document.getElementById('apKill').checked = d.killSwitch;
   document.getElementById('apTest').checked = d.testMode;
@@ -3385,15 +3749,20 @@ async function loadAutopilot() {
   if (d.minAds) st.push(`เติมแอดไปแล้ววันนี้ ${d.createdToday} ตัว (เพดาน ${d.maxNewPerAcct}/บัญชี)`);
   if (d.scaleMaxBudget) st.push(`ขยายงบไปแล้ววันนี้ ${d.scaledToday} แคมเปญ`);
   if (d.pausedToday) st.push(`ปิดแอดขาดทุนไปแล้ววันนี้ ${d.pausedToday} ตัว`);
+  // บัญชีที่ถูกหยุด/หยุดเติมแอด = สัญญาณระดับเสี่ยงโดนแบน → ป้ายบนสุดของหน้าตั้งค่า เห็นได้ทุกหมวด
+  const warn = [];
   if (frozen.length) {
-    st.push('<b style="color:var(--red)">บัญชีที่ถูกหยุด:</b> ' + frozen.map(([id, f]) =>
+    warn.push('<b>บัญชีที่ถูกหยุด:</b> ' + frozen.map(([id, f]) =>
       `${esc(id)} (${esc(f.reason)}) <button class="btn-light btn-sm" onclick="apUnfreeze(${jsStr(id)})">ปลดล็อก</button>`).join(' • '));
   }
   const blocked = Object.entries(d.noRotate || {});
   if (blocked.length) {
-    st.push('<b style="color:#b8860b">บัญชีที่หยุดเติมแอด (ปัญหาไม่ได้อยู่ที่ครีเอทีฟ):</b> ' + blocked.map(([id, b]) =>
-      `${esc(id)} — โดน "${esc(b.cat)}" ซ้ำ ${b.hits} ครั้ง <button class="btn-light btn-sm" onclick="apUnfreeze(${jsStr(id)})">แก้ต้นเหตุแล้ว ปลดล็อก</button>`).join(' • '));
+    warn.push('<b>บัญชีที่หยุดเติมแอด (ปัญหาไม่ได้อยู่ที่ครีเอทีฟ):</b> ' + blocked.map(([id, b]) =>
+      `${esc(id)} — ${b.action ? esc(b.cat) : `โดน "${esc(b.cat)}" ซ้ำ ${b.hits} ครั้ง`} <button class="btn-light btn-sm" onclick="apUnfreeze(${jsStr(id)})">แก้ต้นเหตุแล้ว ปลดล็อก</button>`).join(' • '));
   }
+  const alertBox = document.getElementById('apAlert');
+  alertBox.innerHTML = warn.join('<br>');
+  alertBox.hidden = !warn.length;
   document.getElementById('apStatus').innerHTML = st.join(' • ');
 
   const log = d.log || [];
@@ -3406,13 +3775,21 @@ async function loadAutopilot() {
 // ---------- ช่องรับเหตุการณ์สด ----------
 // เดิมหน้านี้อัปเดตเฉพาะตอนโหลดหรือกดปุ่ม จะรู้ว่าระบบทำอะไรก็ต่อเมื่อรีเฟรชเอง
 let apES = null;
+let apLogRefresh = null;
 function apConnectLive() {
   if (apES || !document.getElementById('apLog')) return;
   apES = new EventSource('/api/autopilot/stream');
   apES.onmessage = (e) => {
     let ev;
     try { ev = JSON.parse(e.data); } catch { return; }
-    if (ev.type === 'log') return apPushLog(ev.entry);
+    if (ev.type === 'log') {
+      apPushLog(ev.entry);
+      // ตอนหยุดฉุกเฉิน/ปิดระบบ รอบตรวจไม่ส่ง tick — การเปลี่ยนจากที่อื่น (Telegram/อีกแท็บ) มาถึงแท็บนี้ทาง log เท่านั้น
+      // ดึงสถานะใหม่ให้สวิตช์บนจอตรงของจริง (หน่วงไว้ รวบ log ที่มาเป็นชุดให้เหลือคำขอเดียว)
+      clearTimeout(apLogRefresh);
+      apLogRefresh = setTimeout(loadAutopilot, 1500);
+      return;
+    }
     if (ev.type === 'tick') {
       const tag = document.getElementById('apLive');
       if (tag) tag.textContent = ev.phase === 'start' ? '• กำลังตรวจ...' : '';
@@ -3438,11 +3815,44 @@ function apPushLog(l) {
   while (box.children.length > 60) box.lastChild.remove();
 }
 
+// หยุดฉุกเฉินส่งแค่ค่าของตัวเอง — ต้องกดได้ทันทีที่เปิดหน้า แม้ค่าอื่นยังโหลดไม่เสร็จ
+// เดิมเรียก saveAutopilot ที่ส่งทุกช่อง: กดก่อนโหลดเสร็จ = ค่าตั้งต้นในหน้าเว็บ (ปิดระบบ/minAds 0/ไม่ฝังพิกเซล)
+// ทับค่าจริง ปลดหยุดแล้วระบบยังปิดอยู่เงียบๆ
+async function apSetKill(el) {
+  const want = el.checked;
+  try {
+    const r = await fetch('/api/autopilot', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ killSwitch: want }),
+    });
+    if (!r.ok) throw new Error('เซิร์ฟเวอร์ตอบ ' + r.status);
+  } catch (e) {
+    // ส่งไม่ถึง = คืนสวิตช์ทันที — เดิมค้างสีแดง "หยุด" ทั้งที่เซิร์ฟเวอร์ยังทำงาน (toast หายใน 6 วิ เหลือแต่จอที่โกหก)
+    el.checked = !want;
+    toast(`${want ? 'กดหยุดฉุกเฉิน' : 'ปลดหยุดฉุกเฉิน'}ไม่สำเร็จ: ${e.message} — สวิตช์ยังเป็นค่าเดิม`, 'err');
+    return;
+  }
+  loadAutopilot();
+}
+// ช่องสวิตช์/ตัวเลขที่ผู้ใช้เปลี่ยนจากค่าที่โหลดมา — ช่องที่ไม่ได้แตะไม่ส่ง
+function apChanged() {
+  const now = {
+    enabled: document.getElementById('apEnabled').checked,
+    testMode: document.getElementById('apTest').checked,
+    autoLinkPixel: document.getElementById('apAutoPx').checked,
+    minAds: Number(document.getElementById('apMinAds').value) || 0,
+    scaleMaxBudget: Number(document.getElementById('apScaleMax').value) || 0,
+  };
+  return Object.fromEntries(Object.entries(now).filter(([k, v]) => v !== apLast[k]));
+}
 async function saveAutopilot(extra) {
+  // ยังไม่ได้โหลดค่าจริง = ช่องในหน้ายังเป็นค่าตั้งต้นของ HTML ส่งไปคือทับค่าจริงทั้งชุด
+  if (!apLoaded) { toast('รอโหลดค่าตั้งค่าเดิมให้เสร็จก่อนครับ'); loadAutopilot(); return; }
   // ช่องที่ว่างหรืออ่านไม่ออก = ไม่ส่งไป เพื่อไม่ให้เซิร์ฟเวอร์เขียนค่าตั้งต้นทับค่าที่เข้มกว่า
+  // และส่งเฉพาะช่องที่ต่างจากค่าที่โหลดมา — แท็บที่เปิดค้างไว้ต้องไม่เอาค่าเก่าบนจอไปทับค่าที่เปลี่ยนจากที่อื่น
   const limits = {};
   for (const el of document.querySelectorAll('[id^="apLim_"]')) {
-    if (el.value.trim() !== '') limits[el.id.slice(6)] = el.value.trim();
+    const k = el.id.slice(6);
+    if (el.value.trim() !== '' && Number(el.value) !== Number((apCur || {})[k])) limits[k] = el.value.trim();
   }
   // ช่องต่างๆ เรียกผ่าน onchange="saveAutopilot()" ซึ่งไม่ส่ง arg มา แต่กันไว้ไม่ให้ Event
   // หลุดเข้าไปกลายเป็น body ถ้าวันหน้ามีคนเผลอผูก onchange="saveAutopilot" แบบไม่มีวงเล็บ
@@ -3451,13 +3861,10 @@ async function saveAutopilot(extra) {
   try {
     const r = await fetch('/api/autopilot', {
       method: 'POST', headers: { 'content-type': 'application/json' },
+      // ไม่ส่ง killSwitch เด็ดขาด (มีปุ่มของมันเองที่ apSetKill) — เดิมส่งทุกช่องเสมอ แท็บที่เปิดค้างไว้
+      // ไปแก้ช่องไหนก็ตาม = ส่ง killSwitch=false ค่าเก่าบนจอ ปลดหยุดฉุกเฉินที่กดจาก Telegram/อีกแท็บทิ้งเงียบๆ
       body: JSON.stringify({
-        enabled: document.getElementById('apEnabled').checked,
-        killSwitch: document.getElementById('apKill').checked,
-        testMode: document.getElementById('apTest').checked,
-        autoLinkPixel: document.getElementById('apAutoPx').checked,
-        minAds: Number(document.getElementById('apMinAds').value) || 0,
-        scaleMaxBudget: Number(document.getElementById('apScaleMax').value) || 0,
+        ...apChanged(),
         ...(reset ? { resetLimits: true } : { limits }),
       }),
     });
@@ -3790,6 +4197,27 @@ function capModalCounter() {
   const n = document.getElementById('capModalMsg').value.length;
   document.getElementById('capModalCount').textContent = n ? `— ${n.toLocaleString()} ตัวอักษร` : '';
 }
+// สร้างแคปชั่นเวียดนามสั้นๆ อัตโนมัติ — เซิร์ฟเวอร์สุ่มจากคลังคำและกันซ้ำกับของเดิมให้
+async function autoCaptions(btn) {
+  // กรอบเดียวกับเซิร์ฟเวอร์ (1–100 ว่าง = 10) แล้วเขียนกลับลงช่อง — เดิมใส่ 0 หน้าเว็บส่ง 10 แต่เซิร์ฟเวอร์ให้ 1
+  const inp = document.getElementById('capAutoN');
+  const n = Number.parseInt(inp.value, 10);
+  const count = Number.isNaN(n) ? 10 : Math.min(100, Math.max(1, n));
+  inp.value = count;
+  btn.disabled = true;
+  try {
+    const d = await (await fetch('/api/captions/auto', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ count }),
+    })).json();
+    if (d.error) throw new Error(d.error);
+    capItems.unshift(...d.added);
+    renderCaptions();
+    if (d.added.length && d.added.length < count) toast(`✓ เพิ่มแคปชั่นเวียดนาม ${d.added.length} อัน (ขอ ${count} — คำผสมที่ไม่ซ้ำหมดแล้ว)`, 'ok');
+    else if (d.added.length) toast(`✓ เพิ่มแคปชั่นเวียดนาม ${d.added.length} อันแล้ว`, 'ok');
+    else toast('คำในคลังคำถูกใช้ครบแล้ว ไม่มีแคปชั่นใหม่ให้เพิ่ม', 'warn');
+  } catch (e) { toast('สร้างไม่สำเร็จ: ' + e.message, 'err'); }
+  finally { btn.disabled = false; }
+}
 async function saveCapModal(btn) {
   const message = document.getElementById('capModalMsg').value.trim();
   const headline = document.getElementById('capModalHead').value.trim();
@@ -4121,6 +4549,51 @@ function updateStats() {
   document.getElementById('barBudget').textContent = cb ? `• งบแคมเปญ ${cb.toLocaleString()} บาท/วัน/บัญชี` : '';
   const nAcc = document.querySelectorAll('#launchAccounts input:checked').length;
   document.getElementById('barAccts').textContent = nAcc ? `• ขึ้น ${nAcc} บัญชี` : '';
+  updateFxHints();
+}
+
+// ---------- งบบาท → สกุลของบัญชี (โชว์ก่อนกดขึ้นแอด) ----------
+// เรตชุดเดียวกับที่เซิร์ฟเวอร์ใช้แปลงจริง (/api/fx) — โชว์ให้เห็นก่อนว่าบัญชี USD/VND จะได้งบเท่าไหร่
+const FX_RETRY_MS = 30000;   // ดึงเรตพลาด → ขอใหม่ได้หลังจากนี้ (เดิมจำ error ไว้จนรีโหลดหน้า แหล่งเรตกลับมาแล้วหน้ายังขึ้นแดง)
+const fxStale = (c) => !(c in fxRates) || (typeof fxRates[c] !== 'number' && Date.now() - fxRates[c].at > FX_RETRY_MS);
+async function ensureFxRates() {
+  const need = [...new Set(launchAccounts.map(a => String(a.currency || '').toUpperCase()))]
+    .filter(c => c && c !== 'THB' && fxStale(c));
+  if (!need.length) return updateFxHints();
+  if (fxLoading) return;
+  fxLoading = fetch('/api/fx?cur=' + encodeURIComponent(need.join(',')))
+    .then(r => r.json())
+    .then(d => {
+      for (const c of need) {
+        const v = (d.rates || {})[c];
+        fxRates[c] = typeof v === 'number' ? v : { error: (v && v.error) || 'ไม่มีเรตของสกุลนี้', at: Date.now() };
+        if (d.minor && d.minor[c]) fxMinor[c] = d.minor[c];
+      }
+      if (d.asOf) fxAsOf = d.asOf;
+    })
+    .catch(e => need.forEach(c => { fxRates[c] = { error: e.message, at: Date.now() }; }))
+    // วนเช็คอีกรอบ: สกุลที่โผล่มาระหว่างกำลังดึง (รายชื่อบัญชีเปลี่ยนกลางทาง) ต้องได้ขอ — เดิมถูกทิ้งเงียบๆ
+    .finally(() => { fxLoading = null; ensureFxRates(); });
+}
+function updateFxHints() {
+  const budget = Number((document.getElementById('campaignBudget') || {}).value) || 0;
+  document.querySelectorAll('.fx-hint').forEach(el => {
+    const cur = el.dataset.cur;
+    const r = fxRates[cur];
+    if (r === undefined) { el.textContent = `${cur}: กำลังโหลดอัตราแลกเปลี่ยน...`; el.className = 'fx-hint'; return; }
+    if (typeof r !== 'number') {
+      el.textContent = `${cur}: ดึงอัตราแลกเปลี่ยนไม่ได้ — สร้างแคมเปญใหม่ให้บัญชีนี้ไม่ได้ชั่วคราว`;
+      el.title = r.error;
+      el.className = 'fx-hint bad';
+      return;
+    }
+    const digits = (fxMinor[cur] || 100) === 1 ? 0 : 2;
+    el.textContent = `งบ ${budget.toLocaleString()} บาท ≈ ${(budget * r).toLocaleString('en-US', { maximumFractionDigits: digits })} ${cur}/วัน`;
+    el.title = `1 บาท = ${r} ${cur} (ExchangeRate-API${fxAsOf ? ' • เรตวันที่ ' + new Date(fxAsOf).toLocaleDateString('th-TH') : ''})`;
+    el.className = 'fx-hint';
+  });
+  // เรตที่พลาดไว้นานพอแล้ว = ลองใหม่ตอนผู้ใช้ขยับช่องงบ (เรียกเฉพาะตอนมีป้ายเรตบนจอ = รายชื่อบัญชีโหลดแล้ว)
+  if ([...document.querySelectorAll('.fx-hint')].some(el => fxStale(el.dataset.cur))) ensureFxRates();
 }
 
 // ---------- interests ----------
@@ -4295,6 +4768,7 @@ async function launch() {
         accountId: t.acctId,
         pageId: t.chosenPage || t.pageId,
         beneficiaryId: t.beneficiaryId || '',
+        currency: t.currency || '',   // ตัวสำรองตอนเซิร์ฟเวอร์อ่านสกุลจาก FB สดไม่ได้ (มาจาก FB เหมือนกัน)
         beneficiaryName: ((t.beneficiaryOptions || []).find(b => b.id === t.beneficiaryId) || {}).name || '',
         campaign: { name: campaignName, objective },
         campaignId: (reuse && reuse.name === campaignName && reuse.objective === objective) ? reuse.id : undefined,
@@ -4336,6 +4810,11 @@ async function launch() {
           }
           if (ev.type === 'campaign') lastCampaignByAcct[key] = { id: ev.id, name: campaignName, objective };
           if (ev.type === 'verify') launchVerify = ev.items;
+          if (ev.type === 'info') {   // ข้อมูลที่ผู้ใช้ต้องรู้ ไม่ใช่ปัญหา เช่น งบถูกแปลงเป็นสกุลของบัญชีด้วยเรตเท่าไหร่
+            const em = cards[0].querySelector('.ad-err-msg');
+            em.innerHTML += `<div style="color:var(--muted)">ℹ ${esc(label)}: ${esc(ev.msg)}</div>`;
+            em.style.display = 'block';
+          }
           if (ev.type === 'warn') {
             const em = cards[ev.index].querySelector('.ad-err-msg');
             em.innerHTML += `<div style="color:#b7791f">⚠ ${esc(label)}: ${esc(ev.msg)}</div>`;
