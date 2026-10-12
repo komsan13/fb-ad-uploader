@@ -646,7 +646,8 @@ function apUi() {
     assert.ok(a >= 0 && b > a, `หาโค้ด "${from}" ไม่เจอ`);
     return html.slice(a, b);
   };
-  const code = cut('async function apiJson(', '// ---------- ไอคอน SVG') + cut('const AP_LEVEL = {', 'async function apRunNow(');
+  // ตัดเฉพาะ apiJson — ถัดจากมันคือตัวห่อ fetch/XHR ของหลายโปรไฟล์ (hub.js) ซึ่งต้องมี window จริง ไม่เกี่ยวกับเทสนี้
+  const code = cut('async function apiJson(', '// ---------- ผูกหน้าต่างนี้กับโปรไฟล์') + cut('const AP_LEVEL = {', 'async function apRunNow(');
   const els = {};
   // value ของ input จริงเป็น string เสมอ (โค้ดเรียก .trim()) — จำลองให้ตรง
   const el = (id) => {
