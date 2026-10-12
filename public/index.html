@@ -1306,7 +1306,7 @@
             <details class="set-more">
               <summary><span><span class="sr-label">วิธีทำงานของระบบ</span><span class="sr-desc">อ่านครั้งแรกครั้งเดียวพอ</span></span></summary>
               <div class="hint" style="margin:10px 0 8px">
-                <b>เติมแอด:</b> ใส่ <b>0</b> = ไม่เติมให้ • ถ้าใส่เลข มันจะหยิบวิดีโอ+แคปชั่นจากคลังขึ้นแอดเองจนครบ <b>เปิดยิงทันที</b> โดยใช้ค่าตั้งต้นในหน้าขึ้นแอด (งบ/ลิงก์/วัตถุประสงค์/กลุ่มเป้าหมาย) — งบอยู่ระดับแคมเปญ (CBO) เพิ่มแอดกี่ตัวก็ไม่ใช้จ่ายเกินงบที่ตั้งไว้
+                <b>เติมแอด:</b> ใส่ <b>0</b> = ไม่เติมให้ • ถ้าใส่เลข มันจะหยิบวิดีโอ+แคปชั่นจากคลังขึ้นแอดเองจนครบ <b>เปิดยิงทันที</b> โดยใช้ค่าตั้งต้นในหน้าขึ้นแอด (งบ/ลิงก์/วัตถุประสงค์/กลุ่มเป้าหมาย) — <b>1 แอด = 1 แคมเปญงบของตัวเอง</b> งบต่อวันต่อบัญชี = จำนวนแอดนี้ × งบ/วัน ต่อแอด
               </div>
               <div class="hint" style="margin-bottom:8px">
                 <b>ขยายงบ:</b> ใส่ <b>0</b> = ไม่ขยาย • ถ้าใส่เลข แคมเปญที่ต้นทุน/ผลลัพธ์ถูกกว่าเพดานที่ตั้งไว้ 30%+ (และมีผลลัพธ์อย่างน้อย 3 ครั้ง) จะถูกเพิ่มงบ <b>+20% วันละครั้ง</b> จนถึงเลขนี้แล้วหยุด — เพิ่มทีละน้อยเพราะขยับแรงกว่านี้ FB รีเซ็ต learning phase แล้วผลตก
@@ -4151,7 +4151,7 @@ async function handToAi(btn) {
       : 'ใส่ "ลิงก์ปลายทาง" (ขั้นตอนที่ 2) ก่อนครับ — AI ใช้ลิงก์นี้กับทุกแอดที่ขึ้นให้');
   }
   const budget = Number(document.getElementById('campaignBudget').value) || 0;
-  if (budget <= 0) return toast('ใส่ "งบแคมเปญ/วัน" (ขั้นตอนที่ 1) ก่อนครับ');
+  if (budget <= 0) return toast('ใส่ "งบ/วัน ต่อแอด" (ขั้นตอนที่ 1) ก่อนครับ');
   const perAccount = Number(document.getElementById('planPerAccount').value) || 3;
 
   const ready = readyAccounts();
@@ -4217,7 +4217,7 @@ async function autoLaunch(btn) {
       : 'ใส่ "ลิงก์" ในค่าเริ่มต้น (ขั้นตอนที่ 2) ก่อนครับ — ทุกแอดใช้ลิงก์นี้');
   }
   const budget = Number(document.getElementById('campaignBudget').value) || 0;
-  if (budget <= 0) return toast('ใส่ "งบแคมเปญ/วัน" (ขั้นตอนที่ 1) ก่อนครับ');
+  if (budget <= 0) return toast('ใส่ "งบ/วัน ต่อแอด" (ขั้นตอนที่ 1) ก่อนครับ');
 
   const nameEl = document.getElementById('campaignName');
   if (!nameEl.value.trim()) {
@@ -4663,7 +4663,9 @@ function updateStats() {
   const cb = Number((document.getElementById('campaignBudget') || {}).value) || 0;
   const nAcc = document.querySelectorAll('#launchAccounts input:checked').length;
   // แอดละแคมเปญ: งบรวมต่อวัน = งบต่อแอด × จำนวนแอด × จำนวนบัญชี — ต้องเห็นยอดรวมก่อนกด
-  const nRun = cards.length * nAcc;
+  // การ์ดจากตัวจัดแผนล็อกไว้กับบัญชีเดียว (onlyAcct) — นับเฉพาะบัญชีนั้นถ้าถูกติ๊กอยู่ ไม่ใช่คูณทุกบัญชี
+  const picked = new Set([...document.querySelectorAll('#launchAccounts input:checked')].map(i => i.value));
+  const nRun = [...cards].reduce((n, c) => n + (c.dataset.onlyAcct ? (picked.has(c.dataset.onlyAcct) ? 1 : 0) : nAcc), 0);
   document.getElementById('barBudget').textContent = cb
     ? `• งบแอดละ ${cb.toLocaleString()} บาท/วัน${nRun ? ` → รวม ${(cb * nRun).toLocaleString()} บาท/วัน` : ''}` : '';
   document.getElementById('barAccts').textContent = nAcc ? `• ขึ้น ${nAcc} บัญชี` : '';

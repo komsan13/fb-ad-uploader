@@ -358,6 +358,8 @@ describe('ค่าเงิน (P2-10)', () => {
     const world = freshWorld({
       accounts: [acctIn('USD')],
       campaigns: [{ id: 'C_EXIST', acct: ACCT, name: 'Autopilot 2026-10-01', status: 'ACTIVE', objective: 'OUTCOME_SALES', daily_budget: '10000' }],
+      // งบที่นับ = แคมเปญที่ยังมีแอดยิงอยู่เท่านั้น — ต้องมีแอดยิงอยู่ในแคมเปญนี้ (minAds 2 ยังขาดอีกตัว จึงถึงด่านเช็คงบ)
+      ads: [{ id: 'A1', acct: ACCT, name: 'ยิงอยู่', effective_status: 'ACTIVE', adset_id: 'S1', campaign_id: 'C_EXIST' }],
       insights: [{ acct: ACCT, spend: '99' }],
     });
     const { base, dir } = await boot(t, { world });
@@ -1654,5 +1656,90 @@ describe('error ที่ต้องให้คนไปจัดการก�
     const before = world.calls.length;
     await post(base, '/api/autopilot/run');
     assert.ok(!world.calls.slice(before).some((c) => c.method === 'POST' && c.path === `act_${ACCT}/adsets`), 'ต้องไม่ลองซ้ำ');
+  });
+});
+
+describe('แอดละแคมเปญ: งบที่ยิงได้จริงต้องไม่เกิน minAds × งบต่อแอด (รีวิว 12 ต.ค. 2026)', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { makeFakeAi } = require('./fake-tg');
+  const campPosts = (world) => world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/campaigns`);
+  const putState = (dir, st) => fs.writeFileSync(path.join(dir, 'autopilot-state.json'), JSON.stringify(st));
+
+  test('แก้ข้อความแอดโดนปฏิเสธแล้วขึ้นใหม่ในรอบเดียวกัน ต้องนับแอดตัวใหม่ — ห้ามเติมแคมเปญงบเต็มซ้อนอีกตัว', async (t) => {
+    const ai = await makeFakeAi({ fixable: true, where: 'text', violation: 'ข้อความเกินจริง', newMessage: 'ข้อความใหม่ที่แก้แล้วถูกนโยบายแน่นอน', newHeadline: 'หัวข้อใหม่' });
+    t.after(() => ai.server.close());
+    const world = freshWorld({
+      campaigns: [{ id: 'C1', acct: ACCT, name: 'Autopilot • คลิป', status: 'ACTIVE', daily_budget: '333300', objective: 'OUTCOME_SALES' }],
+      ads: [{
+        id: 'A1', acct: ACCT, name: 'แอด A1', effective_status: 'DISAPPROVED', adset_id: 'S1', campaign_id: 'C1', issues_info: [],
+        ad_review_feedback: { global: { 'ข้อความ': 'เกินจริง' } },
+        creative: { id: 'cr1', object_story_spec: { page_id: 'page1', video_data: { video_id: 'vid', message: 'ข้อความเดิม', title: 'หัวข้อ' } } },
+      }],
+    });
+    const config = baseConfig({ anthropicKey: 'sk-test', autopilot: { enabled: true, minAds: 1 } });
+    const { base, dir } = await boot(t, { world, config, env: { ANTHROPIC_BASE_URL: `http://127.0.0.1:${ai.port}` } });
+    putState(dir, { owned: ['C1'], baselined: { [ACCT]: Date.now() } });
+    await post(base, '/api/autopilot/run');
+    assert.ok(world.calls.some((c) => c.method === 'POST' && c.path === `act_${ACCT}/ads`), 'ต้องขึ้นแอดที่แก้แล้วใหม่');
+    assert.strictEqual(campPosts(world).length, 0, 'แอดที่เพิ่งขึ้นใหม่นับเป็นยิงอยู่แล้ว ไม่ต้องเติมแคมเปญ (+3,333/วัน)');
+  });
+
+  test('ปิดแอดขาดทุน = ปิดแคมเปญของมันด้วย และวันนี้ใช้เกินงบของแอดที่ยังยิงแล้ว ต้องไม่เติมแคมเปญใหม่', async (t) => {
+    const world = freshWorld({
+      campaigns: [
+        { id: 'C1', acct: ACCT, name: 'Autopilot • A1', status: 'ACTIVE', daily_budget: '333300', objective: 'OUTCOME_SALES' },
+        { id: 'C2', acct: ACCT, name: 'Autopilot • A2', status: 'ACTIVE', daily_budget: '333300', objective: 'OUTCOME_SALES' },
+      ],
+      ads: [
+        { id: 'A1', acct: ACCT, name: 'A1', effective_status: 'ACTIVE', adset_id: 'S1', campaign_id: 'C1' },
+        { id: 'A2', acct: ACCT, name: 'A2', effective_status: 'ACTIVE', adset_id: 'S2', campaign_id: 'C2' },
+      ],
+      // แถวแรก = ยอดทั้งบัญชีวันนี้ • A1 ใช้ 3,000 ไม่มีผลลัพธ์ = ตัวขาดทุน
+      insights: [{ acct: ACCT, spend: '6000' }, { acct: ACCT, ad_id: 'A1', campaign_id: 'C1', spend: '3000', actions: [] }],
+    });
+    const config = baseConfig({ launchDefaults: { ...baseConfig().launchDefaults, ruleOn: true } });
+    const { base, dir } = await boot(t, { world, config });
+    putState(dir, { owned: ['C1', 'C2'], baselined: { [ACCT]: Date.now() } });
+    await post(base, '/api/autopilot/run');
+    assert.strictEqual(world.ads.find((x) => x.id === 'A1').effective_status, 'PAUSED');
+    assert.strictEqual(world.campaigns.find((x) => x.id === 'C1').status, 'PAUSED', 'แคมเปญงบเต็มของแอดที่ถูกปิดต้องไม่ค้างเปิด');
+    assert.strictEqual(world.campaigns.find((x) => x.id === 'C2').status, 'ACTIVE', 'แคมเปญของแอดที่ยังดีต้องไม่โดนแตะ');
+    assert.strictEqual(campPosts(world).length, 0, 'ใช้ไป 6,000 เกินงบของแอดที่ยังยิง (3,333) แล้ว — รอพรุ่งนี้');
+  });
+
+  test('แคมเปญที่ไม่มีแอดยิงแล้ว (ปิด/โดนปฏิเสธ) ต้องไม่ถูกนับเป็นงบ — ไม่งั้นเช็ค "งบวันนี้เต็ม" ไม่มีวันทำงาน', async (t) => {
+    const dead = ['D1', 'D2', 'D3'].map((id) => ({ id, acct: ACCT, name: 'Autopilot • ' + id, status: 'ACTIVE', daily_budget: '333300', objective: 'OUTCOME_SALES' }));
+    const world = freshWorld({
+      campaigns: [{ id: 'C2', acct: ACCT, name: 'Autopilot • A2', status: 'ACTIVE', daily_budget: '333300', objective: 'OUTCOME_SALES' }, ...dead],
+      ads: [
+        { id: 'A2', acct: ACCT, name: 'A2', effective_status: 'ACTIVE', adset_id: 'S2', campaign_id: 'C2' },
+        { id: 'X1', acct: ACCT, name: 'X1', effective_status: 'PAUSED', adset_id: 'SD1', campaign_id: 'D1' },
+      ],
+      insights: [{ acct: ACCT, spend: '6600' }],
+    });
+    const { base, dir } = await boot(t, { world });
+    putState(dir, { owned: ['C2', 'D1', 'D2', 'D3'], baselined: { [ACCT]: Date.now() } });
+    await post(base, '/api/autopilot/run');
+    assert.strictEqual(campPosts(world).length, 0, 'ใช้ไป 6,600 เกินงบแคมเปญที่ยังมีแอดยิง (3,333) — ต้องหยุดเติม');
+  });
+
+  test('สร้างแอดไม่สำเร็จแล้วลบแคมเปญไม่ได้ ต้องเก็บไว้ในรายการของระบบ (ถ้า FB สร้างแอดได้จริงแต่คำตอบหลุด ยังมีคนดูแล)', async (t) => {
+    const world = freshWorld();
+    world.route = (m, p, params) => {
+      if (m === 'POST' && p === `act_${ACCT}/ads`) return { error: 'จำลองสายหลุด' };
+      if (m === 'POST' && params.status === 'DELETED') return { error: 'ลบไม่ได้ชั่วคราว' };
+      return null;
+    };
+    const { base, dir } = await boot(t, { world, config: baseConfig({ autopilot: { enabled: true, minAds: 1 } }) });
+    await post(base, '/api/autopilot/run');
+    assert.ok((readState(dir).owned || []).includes(world.campaigns[0].id));
+  });
+
+  test('โหมดทดสอบ: แคมเปญต้องปิดไว้ด้วย ไม่ใช่แค่แอด', async (t) => {
+    const { base, world } = await boot(t, { config: baseConfig({ autopilot: { enabled: true, minAds: 1, testMode: true } }) });
+    await post(base, '/api/autopilot/run');
+    const [c] = campPosts(world);
+    assert.strictEqual(c.params.status, 'PAUSED');
   });
 });

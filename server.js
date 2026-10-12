@@ -2284,7 +2284,7 @@ const AP_LIMIT_SPEC = {
   maxNewAdsPerDay: {
     def: 6, min: 1, max: 100, int: true, group: 'money',
     label: 'เติมแอดใหม่ได้วันละ (ตัว/บัญชี)',
-    hint: 'กันระบบไล่สร้างรัวเพราะอ่านสถานะผิด — งบเป็น CBO ระดับแคมเปญ เพิ่มแอดไม่ทำให้ใช้เงินเกิน ความเสี่ยงจริงคือแอดหมุนถี่จนบัญชีเข้าตา FB ตั้งสูงต้องมีคลังวิดีโอ/แคปชั่นใหญ่พอไม่ให้วนซ้ำ',
+    hint: 'กันระบบไล่สร้างรัวเพราะอ่านสถานะผิด — แอดละแคมเปญ: แอดใหม่ทุกตัวคืองบอีกก้อน (งบ/วัน ต่อแอด) แอดที่ตายแล้วเติมแทนในวันเดียวกัน = วันนั้นใช้เงินเกินงบปกติได้ ตั้งสูงยังเสี่ยงแอดหมุนถี่จนบัญชีเข้าตา FB และต้องมีคลังวิดีโอ/แคปชั่นใหญ่พอ',
   },
   maxPausePerDay: {
     def: 10, min: 1, max: 50, int: true, group: 'money',
@@ -2819,20 +2819,19 @@ async function apRelaunchNewVideo(acct, token, origCreative, adsetId, adName, me
 // สถานะที่ถือว่า "มีอยู่แล้ว ไม่ต้องเติมเพิ่ม" — รวมตัวที่ FB ยังรีวิวไม่เสร็จด้วย
 const AP_COUNTS_AS_LIVE = new Set(['ACTIVE', 'PENDING_REVIEW', 'IN_PROCESS']);
 
-// หาแคมเปญของ autopilot ในบัญชีนี้ — สร้างใหม่ต่อเมื่อมั่นใจว่าไม่มีของเดิมเหลืออยู่จริง
-// งบอยู่ที่ระดับแคมเปญ (CBO) → เพิ่มแอดกี่ตัวก็ไม่ทำให้ใช้จ่ายเกินงบก้อนนี้
-// ทุกแคมเปญที่สร้างเกินมาคือค่าโฆษณาอีกก้อนต่อวัน ที่ไม่มีใครไปเก็บกวาดให้
+// ชื่อแคมเปญที่ระบบสร้าง (สิทธิ์จริงอยู่ที่ s.owned ไม่ใช่ชื่อ)
 const AP_CAMPAIGN_PREFIX = 'Autopilot ';
 
 // 1 แอด = 1 แคมเปญ (ผู้ใช้สั่ง 12 ต.ค. 2026) — เดิมทุกแอดของบัญชีอยู่ในแคมเปญเดียวงบ CBO ก้อนเดียว
 // FB เทงบไปที่แอดตัวเดียว (วัดจริงวันแรก: rosegold 802 บาท vs columbia 73 บาท) แอดที่เหลือไม่เคยถูกทดสอบจริง
 // แยกแคมเปญ = แต่ละแอดได้งบ campaignBudget เต็มของตัวเอง → งบจริงต่อบัญชี = แอดที่ยิงอยู่ (minAds) × campaignBudget
 // เข้า s.owned ทุกตัว — ตัวขยายงบ/ตัวปิดแอดขาดทุนทำงานรายแคมเปญ = รายแอดไปโดยปริยาย
-async function apNewCampaign(acct, token, s, d, money, item) {
+// testMode = แคมเปญปิดไว้ด้วย (เดิมเปิดพร้อมงบ แอดข้างในปิด — มีคนไปเปิดแอด [ทดสอบ] เองเมื่อไหร่เงินเดินทันที)
+async function apNewCampaign(acct, token, s, d, money, item, testMode) {
   const params = {
     name: `${AP_CAMPAIGN_PREFIX}${new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10)} • ${item.name}`.slice(0, 250),
     objective: d.objective || 'OUTCOME_SALES',
-    status: 'ACTIVE',
+    status: testMode ? 'PAUSED' : 'ACTIVE',
     special_ad_categories: [],
   };
   const budget = Number(d.campaignBudget) || 0;
@@ -2944,7 +2943,9 @@ async function apFillAdset(acct, token, adset, d, item, pageId, testMode) {
 // เติมแอดตอนงบเต็มแล้ว = เผาครีเอทีฟทิ้งฟรี เพราะแอดใหม่ไม่ได้ยิงอยู่ดี
 const apToday = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10); // วันตามเวลาไทย
 
-async function apSpendRoom(acct, token, cf) {
+// liveCamps = แคมเปญที่ยังมีแอดยิงอยู่ — แอดละแคมเปญทำให้มีแคมเปญเปิดค้างที่ไม่มีแอดยิงแล้ว (แอดตาย/ถูกปิด/รุ่นเก่า)
+// ถ้านับงบของพวกนั้นด้วย ตัวหารบวมจน "งบวันนี้เต็ม" ไม่มีวันเป็นจริง (รีวิววัด: ใช้ไป 99% ยังเติมต่อ)
+async function apSpendRoom(acct, token, cf, liveCamps) {
   const out = { full: false, capped: false, spent: 0, budget: 0 };
   // 1) วงเงินสะสมของบัญชี (spend_cap) — เต็มแล้วบัญชีหยุดยิงถาวรจนกว่าจะขยายเอง
   try {
@@ -2956,8 +2957,8 @@ async function apSpendRoom(acct, token, cf) {
 
   // 2) งบรายวัน: ใช้จ่ายวันนี้ เทียบงบรวมของแคมเปญที่ยิงอยู่
   try {
-    const camps = await fbAll(`${acct}/campaigns`, { fields: 'status,daily_budget', limit: 200 }, token);
-    out.budget = camps.filter((c) => c.status === 'ACTIVE' && c.daily_budget)
+    const camps = await fbAll(`${acct}/campaigns`, { fields: 'id,status,daily_budget', limit: 200 }, token);
+    out.budget = camps.filter((c) => c.status === 'ACTIVE' && c.daily_budget && (!liveCamps || liveCamps.has(c.id)))
       .reduce((n, c) => n + Number(c.daily_budget) / cf, 0);
     const ins = await fbAll(`${acct}/insights`, { fields: 'spend', date_preset: 'today', limit: 1 }, token);
     out.spent = Number((ins[0] || {}).spend) || 0;
@@ -3077,7 +3078,8 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz, ta
   s.warned['setup:' + acctId] = '';
 
   // งบวันนี้เต็มแล้วหรือยัง — เต็มแล้วไม่ต้องเติม รอวันถัดไปเอง (สถิติรีเซ็ตเองตอนข้ามวัน)
-  const spendRoom = await apSpendRoom(acct, prof.accessToken, cf);
+  const spendRoom = await apSpendRoom(acct, prof.accessToken, cf,
+    new Set(ads.filter((x) => AP_COUNTS_AS_LIVE.has(x.effective_status) && x.campaign_id).map((x) => x.campaign_id)));
   const capKey = 'spend:' + acctId;
   if (spendRoom.capped) {
     if (s.warned[capKey] !== 'capped') {
@@ -3203,7 +3205,7 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz, ta
     const pageId = pagePool[(s.pageCursor[prof.id] = (s.pageCursor[prof.id] || 0) + 1) % pagePool.length];
     let campaignId = null;
     try {
-      campaignId = await apNewCampaign(acct, prof.accessToken, s, d, money, item);
+      campaignId = await apNewCampaign(acct, prof.accessToken, s, d, money, item, testMode);
       const adId = await apCreateOneAd(acct, prof.accessToken, campaignId, pageId, pixelId, d, objInfo, item, testMode,
         beneficiaryId);
       // จดว่าแอดตัวนี้ใช้คลิป+แคปชั่นไหน ไว้ให้รอบตรวจให้คะแนนย้อนกลับเมื่อรู้ผลรีวิว
@@ -3217,8 +3219,10 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz, ta
     } catch (e) {
       // แคมเปญที่เพิ่งสร้างแต่แอดไม่สำเร็จ = แคมเปญเปล่าที่มีงบค้างอยู่ในบัญชี — ลบทิ้ง (ของเราเองเมื่อครู่ ยังไม่มีแอด)
       if (campaignId) {
-        try { await fb(campaignId, { status: 'DELETED' }, 'POST', prof.accessToken); } catch { /* ลบไม่ได้ก็ไม่มีแอดให้ใช้เงินอยู่ดี */ }
-        s.owned = (s.owned || []).filter((id) => id !== campaignId);
+        try {
+          await fb(campaignId, { status: 'DELETED' }, 'POST', prof.accessToken);
+          s.owned = (s.owned || []).filter((id) => id !== campaignId);
+        } catch { /* ลบไม่ได้ = เก็บไว้ใน owned — ถ้า FB สร้างแอดได้จริงแต่คำตอบหลุด ตัวปิดแอดขาดทุน/ขยายงบยังดูแลมันได้ */ }
       }
       const need = FB_NEEDS_HUMAN[e.fbSubcode];
       if (need) {
@@ -3244,10 +3248,10 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz, ta
 }
 
 // ---------- หยุดแอดที่ขาดทุน ----------
-// หยุดที่ระดับ "แอด" ไม่ใช่ "แคมเปญ" โดยตั้งใจ:
-// แคมเปญคือกล่องงบ (CBO) ที่ระบบดูแล ถ้าไปปิดแคมเปญ กฎ "ไม่มีแคมเปญ ACTIVE → สร้างใหม่"
-// จะสร้างขึ้นมาแทนในรอบถัดไปทันที กลายเป็นวนลูปปิด-สร้างที่เผาเงินไม่หยุด
-// ปิดแอดที่ไม่เวิร์กแล้วให้ apRefill เติมครีเอทีฟใหม่เข้าไปแทน คือวงจรที่ปิดได้จริง
+// ปิดที่ระดับแอด แล้วปิดแคมเปญของมันด้วยถ้าในแคมเปญนั้นไม่เหลือแอดยิงอยู่ (แอดละแคมเปญ = แคมเปญของตัวนั้นเอง)
+// เดิมห้ามปิดแคมเปญเพราะยังมีกฎ "ไม่มีแคมเปญ ACTIVE → สร้างใหม่" (วนปิด-สร้าง) — กฎนั้นไม่มีแล้วตั้งแต่ 12 ต.ค. 2026
+// ไม่ปิดแคมเปญ = แคมเปญงบเต็มค้างเปิด ไปถ่วงตัวเช็ค "งบวันนี้เต็ม" ให้ไม่ทำงาน (รีวิวพิสูจน์แล้ว)
+// แคมเปญ CBO รุ่นเก่าที่ยังมีแอดอื่นยิงอยู่ = ปิดแค่แอด ไม่ไปดับแอดดีตัวอื่น
 async function apPauseLosers(cfg, prof, a, ads, s, alerts) {
   if ((cfg.autopilot || {}).testMode) return;   // โหมดทดสอบห้ามแตะของจริงที่ยิงอยู่
   const d = cfg.launchDefaults || {};
@@ -3318,6 +3322,11 @@ async function apPauseLosers(cfg, prof, a, ads, s, alerts) {
       // ไม่อัปเดต = มันจะยังนับแอดที่เพิ่งปิดว่ายังยิงอยู่ แล้วไม่เติมของใหม่จนกว่าจะถึงรอบหน้า
       ad.effective_status = 'PAUSED';
       done++;
+      const othersLive = ads.some((x) => x.id !== ad.id && x.campaign_id === r.campaign_id && AP_COUNTS_AS_LIVE.has(x.effective_status));
+      if (!othersLive) {
+        try { await fb(r.campaign_id, { status: 'PAUSED' }, 'POST', token); }
+        catch (e) { apLog(s, 'warn', `${a.name}: ปิดแอดแล้วแต่ปิดแคมเปญของมันไม่สำเร็จ (${e.message}) — ไม่มีแอดยิงอยู่จึงไม่ใช้เงิน`, acctId); }
+      }
       const m = `🛑 ${a.name}: ปิดแอด "${ad.name}" — ${why}`;
       alerts.push(m); apLog(s, 'pause', m, acctId);
     } catch (e) {
@@ -3538,7 +3547,7 @@ async function autopilotTick(mode = 'full') {
       let ads = [];
       try {
         ads = await fbAll(`${acct}/ads`, {
-          fields: 'id,name,effective_status,adset_id,issues_info,ad_review_feedback,creative{id,object_story_spec}',
+          fields: 'id,name,effective_status,adset_id,campaign_id,issues_info,ad_review_feedback,creative{id,object_story_spec}',
           limit: 200,
         }, prof.accessToken);
       } catch { continue; }
@@ -3707,6 +3716,9 @@ async function autopilotTick(mode = 'full') {
           }
           try {
             const newId = await apRelaunchNewVideo(acct, prof.accessToken, ad.creative, ad.adset_id, ad.name, alt.id);
+            // นับแอดตัวใหม่ในรอบนี้เลย — รายการแอดดึงมาตั้งแต่ต้นรอบ ไม่นับ = apRefill เห็นว่าขาด
+            // แล้วสร้างแคมเปญงบเต็มเพิ่มอีกตัว (แอดละแคมเปญ: +campaignBudget/วัน ค้างถาวร — รีวิวพิสูจน์แล้ว)
+            ads.push({ id: newId, name: ad.name, effective_status: 'PENDING_REVIEW', adset_id: ad.adset_id, campaign_id: ad.campaign_id });
             apMark(s.handled, ad.id, 'video-swapped');
             apMark(s.retryOf, newId, ad.id);
             apMark(s.relaunch, newId, relaunched + 1);
@@ -3749,6 +3761,7 @@ async function autopilotTick(mode = 'full') {
 
         try {
           const newId = await apResubmit(acct, prof.accessToken, ad.creative, ad.adset_id, ad.name, nm, nh || undefined);
+          ads.push({ id: newId, name: ad.name, effective_status: 'PENDING_REVIEW', adset_id: ad.adset_id, campaign_id: ad.campaign_id });   // นับในรอบนี้ (ดูข้างบน)
           apMark(s.handled, ad.id, 'fixed');
           apMark(s.retryOf, newId, ad.id);
           apMark(s.relaunch, newId, relaunched + 1);
