@@ -797,7 +797,7 @@
       <div class="card">
         <div class="card-head-row">
           <div class="pc-step"><span class="pc-step-num">3</span> รายการแอด <span class="h-desc" id="adCount"></span></div>
-          <button class="btn-primary btn-sm" style="margin-left:auto" onclick="autoLaunch(this)" title="หยิบวิดีโอ+แคปชั่นจากคลัง สร้างแคมเปญ แล้วขึ้นแอดทุกบัญชีที่ใช้ได้ เปิดยิงทันที"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg> ขึ้นอัตโนมัติทั้งหมด</button>
+          <button id="autoLaunchBtn" class="btn-primary btn-sm" style="margin-left:auto" onclick="autoLaunch(this)" title="หยิบวิดีโอ+แคปชั่นจากคลัง สร้างแคมเปญ แล้วขึ้นแอดทุกบัญชีที่ใช้ได้ เปิดยิงทันที"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg> ขึ้นอัตโนมัติทั้งหมด</button>
           <button class="btn-light btn-sm" onclick="handToAi(this)" title="บันทึกค่าที่ตั้งไว้ทั้งหมด แล้วให้ AI ขึ้นแอดต่อเองอัตโนมัติ"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg> จำค่านี้ แล้วให้ AI ขึ้นต่อ</button>
           <button class="btn-light btn-sm" onclick="openLibPick(null)"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1-.3 2.1.3 2.4 1.3Z"/><path d="m6.2 5.3 3.1 3.9"/><path d="m12.4 3.4 3.1 4"/><path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg> เลือกเอง</button>
         </div>
@@ -1535,7 +1535,7 @@ let adRowSeq = 0;
 let profiles = [];            // [{id, label, adAccountId, pageId, hasToken}]
 let activeProfileId = null;
 const accountCache = {};      // pid -> {name, adAccounts, pages}
-const cardResults = new Map();      // cardId -> {ok:Set<pid>, fail:Map<pid,error>}
+const cardResults = new Map();      // cardId -> {ok:Set<key>, fail/unk/check:Map<key,msg>} — key = "pid:acctId"
 const fxRates = {};   // สกุล -> เรต (1 บาท = x) หรือ { error, at } — ใช้โชว์งบที่แปลงแล้วในหน้าขึ้นแอด
 const fxMinor = {};   // สกุล -> หน่วยย่อยต่อหน่วยหลัก (1 = ไม่มีทศนิยม) จากเซิร์ฟเวอร์ — ชุดเดียวกับที่ส่ง FB จริง
 let fxAsOf = null;    // เวลาที่ผู้ให้บริการอัปเดตเรตชุดที่ใช้
@@ -3418,18 +3418,27 @@ function saveLaunchDefaultsSoon() {
   ldTimer = setTimeout(async () => {
     const tag = document.getElementById('ldSaved');
     try {
-      await fetch('/api/launch-defaults', {
+      // เช็คคำตอบด้วย — เดิมขึ้น "✓ จำค่าไว้แล้ว" แม้เซิร์ฟเวอร์ตอบ 401/502/{error}
+      await apiJson('/api/launch-defaults', {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify(collectLaunchDefaults()),
       });
       if (tag) { tag.textContent = '✓ จำค่าไว้แล้ว'; setTimeout(() => { tag.textContent = ''; }, 2000); }
-    } catch { if (tag) tag.textContent = '⚠ จำค่าไม่สำเร็จ'; }
+    } catch (e) { if (tag) tag.textContent = '⚠ จำค่าไม่สำเร็จ: ' + e.message; }
   }, 800);
 }
 async function loadLaunchDefaults() {
-  try { applyLaunchDefaults(await (await fetch('/api/launch-defaults')).json()); }
-  catch { /* โหลดไม่ได้ก็ใช้ค่าเริ่มต้นในหน้า */ }
-  ldLoaded = true;
+  // เปิดให้บันทึกได้เฉพาะเมื่อโหลดค่าเดิมสำเร็จจริง — เดิมตั้ง ldLoaded=true แม้โหลดพัง (401/502/HTML/{error})
+  // แล้วแก้ช่องไหนทีหลังก็ POST ค่าตั้งต้นใน HTML ทับของจริงทั้งก้อน: งบ 3,333 → 300, กฎหยุดอัตโนมัติ เปิด → ปิด
+  // (autopilot เลิกปิดแอดขาดทุนเมื่อกฎปิด), ลิงก์ → ว่าง • โหลดพังรอบนี้แต่เคยโหลดสำเร็จแล้ว = ค่าในหน้ายังเป็นของจริง บันทึกต่อได้
+  const tag = document.getElementById('ldSaved');
+  try {
+    applyLaunchDefaults(await apiJson('/api/launch-defaults'));
+    ldLoaded = true;
+    if (tag && tag.textContent.startsWith('⚠ โหลด')) tag.textContent = '';
+  } catch (e) {
+    if (tag && !ldLoaded) tag.textContent = `⚠ โหลดค่าที่จำไว้ไม่สำเร็จ (${e.message}) — ยังไม่บันทึกค่าที่แก้ ปิดแล้วเปิดหน้านี้ใหม่`;
+  }
   // ผูก listener หลังโหลดเสร็จ กันการ apply ไปกระตุ้น save ย้อนกลับ
   // ผูกครั้งเดียวพอ — openUploadModal เรียกซ้ำได้ ไม่งั้น listener ซ้อนกันทุกครั้งที่เปิด
   if (ldBound) return;
@@ -4119,7 +4128,11 @@ async function runAutoPlan(btn, opts = {}) {
   const perAccount = Number(document.getElementById('planPerAccount').value) || 3;
 
   const existing = document.querySelectorAll('.ad-card').length;
-  if (existing && !opts.replaceOk && !confirm(`มีการ์ดอยู่แล้ว ${existing} ใบ — จัดแผนใหม่จะลบทิ้งทั้งหมด ไปต่อไหม?`)) return null;
+  // การ์ดที่ไม่รู้ผล/ต้องเช็คใน Ads Manager ถือกุญแจกันขึ้นซ้ำอยู่ — ลบทิ้งแล้วการ์ดใหม่ได้กุญแจใหม่ กันซ้ำไม่ได้อีก
+  const pending = [...document.querySelectorAll('.ad-card')].filter(c => { const r = cardResults.get(c.dataset.id); return r && (r.unk.size || r.check.size); }).length;
+  if (pending && !confirm(`มีการ์ด ${pending} ใบที่ยังไม่รู้ผล/ต้องเช็คใน Ads Manager (สายหลุดตอนกำลังขึ้น — แอดพวกนั้นอาจขึ้นไปแล้ว)\n\n`
+    + 'จัดแผนใหม่จะลบการ์ดพวกนี้ทิ้ง แล้วระบบจะกันขึ้นซ้ำให้ไม่ได้อีก — แนะนำให้เช็คใน Ads Manager ก่อน\n\nยังจะจัดแผนใหม่ไหม?')) return null;
+  if (existing && !pending && !opts.replaceOk && !confirm(`มีการ์ดอยู่แล้ว ${existing} ใบ — จัดแผนใหม่จะลบทิ้งทั้งหมด ไปต่อไหม?`)) return null;
 
   const oldText = btn.textContent;
   btn.disabled = true;
@@ -4138,7 +4151,7 @@ async function runAutoPlan(btn, opts = {}) {
     btn.disabled = false; btn.textContent = oldText;
   }
 
-  document.querySelectorAll('.ad-card').forEach(c => { cardResults.delete(c.dataset.id); c.remove(); });
+  document.querySelectorAll('.ad-card').forEach(c => { abortCardUpload(c); cardResults.delete(c.dataset.id); c.remove(); });
   const link = document.getElementById('tpl-link').value.trim();
   for (const acct of d.plan) {
     for (const item of acct.ads) {
@@ -4225,6 +4238,7 @@ async function handToAi(btn) {
 
 // ปุ่มเดียวจบ: จัดแผน → ยืนยัน → ขึ้นจริง (เปิดยิงทันที)
 async function autoLaunch(btn) {
+  if (launchBusy) return toast(LAUNCH_BUSY_MSG);
   const link = document.getElementById('tpl-link').value.trim();
   if (!/^https?:\/\//.test(link)) {
     return toast(link
@@ -4233,6 +4247,7 @@ async function autoLaunch(btn) {
   }
   const budget = Number(document.getElementById('campaignBudget').value) || 0;
   if (budget <= 0) return toast('ใส่ "งบ/วัน ต่อแอด" (ขั้นตอนที่ 1) ก่อนครับ');
+  if (ruleMissingCpr()) return toast(RULE_NO_CPR_MSG);
 
   const nameEl = document.getElementById('campaignName');
   if (!nameEl.value.trim()) {
@@ -4240,8 +4255,23 @@ async function autoLaunch(btn) {
     nameEl.value = `ขึ้นอัตโนมัติ ${d.getDate()}/${d.getMonth() + 1} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   }
 
+  // ถือล็อกตั้งแต่จัดแผนจนขึ้นเสร็จ — ระหว่างนี้กดปุ่ม "ขึ้นแอดทั้งหมด" ซ้อนเข้ามาไม่ได้
+  // (เดิม runAutoPlan ปลดปุ่มคืนก่อน await launch() และ launch() ไม่มีล็อก = ขึ้นสองรอบซ้อนกันได้)
+  launchBusy = true;
+  updateLaunchGate();
+  try { await autoLaunchRun(btn, nameEl); }
+  finally { launchBusy = false; updateLaunchGate(); }
+}
+async function autoLaunchRun(btn, nameEl) {
   const r = await runAutoPlan(btn);
+  updateLaunchGate();   // runAutoPlan เปิดปุ่มคืนเองตอนจบ — ปิดกลับ ระหว่างนี้ยังถือล็อกอยู่
   if (!r) return;
+  // อ่านงบ/กฎใหม่หลังจัดแผนเสร็จ — ระหว่างรอเซิร์ฟเวอร์ผู้ใช้แก้ช่องได้ หน้ายืนยันต้องโชว์ค่าเดียวกับที่ launchRun จะใช้จริง
+  // (หลังกดยืนยัน launchRun อ่านค่าทันทีก่อน await แรก ผู้ใช้แก้แทรกไม่ได้แล้ว)
+  const budget = Number(document.getElementById('campaignBudget').value) || 0;
+  if (budget <= 0) return toast('ใส่ "งบ/วัน ต่อแอด" (ขั้นตอนที่ 1) ก่อนครับ');
+  if (ruleMissingCpr()) return toast(RULE_NO_CPR_MSG);
+  const link = r.link;
 
   const nAcct = r.plan.length;
   const totalDaily = budget * r.total;   // แอดละแคมเปญ งบของใครของมัน
@@ -4264,7 +4294,7 @@ async function autoLaunch(btn) {
   if (!confirm(msg)) return;
 
   document.getElementById('activeNow').checked = true;
-  await launch();
+  await launchRun();
 }
 
 // ---------- คลังแคปชั่น (datatable + modal เพิ่ม/แก้ไข) ----------
@@ -4420,6 +4450,7 @@ function pickFromLib(id) {
   else applyLibToCard(addAd(), item);   // เลือกต่อได้เรื่อยๆ ไม่ปิด modal
 }
 function applyLibToCard(card, item) {
+  abortCardUpload(card);
   // เดินเลข seq เพื่อตัดผลอัปโหลดไฟล์รอบเก่าที่ยังค้าง ไม่ให้เขียน mediaId ทับตัวที่เลือกจากคลัง
   card.dataset.uploadSeq = String(++uploadSeq);
   card.dataset.mediaId = item.id;
@@ -4488,12 +4519,16 @@ function applyTemplateToAll() {
 });
 
 // ---------- การ์ดแอด ----------
+// กุญแจประจำการ์ด ส่งไปกับทุกรอบขึ้นแอด — เซิร์ฟเวอร์ใช้กันขึ้นซ้ำเมื่อสายหลุด (ดู launchKeys ใน server.js)
+// ต้องสุ่มจริง: เลขการ์ด (adRowSeq) เริ่มนับใหม่ทุกครั้งที่รีเฟรช ใช้แทนไม่ได้ • getRandomValues ใช้ได้ทั้ง http/https
+const newLaunchKey = () => [...crypto.getRandomValues(new Uint32Array(4))].map(x => x.toString(36)).join('');
 function addAd(opts = {}) {
   const id = ++adRowSeq;
   const t = tplValues();
   const div = document.createElement('div');
   div.className = 'ad-card';
   div.dataset.id = id;
+  div.dataset.launchKey = newLaunchKey();
   div.innerHTML = `
     <div class="ad-head">
       <div class="thumb-wrap" title="คลิกเพื่อเปลี่ยนไฟล์" onclick="this.closest('.ad-card').querySelector('.f-image').click()">
@@ -4579,25 +4614,45 @@ function addAd(opts = {}) {
   return div;
 }
 function duplicateAd(id) {
-  addAd({ copyFrom: document.querySelector(`.ad-card[data-id="${id}"]`) });
+  const src = document.querySelector(`.ad-card[data-id="${id}"]`);
+  const card = addAd({ copyFrom: src });
+  // การ์ดจากตัวจัดแผนล็อกไว้กับบัญชีเดียว — ตัวก๊อปต้องล็อกบัญชีเดิมด้วย ไม่งั้นขึ้นทุกบัญชีที่ติ๊ก
+  if (src.dataset.onlyAcct) {
+    card.dataset.onlyAcct = src.dataset.onlyAcct;
+    card.dataset.onlyAcctName = src.dataset.onlyAcctName || '';
+    setBadge(card, 'wait', `AI • ${card.dataset.onlyAcctName}`);
+    updateStats();   // ยอดเงินรวมคิดจากบัญชีที่ล็อก — addAd คำนวณไปก่อนที่เราจะใส่ล็อก
+  }
 }
 function removeAd(id) {
   const card = document.querySelector(`.ad-card[data-id="${id}"]`);
+  abortCardUpload(card);
   cardResults.delete(card.dataset.id);
   card.remove();
   updateStats();
 }
 // ---------- อัปโหลดวิดีโอขึ้น server ทันทีที่เลือกไฟล์ (ไม่ต้องรอตอนกดขึ้นแอด) ----------
 let mediaUploadsInFlight = 0;
+let launchBusy = false;   // กำลังขึ้นแอด (launch หรือ autoLaunch) — ล็อกเดียวคุมทั้งสองปุ่ม
 function updateLaunchGate() {
+  const auto = document.getElementById('autoLaunchBtn');
+  if (auto) auto.disabled = launchBusy;
   const btn = document.getElementById('launchBtn');
   if (btn.dataset.launching === '1') return;
-  btn.disabled = mediaUploadsInFlight > 0;
+  btn.disabled = launchBusy || mediaUploadsInFlight > 0;
   // ปุ่มนี้มี icon SVG — ต้องเขียนด้วย innerHTML (textContent จะลบ icon ทิ้ง) ข้อความเป็นค่าคงที่ ปลอดภัย
   btn.innerHTML = mediaUploadsInFlight > 0 ? `รออัปโหลดวิดีโอให้เสร็จก่อน (${mediaUploadsInFlight} ไฟล์)...` : `${ic('rocket', { size: 15 })} ขึ้นแอดทั้งหมด`;
 }
 let uploadSeq = 0;
+// เปลี่ยนไฟล์/หยิบจากคลัง/ลบการ์ด ระหว่างที่ไฟล์เดิมยังอัปไม่เสร็จ = ยกเลิกตัวเดิมทิ้ง
+// เดิมมันอัปต่อจนจบ: กินเน็ตแย่งกับตัวใหม่ และปุ่มขึ้นแอดถูกล็อก "รออัปโหลด" จนไฟล์ที่ไม่ใช้แล้วส่งเสร็จ
+function abortCardUpload(card) {
+  const x = card._uploadXhr;
+  card._uploadXhr = null;
+  if (x) x.abort();   // onabort → done() คืนตัวนับให้เอง (xhr ที่จบไปแล้ว abort ไม่ยิง event ซ้ำ)
+}
 function uploadMedia(card, file) {
+  abortCardUpload(card);
   // เปลี่ยนไฟล์ระหว่างที่ตัวเก่ายังอัปไม่เสร็จ = ตัวเก่าต้องไม่เขียน mediaId ทับตัวใหม่ (จะได้วิดีโอผิดตัว)
   const mySeq = String(++uploadSeq);
   card.dataset.uploadSeq = mySeq;
@@ -4614,6 +4669,7 @@ function uploadMedia(card, file) {
   const form = new FormData();
   form.append('file', file);
   const xhr = new XMLHttpRequest();
+  card._uploadXhr = xhr;
   xhr.open('POST', '/api/media');
   xhr.upload.onprogress = (e) => {
     if (e.lengthComputable && isCurrent()) setBadge(card, 'run', `อัปโหลดวิดีโอ ${Math.round(e.loaded / e.total * 100)}%`);
@@ -4627,6 +4683,7 @@ function uploadMedia(card, file) {
     else setBadge(card, 'err', 'อัปโหลดวิดีโอไม่สำเร็จ — จะลองส่งอีกทีตอนกดขึ้นแอด');
   };
   xhr.onerror = () => { done(); if (isCurrent()) setBadge(card, 'err', 'อัปโหลดวิดีโอไม่สำเร็จ — จะลองส่งอีกทีตอนกดขึ้นแอด'); };
+  xhr.onabort = done;   // ถูกแทนด้วยไฟล์ใหม่ (abortCardUpload) — แค่คืนตัวนับ ผลรอบนี้ไม่ใช้แล้ว
   xhr.send(form);
 }
 function imgChanged(input) {
@@ -4650,7 +4707,10 @@ function imgChanged(input) {
 function videoThumbDataUrl(file, type) {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
-    const done = (val) => { URL.revokeObjectURL(url); resolve(val); };
+    // codec บางตัวไม่ยิงทั้ง loadeddata และ error — ไม่มีเพดานเวลา = รอตลอดกาล (แถวอัปเข้าคลังค้าง 0%)
+    const timer = setTimeout(() => done(null), 15000);
+    let fin = false;
+    const done = (val) => { if (fin) return; fin = true; clearTimeout(timer); URL.revokeObjectURL(url); resolve(val); };
     const v = document.createElement('video');
     v.src = url; v.muted = true; v.playsInline = true;
     v.onloadeddata = () => { try { v.currentTime = 0.1; } catch { done(null); } };
@@ -4681,8 +4741,9 @@ function updateStats() {
   // การ์ดจากตัวจัดแผนล็อกไว้กับบัญชีเดียว (onlyAcct) — นับเฉพาะบัญชีนั้นถ้าถูกติ๊กอยู่ ไม่ใช่คูณทุกบัญชี
   const picked = new Set([...document.querySelectorAll('#launchAccounts input:checked')].map(i => i.value));
   const nRun = [...cards].reduce((n, c) => n + (c.dataset.onlyAcct ? (picked.has(c.dataset.onlyAcct) ? 1 : 0) : nAcc), 0);
-  document.getElementById('barBudget').textContent = cb
-    ? `• งบแอดละ ${cb.toLocaleString()} บาท/วัน${nRun ? ` → รวม ${(cb * nRun).toLocaleString()} บาท/วัน` : ''}` : '';
+  document.getElementById('barBudget').textContent = cb > 0
+    ? `• งบแอดละ ${cb.toLocaleString()} บาท/วัน${nRun ? ` → รวม ${(cb * nRun).toLocaleString()} บาท/วัน` : ''}`
+    : '• ยังไม่ได้ใส่งบ/วัน ต่อแอด';   // เดิมว่างเปล่า แต่กดขึ้นแล้วได้ 300 บาทเงียบๆ — ตอนนี้ไม่ใส่ = ขึ้นไม่ได้
   document.getElementById('barAccts').textContent = nAcc ? `• ขึ้น ${nAcc} บัญชี` : '';
   updateFxHints();
 }
@@ -4788,8 +4849,35 @@ document.addEventListener('click', (e) => {
 // ---------- ขึ้นแอด ----------
 function getRes(card) {
   const k = card.dataset.id;
-  if (!cardResults.has(k)) cardResults.set(k, { ok: new Set(), fail: new Map() });
+  // ok = ขึ้นแล้ว • fail = พังแบบไม่ทิ้งอะไรไว้ (กดขึ้นใหม่ได้) • unk = สายหลุดตอนกำลังขึ้น (ไม่รู้ผล อาจขึ้นไปแล้ว)
+  // check = มีของค้างบน FB หรือเซิร์ฟเวอร์ยืนยันไม่ได้ — ต้องให้คนไปดูใน Ads Manager ห้ามขึ้นซ้ำเอง
+  // gen = รุ่นของกุญแจต่อบัญชี (เพิ่มเมื่อผู้ใช้เช็คแล้วสั่งขึ้นใหม่ในบัญชีนั้น — relaunchHere)
+  if (!cardResults.has(k)) cardResults.set(k, { ok: new Set(), fail: new Map(), unk: new Map(), check: new Map(), gen: new Map() });
   return cardResults.get(k);
+}
+// การ์ดที่ต้องเช็คใน Ads Manager: ผู้ใช้ไปดูแล้ว (ไม่มีแคมเปญค้าง หรือปิด/ลบแล้ว) สั่งขึ้นใหม่ "เฉพาะบัญชีนี้" ด้วยกุญแจใหม่
+// ไม่ให้ก๊อปการ์ดแทน — ตัวก๊อปขึ้นทุกบัญชีที่ติ๊ก = แคมเปญซ้ำในบัญชีที่การ์ดเดิมขึ้นสำเร็จไปแล้ว
+function relaunchHere(cardId, key) {
+  const card = document.querySelector(`.ad-card[data-id="${cardId}"]`);
+  if (!card) return;
+  if (launchBusy) return toast(LAUNCH_BUSY_MSG);
+  if (!confirm('เช็คใน Ads Manager แล้วว่าไม่มีแคมเปญของแอดนี้ค้างอยู่ในบัญชีนี้ (หรือปิด/ลบไปแล้ว)?\n\n'
+    + 'กดตกลง = ครั้งถัดไปที่กด "ขึ้นแอดทั้งหมด" จะสร้างแคมเปญใหม่ให้แอดนี้ในบัญชีนี้ (บัญชีอื่นไม่เกี่ยว)')) return;
+  const r = getRes(card);
+  r.gen.set(key, (r.gen.get(key) || 0) + 1);
+  markRes(r, key, 'fail', 'เช็คแล้ว — รอกดขึ้นใหม่');
+  setBadge(card, 'wait', 'รอขึ้นใหม่');
+}
+const relaunchBtn = (card, key) => ` <button class="btn-light btn-sm" onclick="relaunchHere(${jsStr(card.dataset.id)}, ${jsStr(key)})">เช็คแล้ว — ขึ้นใหม่ในบัญชีนี้</button>`;
+// การ์ดหนึ่งใบในบัญชีหนึ่งมีได้สถานะเดียว — ล้างของเดิมก่อนตั้งใหม่
+function markRes(r, key, kind, msg) {
+  r.ok.delete(key); r.fail.delete(key); r.unk.delete(key); r.check.delete(key);
+  if (kind === 'ok') r.ok.add(key); else r[kind].set(key, msg);
+}
+function cardNote(card, html) {
+  const em = card.querySelector('.ad-err-msg');
+  em.innerHTML += html;
+  em.style.display = 'block';
 }
 function setBadge(card, cls, text) {
   const b = card.querySelector('.badge');
@@ -4808,20 +4896,40 @@ function aggregateBadge(card, selected) {
   if (!selected.length) return;
   const okN = selected.filter(p => r.ok.has(p)).length;
   const failN = selected.filter(p => r.fail.has(p)).length;
+  const askN = selected.filter(p => r.unk.has(p) || r.check.has(p)).length;
   if (okN === selected.length) {
     setBadge(card, 'ok', selected.length > 1 ? `✓ สำเร็จทั้ง ${okN} บัญชี` : '✓ สำเร็จ');
+  } else if (askN) {
+    setBadge(card, 'err', `? เช็คใน Ads Manager ${askN}/${selected.length} บัญชี`);
   } else if (failN) {
     setBadge(card, 'err', `✗ ล้มเหลว ${failN}/${selected.length} บัญชี`);
   }
 }
 
+// ขึ้นแอดได้ทีละรอบ (launchBusy ประกาศไว้ข้าง updateLaunchGate) — สองรอบซ้อนกัน เช่นกดปุ่มนี้ระหว่าง
+// "ขึ้นอัตโนมัติทั้งหมด" กำลังจัดแผน/ขึ้นอยู่ = การ์ดชุดเดียวกันถูกส่งสองครั้ง และรอบที่จบก่อนปลดปุ่มทั้งที่อีกรอบยังวิ่ง
+const LAUNCH_BUSY_MSG = 'กำลังขึ้นแอดรอบก่อนอยู่ — รอให้จบก่อนครับ';
+// เปิดกฎหยุดอัตโนมัติแต่ช่อง CPA ว่าง = กฎไม่ถูกสร้าง ทั้งที่หน้ายืนยันบอกว่ากฎเปิดอยู่
+const RULE_NO_CPR_MSG = 'เปิด "กฎหยุดอัตโนมัติ" ไว้ แต่ยังไม่ได้ใส่ตัวเลข "หยุดเมื่อต้นทุน/ผลลัพธ์เกิน" — ใส่ตัวเลข หรือปิดสวิตช์ก่อนครับ';
+const ruleMissingCpr = () => document.getElementById('ruleOn').checked && !(Number(document.getElementById('ruleCpr').value) > 0);
 async function launch() {
+  if (launchBusy) return toast(LAUNCH_BUSY_MSG);
+  launchBusy = true;
+  updateLaunchGate();
+  try { await launchRun(); }
+  finally { launchBusy = false; updateLaunchGate(); }
+}
+async function launchRun() {
   const allCards = [...document.querySelectorAll('.ad-card')];
   if (!allCards.length) return toast('ยังไม่มีแอด — ลากรูป/วิดีโอมาวางก่อนครับ');
   if (mediaUploadsInFlight > 0) return toast('รออัปโหลดวิดีโอขึ้นเซิร์ฟเวอร์ให้เสร็จก่อนครับ (ดู % ที่มุมการ์ด)');
   const campaignName = document.getElementById('campaignName').value.trim();
   if (!campaignName) return toast('กรุณาใส่ชื่อแคมเปญ (ขั้นตอนที่ 1)');
   const objective = document.getElementById('objective').value;
+  // งบต้องใส่เอง — เดิมช่องว่าง/0 ถูกเติมเป็น 300 บาทเงียบๆ (แถบล่างโชว์ว่าง/0 แต่ยิงจริงแอดละ 300)
+  const budget = Number(document.getElementById('campaignBudget').value) || 0;
+  if (budget <= 0) return toast('ใส่ "งบ/วัน ต่อแอด" (ขั้นตอนที่ 1) ก่อนครับ');
+  if (ruleMissingCpr()) return toast(RULE_NO_CPR_MSG);
 
   // บัญชีที่ติ๊ก (ขั้นตอนที่ 4) = คีย์ "pid:acctId"
   const selKeys = [...document.querySelectorAll('#launchAccounts input:checked')].map(i => i.value);
@@ -4839,20 +4947,64 @@ async function launch() {
 
   // แผนงาน: แต่ละบัญชีขึ้นเฉพาะการ์ดที่ยังไม่สำเร็จในบัญชีนั้น (คีย์ = pid:acctId)
   // การ์ดที่ผ่านตัวจัดแผนถูกล็อกไว้กับบัญชีเดียว (onlyAcct) — การ์ดปกติยังขึ้นทุกบัญชีเหมือนเดิม
+  // การ์ดที่มีของค้างบน FB (check) ข้ามเสมอ — ต้องให้คนไปดูใน Ads Manager ก่อน แล้วกด "เช็คแล้ว — ขึ้นใหม่ในบัญชีนี้" (relaunchHere)
+  let held = 0;
   const plan = targets
     .map(t => {
       const key = `${t.pid}:${t.acctId}`;
-      return { t, key, cards: allCards.filter(c => !getRes(c).ok.has(key) && (!c.dataset.onlyAcct || c.dataset.onlyAcct === key)) };
+      const mine = allCards.filter(c => !getRes(c).ok.has(key) && (!c.dataset.onlyAcct || c.dataset.onlyAcct === key));
+      const cards = mine.filter(c => !getRes(c).check.has(key));
+      held += mine.length - cards.length;
+      return { t, key, cards };
     })
     .filter(x => x.cards.length);
-  if (!plan.length) return toast('แอดทุกตัวขึ้นครบทุกบัญชีที่เลือกแล้วครับ');
+  if (!plan.length) return toast(held
+    ? `ที่เหลือ ${held} รายการต้องไปเช็คใน Ads Manager ก่อน (ดูข้อความสีแดงในการ์ด) — เช็คแล้วถ้าจะขึ้นใหม่ กดปุ่ม "เช็คแล้ว — ขึ้นใหม่ในบัญชีนี้" ในการ์ดนั้น`
+    : 'แอดทุกตัวขึ้นครบทุกบัญชีที่เลือกแล้วครับ');
   // การ์ดที่ล็อกไว้กับบัญชีที่ไม่ได้ติ๊ก จะไม่ถูกขึ้นเลย — บอกก่อนแทนที่จะเงียบ
   const orphan = allCards.filter(c => c.dataset.onlyAcct && !plan.some(x => x.key === c.dataset.onlyAcct));
   if (orphan.length && !confirm(`มีการ์ด ${orphan.length} ใบที่ล็อกไว้กับบัญชีที่ไม่ได้ติ๊ก — จะถูกข้ามไป ไปต่อไหม?`)) return;
+  // รอบก่อนสายหลุดตอนการ์ดพวกนี้กำลังขึ้น — อาจขึ้นสำเร็จไปแล้ว ห้ามกดซ้ำแบบไม่รู้ตัว
+  const unkN = plan.reduce((s, x) => s + x.cards.filter(c => getRes(c).unk.has(x.key)).length, 0);
+  if (unkN && !confirm(`มี ${unkN} รายการที่ไม่รู้ผลจากรอบก่อน (การเชื่อมต่อหลุดตอนกำลังขึ้น — อาจขึ้นสำเร็จไปแล้ว)\n\n`
+    + 'กดตกลง = ให้เซิร์ฟเวอร์เช็คก่อน: ตัวที่ขึ้นไปแล้วจะไม่สร้างซ้ำ ถ้าเซิร์ฟเวอร์ไม่มีบันทึก (เช่น เพิ่งรีสตาร์ท) '
+    + 'จะไม่ขึ้นให้ และบอกให้ไปเช็คใน Ads Manager แทน\n\nไปต่อไหม?')) return;
+
+  // อ่านค่าทั้งหมดครั้งเดียวตรงนี้ — เดิมอ่านในลูปทีละบัญชี ผู้ใช้แก้งบ/สถานะ/กฎ/การ์ด ระหว่างที่รอบยังวิ่ง
+  // บัญชีหลังๆ จึงได้ค่าคนละชุดกับที่กดไป
+  const common = {
+    campaign: { name: campaignName, objective },
+    campaignBudget: budget,
+    cta: document.getElementById('cta').value,
+    conversionEvent: document.getElementById('conversionEvent').value,
+    lifecycleStrategy: document.getElementById('lifecycleStrategy').value,
+    autoRule: document.getElementById('ruleOn').checked
+      ? { cpr: Number(document.getElementById('ruleCpr').value) || 0, minSpend: Number(document.getElementById('ruleSpend').value) || 0 }
+      : undefined,
+    active: document.getElementById('activeNow').checked,
+  };
+  const cardSpec = new Map(allCards.map((c, idx) => [c, {
+    // วิดีโอที่อัปโหลดขึ้น server ไว้แล้ว = ส่งแค่ mediaId ไม่ต้องส่งไฟล์ซ้ำ
+    file: c.dataset.mediaId ? null : c.querySelector('.f-image').files[0],
+    ad: {
+      mediaId: c.dataset.mediaId || undefined,
+      launchKey: c.dataset.launchKey,
+      name: c.querySelector('.f-name').value.trim() || `Ad-${idx + 1}`,
+      message: c.querySelector('.f-message').value.trim(),
+      link: c.querySelector('.f-link').value.trim(),
+      headline: c.querySelector('.f-headline').value.trim(),
+      ageMin: Number(c.querySelector('.f-agemin').value) || 18,
+      ageMax: Number(c.querySelector('.f-agemax').value) || 65,
+      gender: c.querySelector('.f-gender').value,
+      countries: c.querySelector('.f-countries').value.split(',').map(s => s.trim().toUpperCase()).filter(Boolean),
+      interests: [...c.querySelectorAll('.chips .chip')].map(ch => ({ id: ch.dataset.iid, name: ch.dataset.iname })),
+    },
+  }]));
 
   const selected = plan.map(x => x.key);
   const totalUnits = plan.reduce((s, x) => s + x.cards.length, 0);
-  let doneUnits = 0, okCount = 0, failCount = 0;
+  let doneUnits = 0, okCount = 0, failCount = 0, unkCount = 0, checkCount = 0;
+  let cutMsg = '';          // เหตุที่รอบนี้จบไม่ครบ (สายหลุด/HTTP ไม่ใช่ 200/สตรีมขาด)
   let launchVerify = null; // ผลตรวจค่าจริงจาก FB (event 'verify')
   const doneLinks = [];
 
@@ -4867,7 +5019,10 @@ async function launch() {
     document.getElementById('progressFill').style.width = (totalUnits ? Math.round(doneUnits / totalUnits * 100) : 0) + '%';
     document.getElementById('progressText').textContent = msg || `เสร็จแล้ว ${doneUnits}/${totalUnits} รายการ`;
   };
-  allCards.forEach(c => { c.querySelector('.ad-err-msg').innerHTML = ''; c.querySelector('.ad-err-msg').style.display = 'none'; });
+  allCards.forEach(c => {
+    c.querySelector('.ad-err-msg').innerHTML = ''; c.querySelector('.ad-err-msg').style.display = 'none';
+    getRes(c).check.forEach((msg, k) => cardNote(c, `<div>⚠ ${esc(msg)}${relaunchBtn(c, k)}</div>`));   // ตัวที่ถูกข้าม ต้องยังเห็นว่าข้ามเพราะอะไร
+  });
   setProgress('กำลังเริ่ม...');
 
   try {
@@ -4877,25 +5032,14 @@ async function launch() {
       cards.forEach(c => setBadge(c, 'wait', targets.length > 1 ? `รอคิว • ${label}` : 'รอคิว'));
 
       const form = new FormData();
-      const ads = [];
-      cards.forEach((c, i) => {
-        const num = allCards.indexOf(c) + 1;
+      const ads = cards.map((c, i) => {
+        const s = cardSpec.get(c);
+        const r = getRes(c);
         const field = `img_${i}`;
-        // วิดีโอที่อัปโหลดขึ้น server ไว้แล้ว = ส่งแค่ mediaId ไม่ต้องส่งไฟล์ซ้ำ
-        if (!c.dataset.mediaId) form.append(field, c.querySelector('.f-image').files[0]);
-        ads.push({
-          mediaId: c.dataset.mediaId || undefined,
-          name: c.querySelector('.f-name').value.trim() || `Ad-${num}`,
-          message: c.querySelector('.f-message').value.trim(),
-          link: c.querySelector('.f-link').value.trim(),
-          headline: c.querySelector('.f-headline').value.trim(),
-          ageMin: Number(c.querySelector('.f-agemin').value) || 18,
-          ageMax: Number(c.querySelector('.f-agemax').value) || 65,
-          gender: c.querySelector('.f-gender').value,
-          countries: c.querySelector('.f-countries').value.split(',').map(s => s.trim().toUpperCase()).filter(Boolean),
-          interests: [...c.querySelectorAll('.chips .chip')].map(ch => ({ id: ch.dataset.iid, name: ch.dataset.iname })),
-          imageField: field,
-        });
+        if (s.file) form.append(field, s.file);
+        const gen = r.gen.get(key);   // ผู้ใช้เช็คแล้วสั่งขึ้นใหม่ในบัญชีนี้ = กุญแจรุ่นใหม่ เซิร์ฟเวอร์จะไม่ตอบผลค้างเดิม
+        // resume = รอบก่อนสายหลุดตอนการ์ดนี้กำลังขึ้น — บอกเซิร์ฟเวอร์ว่าห้ามเดาว่ายังไม่เคยขึ้น
+        return { ...s.ad, launchKey: gen ? `${s.ad.launchKey}.${gen}` : s.ad.launchKey, imageField: field, resume: r.unk.has(key) || undefined };
       });
       form.append('data', JSON.stringify({
         profileId: t.pid,
@@ -4904,40 +5048,38 @@ async function launch() {
         beneficiaryId: t.beneficiaryId || '',
         currency: t.currency || '',   // ตัวสำรองตอนเซิร์ฟเวอร์อ่านสกุลจาก FB สดไม่ได้ (มาจาก FB เหมือนกัน)
         beneficiaryName: ((t.beneficiaryOptions || []).find(b => b.id === t.beneficiaryId) || {}).name || '',
-        campaign: { name: campaignName, objective },
-        campaignBudget: Number(document.getElementById('campaignBudget').value) || 300,
-        cta: document.getElementById('cta').value,
+        ...common,
         pixelId: t.chosenPixel || '',
-        conversionEvent: document.getElementById('conversionEvent').value,
-        lifecycleStrategy: document.getElementById('lifecycleStrategy').value,
-        autoRule: document.getElementById('ruleOn').checked
-          ? { cpr: Number(document.getElementById('ruleCpr').value) || 0, minSpend: Number(document.getElementById('ruleSpend').value) || 0 }
-          : undefined,
-        active: document.getElementById('activeNow').checked,
         ads,
       }));
 
+      const started = new Set(), got = new Set();   // index ที่เซิร์ฟเวอร์เริ่มทำแล้ว / ได้ผลกลับมาแล้ว ในรอบนี้
+      let ended = false, fatalMsg = '';             // ได้บรรทัดจบ (done/fatal) ครบไหม
       const handleEvent = (line) => {
           if (!line.trim()) return;
           let ev;
           try { ev = JSON.parse(line); } catch { return; }
-          if (ev.type === 'status') setBadge(cards[ev.index], 'run', `⏳ ${ev.msg ? ev.msg + ' • ' : ''}${label}`);
+          if (ev.type === 'status') { started.add(ev.index); setBadge(cards[ev.index], 'run', `⏳ ${ev.msg ? ev.msg + ' • ' : ''}${label}`); }
           if (ev.type === 'result') {
             const card = cards[ev.index];
             const r = getRes(card);
+            got.add(ev.index);
             doneUnits++;
             if (ev.ok) {
               okCount++;
-              r.ok.add(key);
-              r.fail.delete(key);
-              setBadge(card, 'ok', `✓ ${label}`);
+              markRes(r, key, 'ok');
+              setBadge(card, 'ok', `✓ ${label}${ev.replayed ? ' (ขึ้นไปแล้วจากรอบก่อน)' : ''}`);
+            } else if (ev.needsCheck) {
+              // มีแคมเปญค้างบน FB / เซิร์ฟเวอร์ยืนยันไม่ได้ว่าเคยขึ้นไหม — ห้ามขึ้นซ้ำเอง
+              checkCount++;
+              markRes(r, key, 'check', ev.error);
+              setBadge(card, 'err', `! เช็คใน Ads Manager • ${label}`);
+              cardNote(card, `<div>⚠ ${esc(label)}: ${esc(ev.error)}${relaunchBtn(card, key)}</div>`);
             } else {
               failCount++;
-              r.fail.set(key, ev.error);
+              markRes(r, key, 'fail', ev.error);
               setBadge(card, 'err', `✗ ${label}`);
-              const em = card.querySelector('.ad-err-msg');
-              em.innerHTML += `<div>⚠ ${esc(label)}: ${esc(ev.error)}</div>`;
-              em.style.display = 'block';
+              cardNote(card, `<div>⚠ ${esc(label)}: ${esc(ev.error)}</div>`);
             }
             setProgress(`${label} • เสร็จ ${doneUnits}/${totalUnits} รายการ`);
           }
@@ -4952,17 +5094,13 @@ async function launch() {
             em.innerHTML += `<div style="color:#b7791f">⚠ ${esc(label)}: ${esc(ev.msg)}</div>`;
             em.style.display = 'block';
           }
-          if (ev.type === 'fatal') {
-            cards.forEach(c => {
-              const r = getRes(c);
-              if (!r.ok.has(key)) { doneUnits++; failCount++; r.fail.set(key, ev.error); }
-            });
-            const em = cards[0].querySelector('.ad-err-msg');
-            em.innerHTML += `<div>⚠ ${esc(label)}: ${esc(ev.error)}</div>`;
-            em.style.display = 'block';
-            setProgress();
+          if (ev.type === 'fatal') {   // การ์ดที่ยังไม่มีผลถูกนับเป็นล้มเหลวตอนสรุปท้ายรอบ (ด้านล่าง)
+            ended = true;
+            fatalMsg = ev.error;
+            cardNote(cards[0], `<div>⚠ ${esc(label)}: ${esc(ev.error)}</div>`);
           }
           if (ev.type === 'done') {
+            ended = true;
             // แอดละแคมเปญ: แคมเปญเดียว = เปิดตรงแคมเปญนั้น หลายแคมเปญ = เปิดหน้ารวมแคมเปญของบัญชี
             const ids = ev.campaignIds || [];
             if (ids.length) doneLinks.push({ label, url: ids.length === 1
@@ -4971,7 +5109,7 @@ async function launch() {
           }
       };
       // ใช้ XHR แทน fetch เพื่อโชว์ % ตอนส่งไฟล์ขึ้นเซิร์ฟเวอร์ (ไฟล์วิดีโอใหญ่ใช้เวลานาน ไม่ใช่ค้าง)
-      await new Promise((resolve, reject) => {
+      const xs = await new Promise((resolve) => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', '/api/launch');
         let seen = 0;
@@ -4989,23 +5127,58 @@ async function launch() {
         };
         xhr.upload.onload = () => setProgress(`ส่งไฟล์ครบแล้ว กำลังสร้างแอดใน ${label}...`);
         xhr.onprogress = pump;
-        xhr.onload = () => { pump(); handleEvent((xhr.responseText || '').slice(seen)); resolve(); };
-        xhr.onerror = () => reject(new Error(`การเชื่อมต่อหลุดระหว่างขึ้นแอดใน ${label} — เช็คเน็ตแล้วกดขึ้นอีกครั้ง (ตัวที่สำเร็จแล้วไม่ขึ้นซ้ำ)`));
-        xhr.ontimeout = () => reject(new Error('หมดเวลารอเซิร์ฟเวอร์'));
+        xhr.onload = () => { pump(); handleEvent((xhr.responseText || '').slice(seen)); resolve({ status: xhr.status, body: xhr.responseText || '' }); };
+        xhr.onerror = () => resolve({ lost: true });
+        xhr.ontimeout = () => resolve({ lost: true });
         xhr.send(form);
       });
+      // รอบของบัญชีนี้จบไม่ปกติ: สายหลุด / HTTP ไม่ใช่ 2xx (ตัวกลาง 503, ต้องใส่รหัสใหม่ 401, ไฟล์ถูกปฏิเสธ 500 เป็น HTML)
+      // หรือสตรีมขาดก่อนถึงบรรทัดจบ — เดิมไม่เช็คเลย ได้ "สำเร็จทั้งหมด 0 รายการ" ทั้งที่ไม่มีอะไรขึ้น
+      let cut = '';
+      if (xs.lost) cut = `การเชื่อมต่อหลุดระหว่างขึ้นแอดใน ${label}`;
+      else if (xs.status < 200 || xs.status >= 300) {
+        let err = '';
+        try { err = JSON.parse(xs.body).error || ''; } catch { /* ไม่ใช่ JSON (หน้า HTML ของ proxy/express) */ }
+        cut = `เซิร์ฟเวอร์ตอบ ${xs.status}${err ? ': ' + err : xs.status === 401 ? ' (ต้องใส่รหัสเข้าเว็บใหม่)' : xs.status >= 502 ? ' (ระบบกำลังรีสตาร์ท ลองใหม่อีกครั้ง)' : ''} — ${label}`;
+      } else if (!ended) cut = `ผลจากเซิร์ฟเวอร์ขาดกลางทาง (${label})`;
+      // การ์ดที่ไม่ได้ผลกลับมา: เซิร์ฟเวอร์เริ่มทำไปแล้ว = ไม่รู้ผล (FB อาจสร้างเสร็จแล้ว) / ยังไม่เริ่ม = ขึ้นใหม่ได้
+      const why = cut || fatalMsg || 'เซิร์ฟเวอร์ไม่ส่งผลของแอดนี้กลับมา';
+      cards.forEach((c, i) => {
+        if (got.has(i)) return;
+        doneUnits++;
+        if (started.has(i)) {
+          unkCount++;
+          markRes(getRes(c), key, 'unk', why);
+          setBadge(c, 'err', `? ไม่รู้ผล • ${label}`);
+          cardNote(c, `<div>⚠ ${esc(label)}: ${esc(why)} ตอนแอดนี้กำลังขึ้น — อาจขึ้นสำเร็จไปแล้ว เช็คใน Ads Manager ก่อน (กดขึ้นอีกครั้งได้: เซิร์ฟเวอร์จะเช็คก่อนและไม่สร้างซ้ำ)</div>`);
+        } else {
+          failCount++;
+          markRes(getRes(c), key, 'fail', why);
+          if (cut) { setBadge(c, 'err', `✗ ${label}`); cardNote(c, `<div>⚠ ${esc(label)}: ${esc(cut)} — แอดนี้ยังไม่ได้เริ่มขึ้น กดขึ้นอีกครั้งได้</div>`); }
+        }
+      });
+      setProgress();
+      if (cut) { cutMsg = cut; break; }   // เน็ต/เซิร์ฟเวอร์มีปัญหาอยู่ — ไม่ยิงบัญชีที่เหลือต่อ
     }
   } catch (e) {
-    toast('ผิดพลาด: ' + e.message);
+    cutMsg = 'ผิดพลาด: ' + e.message;
   }
+  if (cutMsg) toast(`${cutMsg} — ดูสรุปใต้ปุ่มขึ้นแอด`);
 
   allCards.forEach(c => aggregateBadge(c, selected));
 
   const links = doneLinks.map(d => `<a href="${d.url}" target="_blank">${esc(d.label)} ↗</a>`).join(' • ');
   const banner = document.getElementById('doneBanner');
   banner.style.display = 'block';
-  banner.innerHTML = failCount
-    ? `⚠ สำเร็จ ${okCount} • ล้มเหลว ${failCount} รายการ — แก้ตามข้อความสีแดงแล้วกดขึ้นอีกครั้ง (ที่สำเร็จแล้วไม่ขึ้นซ้ำ) &nbsp;${links}`
+  // "สำเร็จทั้งหมด" ได้เฉพาะเมื่อทุกรายการได้ผลสำเร็จจริง — นับตัวที่ไม่ได้ผลกลับมาด้วย ไม่ใช่นับแค่ตัวที่บอกว่าพัง
+  const notRun = totalUnits - okCount - failCount - unkCount - checkCount;
+  banner.innerHTML = (okCount !== totalUnits || held)
+    ? `⚠ สำเร็จ ${okCount}/${totalUnits} รายการ`
+      + (failCount ? ` • ล้มเหลว ${failCount} (แก้ตามข้อความสีแดงแล้วกดขึ้นอีกครั้ง — ที่สำเร็จแล้วไม่ขึ้นซ้ำ)` : '')
+      + (unkCount ? ` • ไม่รู้ผล ${unkCount} (สายหลุดตอนกำลังขึ้น — อาจขึ้นไปแล้ว เช็คใน Ads Manager ก่อน)` : '')
+      + (checkCount + held ? ` • ต้องไปเช็ค/ปิดเองใน Ads Manager ${checkCount + held} (ห้ามกดขึ้นการ์ดนั้นซ้ำ)` : '')
+      + (notRun > 0 ? ` • ยังไม่ได้เริ่ม ${notRun}` : '')
+      + ` &nbsp;${links}` + (cutMsg ? `<div style="margin-top:4px">${esc(cutMsg)}</div>` : '')
     : `${ic('sparkle', { color: 'var(--green,#0e9268)' })} สำเร็จทั้งหมด ${okCount} รายการ ใน ${plan.length} บัญชี &nbsp;${links}`;
   if (launchVerify) {
     banner.innerHTML += `<div style="margin-top:6px;font-weight:400;font-size:12.5px;color:var(--muted)">ตรวจค่าจริงจาก FB: ${
@@ -5019,8 +5192,7 @@ async function launch() {
 
   pw.style.display = 'none';
   delete btn.dataset.launching;
-  btn.disabled = false;
-  btn.innerHTML = `${ic('rocket', { size: 15 })} ขึ้นแอดทั้งหมด`;   // ปุ่มมี icon — ห้าม textContent
+  // คืนข้อความ+icon ของปุ่ม — ปุ่มยังปิดอยู่จนกว่า launch()/autoLaunch() ปล่อยล็อก (เดิมรอบที่จบก่อนเปิดปุ่มทั้งที่อีกรอบยังวิ่ง)
   updateLaunchGate();
 }
 
