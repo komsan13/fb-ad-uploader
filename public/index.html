@@ -840,9 +840,9 @@
         <div class="filter-bar">
           <div class="field" style="margin:0;flex:1;min-width:280px">
             <div style="display:flex;gap:7px;flex-wrap:wrap">
-              <button class="date-pill" onclick="setDashDate('today', this)">วันนี้</button>
+              <button class="date-pill active" onclick="setDashDate('today', this)">วันนี้</button>
               <button class="date-pill" onclick="setDashDate('yesterday', this)">เมื่อวาน</button>
-              <button class="date-pill active" onclick="setDashDate('last_7d', this)">7 วันล่าสุด</button>
+              <button class="date-pill" onclick="setDashDate('last_7d', this)">7 วันล่าสุด</button>
               <button class="date-pill" onclick="setDashDate('last_30d', this)">30 วันล่าสุด</button>
               <button class="date-pill" onclick="setDashDate('last_90d', this)">90 วันล่าสุด</button>
             </div>
@@ -2286,7 +2286,7 @@ function spendByCurText(items) {
 // ---------- หน้าแดชบอร์ด ----------
 // นโยบายโหลดทุกหน้า: มีของเก่า = โชว์ทันทีไม่มีจอหมุน แล้วถ้าเก่าเกิน TTL ค่อยดึงใหม่เงียบๆ เบื้องหลังมาแทน
 // cache เก็บลง sessionStorage ด้วย — กด F5 หรือเปิดแท็บเดิมซ้ำ ข้อมูลเดิมโชว์ทันทีไม่ต้องโหลดใหม่ทั้งกระดาน
-let dashDate = 'last_7d';
+let dashDate = 'today';   // เปิดแดชบอร์ดมาเห็นของวันนี้ก่อน (ผู้ใช้ขอ 12 ต.ค. 2026)
 const dashCache = {}; // datePreset -> {ts, results}
 const DASH_CACHE_MS = 300000;
 // ออกจากระบบ — ระบบใช้ basic auth ที่ตัว proxy ไม่ใช่ session ของแอป จึงไม่มี session ให้ลบ
