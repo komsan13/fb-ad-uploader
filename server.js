@@ -3329,8 +3329,23 @@ async function apRelaunchNewVideo(acct, token, origCreative, adsetId, adName, me
 // สถานะที่ถือว่า "มีอยู่แล้ว ไม่ต้องเติมเพิ่ม" — รวมตัวที่ FB ยังรีวิวไม่เสร็จด้วย
 const AP_COUNTS_AS_LIVE = new Set(['ACTIVE', 'PENDING_REVIEW', 'IN_PROCESS']);
 
-// ชื่อแคมเปญที่ระบบสร้าง (สิทธิ์จริงอยู่ที่ s.owned ไม่ใช่ชื่อ)
-const AP_CAMPAIGN_PREFIX = 'Autopilot ';
+// ---------- มาตรฐานชื่อของที่ระบบสร้าง (ผู้ใช้กำหนด 12 ต.ค. 2026) ----------
+// "<โปรไฟล์> <ชื่อบัญชีโฆษณา> <ช่อง>/<minAds>" เช่น "TOP sss3 1/2" — แคมเปญ ชุดโฆษณา แอด ชื่อเดียวกัน (1 แอด = 1 แคมเปญ)
+// ช่อง = เลขที่ว่างตัวแรก อ่านจากชื่อแอดที่ยังยิงอยู่ — แอดช่อง 1 ตาย ตัวที่เติมแทนได้ "1/2" เดิม
+// ชื่อเป็นแค่ป้ายให้คนอ่าน: สิทธิ์อยู่ที่ s.owned ส่วนรุ่นของแอดนับจากป้าย AP_RELAUNCH_TAG ที่ต่อท้ายชื่อแอดเดิม
+// โปรไฟล์ = ชื่อใน workspaces.json ของ hub.js (รัน server.js เดี่ยวไม่มี = ไม่ใส่)
+const apNameBase = (acctName) => [(tgHubProfiles().find((w) => w.self) || {}).name, acctName]
+  .map((x) => String(x || '').replace(/\s+/g, ' ').trim()).filter(Boolean).join(' ').slice(0, 80);
+function apUsedSlots(ads, base) {
+  const used = new Set();
+  for (const x of ads) {
+    if (!AP_COUNTS_AS_LIVE.has(x.effective_status)) continue;
+    const n = String(x.name || '').replace(/^\[ทดสอบ\] /, '').replace(AP_RELAUNCH_TAG, '').trim();
+    const m = n.startsWith(base + ' ') && /^(\d+)\/\d+$/.exec(n.slice(base.length + 1));
+    if (m) used.add(Number(m[1]));
+  }
+  return used;
+}
 
 // 1 แอด = 1 แคมเปญ (ผู้ใช้สั่ง 12 ต.ค. 2026) — เดิมทุกแอดของบัญชีอยู่ในแคมเปญเดียวงบ CBO ก้อนเดียว
 // FB เทงบไปที่แอดตัวเดียว (วัดจริงวันแรก: rosegold 802 บาท vs columbia 73 บาท) แอดที่เหลือไม่เคยถูกทดสอบจริง
@@ -3339,7 +3354,7 @@ const AP_CAMPAIGN_PREFIX = 'Autopilot ';
 // testMode = แคมเปญปิดไว้ด้วย (เดิมเปิดพร้อมงบ แอดข้างในปิด — มีคนไปเปิดแอด [ทดสอบ] เองเมื่อไหร่เงินเดินทันที)
 async function apNewCampaign(acct, token, s, d, money, item, testMode) {
   const params = {
-    name: `${AP_CAMPAIGN_PREFIX}${new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10)} • ${item.name}`.slice(0, 250),
+    name: item.name,
     objective: d.objective || 'OUTCOME_SALES',
     status: testMode ? 'PAUSED' : 'ACTIVE',
     special_ad_categories: [],
@@ -3371,7 +3386,7 @@ async function apCreateOneAd(acct, token, campaignId, pageId, pixelId, d, objInf
   }
 
   const adsetParams = {
-    name: `${item.name} - Ad Set`,
+    name: item.name,
     campaign_id: campaignId,
     billing_event: 'IMPRESSIONS',
     optimization_goal: objInfo.optimization_goal,
@@ -3706,6 +3721,9 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz, ta
   // migration: ของเดิมบนดิสก์เป็นตัวเลข (cursor รวม) — ไม่ใช่ object เมื่อไหร่รีเซ็ตเป็น {} ก่อนใช้
   if (!s.pageCursor || typeof s.pageCursor !== 'object') s.pageCursor = {};
 
+  const nameBase = apNameBase(a.name);
+  const usedSlots = apUsedSlots(ads, nameBase);
+
   let ok = 0;
   let halt = '';
   // ด่านก่อนแอดเปิดยิง — โยน error ที่ทางเก็บกวาดข้างล่างรู้จัก (ลบชุด/แคมเปญเปล่าที่เพิ่งสร้างทิ้ง แล้วออกจากลูป)
@@ -3718,7 +3736,10 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz, ta
     if (taken) taken.add(v.id);
     // cursor เดินบนลิสต์ถ่วงน้ำหนัก — ยังวนครบทุกตัวเหมือนเดิม แต่ตัวที่ขึ้นง่ายกว่าถูกหยิบบ่อยกว่า
     const cap = capRotation[(s.capCursor = ((s.capCursor || 0) + 1)) % capRotation.length];
-    const item = { mediaId: v.id, name: `${v.name} - auto`, message: cap.message, headline: cap.headline };
+    let slot = 1;
+    while (usedSlots.has(slot)) slot++;
+    usedSlots.add(slot);
+    const item = { mediaId: v.id, name: `${nameBase} ${slot}/${target}`, message: cap.message, headline: cap.headline };
     // บาลานซ์เพจแบบ round-robin: แต่ละแอดหมุนไปเพจถัดไปในพูลของโปรไฟล์นี้ (cursor สะสมข้ามรอบ)
     const pageId = pagePool[(s.pageCursor[prof.id] = (s.pageCursor[prof.id] || 0) + 1) % pagePool.length];
     let campaignId = null;

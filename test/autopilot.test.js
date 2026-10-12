@@ -2,6 +2,7 @@
 // เทสระดับนี้จับ regression ได้จริงเพราะเดินผ่านโค้ดทั้งเส้น ไม่ได้ stub ตรรกะทิ้ง
 const { test, before, after, describe } = require('node:test');
 const assert = require('node:assert');
+const path = require('node:path');
 const { makeFakeFb } = require('./fake-fb');
 const { tmpDir, seed, startServer, get, post, readState } = require('./helpers');
 
@@ -115,6 +116,35 @@ describe('แอดละแคมเปญ (ผู้ใช้สั่ง 12 �
     assert.strictEqual(campPosts(world).length, 1, 'พลาดแล้วหยุดรอบนี้ ไม่รัวสร้างต่อ');
     assert.ok(world.campaigns.every((c) => c.status === 'DELETED'), 'แคมเปญที่สร้างค้างต้องถูกลบ');
     assert.ok(!(readState(dir).owned || []).includes(world.campaigns[0].id), 'ลบแล้วต้องเอาออกจากรายการของระบบด้วย');
+  });
+});
+
+// มาตรฐานชื่อ (ผู้ใช้กำหนด 12 ต.ค. 2026): "<โปรไฟล์> <ชื่อบัญชี> <ช่อง>/<minAds>" ทั้งแคมเปญ ชุดโฆษณา แอด
+describe('มาตรฐานชื่อแคมเปญ', () => {
+  const posted = (world, kind) => world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/${kind}`).map((c) => c.params.name);
+
+  test('แคมเปญ ชุดโฆษณา แอด ชื่อเดียวกัน "<โปรไฟล์> <บัญชี> <ช่อง>/<minAds>"', async (t) => {
+    const dir0 = tmpDir();   // จำลอง hub.js: โปรไฟล์ TOP (ไม่มี workspaces.json = TOP ตัวเดียว)
+    const { base, world } = await boot(t, { env: { WS_ID: 'top', HUB_ROOT_CONFIG: path.join(dir0, 'config.json') } });
+    await post(base, '/api/autopilot/run');
+    const want = ['TOP บัญชีเทส 1/2', 'TOP บัญชีเทส 2/2'];
+    assert.deepStrictEqual(posted(world, 'campaigns'), want);
+    assert.deepStrictEqual(posted(world, 'adsets'), want);
+    assert.deepStrictEqual(posted(world, 'ads'), want);
+  });
+
+  test('แอดช่องไหนตาย ตัวที่เติมแทนได้เลขช่องนั้น — แอดที่แก้แล้ว (ป้ายต่อท้าย) ยังนับว่าจองช่องอยู่', async (t) => {
+    const world = freshWorld({
+      ads: [
+        { id: 'A1', acct: ACCT, name: 'บัญชีเทส 1/3', effective_status: 'DISAPPROVED', adset_id: 'S1' },
+        { id: 'A2', acct: ACCT, name: 'บัญชีเทส 2/3 (แก้ข้อความ)', effective_status: 'PENDING_REVIEW', adset_id: 'S2' },
+        { id: 'A3', acct: ACCT, name: 'บัญชีเทส 3/3', effective_status: 'PAUSED', adset_id: 'S3' },
+      ],
+    });
+    const config = baseConfig({ autopilot: { enabled: true, minAds: 3 } });
+    const { base } = await boot(t, { world, config });
+    await post(base, '/api/autopilot/run');
+    assert.deepStrictEqual(posted(world, 'ads'), ['บัญชีเทส 1/3', 'บัญชีเทส 3/3']);
   });
 });
 
