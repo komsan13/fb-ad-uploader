@@ -562,11 +562,18 @@ app.post('/api/captions/auto', (req, res) => {
   // เทียบแบบ normalize: ภาษาเวียดนามพิมพ์ได้ทั้งแบบประกอบสำเร็จ (NFC) และแยกวรรณยุกต์ (NFD) + ช่องว่างซ้อน
   // เดิมเทียบดิบ แคปชั่นที่พิมพ์เองด้วยคีย์บอร์ดแบบ NFD ถูกสร้างซ้ำหน้าตาเหมือนกันเป๊ะ
   const capNorm = (m) => String(m || '').normalize('NFC').replace(/\s+/g, ' ').trim().toLowerCase();
+  // ลิงก์ปลายทางวางเป็นบรรทัดแรกของแคปชั่น (ผู้ใช้ขอ: "https://heylink.me/x/" ขึ้นบรรทัดใหม่ "Hoa cam")
+  // รับเฉพาะ http(s) ไม่มีช่องว่าง — ข้อความนี้ไปอยู่ในแอดจริง ห้ามมีลิงก์แปลกหลุดเข้าไป
+  const link = String(req.body.link || '').trim();
+  if (link && (!/^https?:\/\/\S+$/i.test(link) || link.length > 500)) {
+    return res.status(400).json({ error: 'ลิงก์ต้องขึ้นต้นด้วย http:// หรือ https:// และไม่มีช่องว่าง' });
+  }
+  const compose = (phrase) => (link ? `${link}\n${phrase}` : phrase);
   const have = new Set(items.map((c) => capNorm(c.message)));
-  const pool = VI_NOUNS.flatMap((a) => VI_ADJS.map((b) => `${a} ${b}`)).filter((m) => !have.has(capNorm(m)));
+  const pool = VI_NOUNS.flatMap((a) => VI_ADJS.map((b) => `${a} ${b}`)).filter((m) => !have.has(capNorm(compose(m))));
   for (let i = pool.length - 1; i > 0; i--) { const j = crypto.randomInt(i + 1); [pool[i], pool[j]] = [pool[j], pool[i]]; }
   const now = Date.now();
-  const added = pool.slice(0, count).map((message) => ({ id: 'c' + crypto.randomUUID(), message, headline: '', ts: now }));
+  const added = pool.slice(0, count).map((phrase) => ({ id: 'c' + crypto.randomUUID(), message: compose(phrase), headline: '', ts: now }));
   if (added.length) { items.unshift(...added); saveCaptions(items); }
   res.json({ added, left: pool.length - added.length });
 });
@@ -1844,9 +1851,9 @@ app.post('/api/launch', upload.any(), async (req, res) => {
   const token = prof.accessToken;
   // ช่องเงินในหน้าเว็บเป็นบาท — แปลงเป็นสกุลของบัญชีก่อนส่ง FB (บัญชี USD งบ 300 บาท ต้องเป็น ~9 ดอลลาร์ ไม่ใช่ 300)
   // อ่านสกุลหรือเรตไม่ได้ = ไม่ขึ้นแอดบัญชีนี้ (เดิมเดาว่าเป็น 2 ทศนิยม บัญชีสกุลอื่นจะได้งบผิดหลายสิบเท่า)
-  // ใช้แคมเปญเดิม = ไม่ตั้งงบ/กฎใหม่ ไม่ต้องแปลงอะไร — ห้ามให้เรตหรือการอ่านสกุลล่มลากการเติมแอดเข้าแคมเปญเดิมพังไปด้วย
+  // 1 แอด = 1 แคมเปญ (ผู้ใช้สั่ง 12 ต.ค. 2026) ทุกแอดตั้งงบของตัวเอง จึงต้องรู้สกุล+เรตเสมอ
   let money = null;
-  if (!data.campaignId) {
+  {
     let cur;
     try { cur = (await fb(acct, { fields: 'currency' }, 'GET', token)).currency; }
     catch (e) {
@@ -1866,7 +1873,7 @@ app.post('/api/launch', upload.any(), async (req, res) => {
     }
     // บอกผู้ใช้ทุกครั้งว่าแปลงเป็นเท่าไหร่ ด้วยเรตไหน — เงินขยับข้ามสกุลแบบเงียบๆ ไม่ได้
     if (money.cur !== 'THB' && data.campaignBudget) {
-      send({ type: 'info', msg: `บัญชีนี้ใช้ ${money.cur} — งบ ${money.both(data.campaignBudget)}/วัน (${money.rateText})` });
+      send({ type: 'info', msg: `บัญชีนี้ใช้ ${money.cur} — งบแคมเปญละ ${money.both(data.campaignBudget)}/วัน (${money.rateText})` });
     }
   }
   const files = Object.fromEntries((req.files || []).map((f) => [f.fieldname, f]));
@@ -1888,54 +1895,29 @@ app.post('/api/launch', upload.any(), async (req, res) => {
     return imageHashCache[md5];
   }
 
-  try {
-    let campaignId = data.campaignId;
-    if (!campaignId) {
-      send({ type: 'progress', msg: 'กำลังสร้างแคมเปญ...' });
-      const campaignParams = {
-        name: data.campaign.name,
-        objective: data.campaign.objective,
-        status,
-        special_ad_categories: [],
-      };
-      // CBO: ตั้งงบที่ระดับแคมเปญ (FB กระจายให้ชุดโฆษณาเอง)
-      if (data.campaignBudget) {
-        campaignParams.daily_budget = money.toMinor(data.campaignBudget);
-        campaignParams.bid_strategy = 'LOWEST_COST_WITHOUT_CAP';
-      }
-      const campaign = await fb(`${acct}/campaigns`, campaignParams, 'POST', token);
-      campaignId = campaign.id;
-      // กฎหยุดอัตโนมัติบนเซิร์ฟเวอร์ Meta (ทำงานแม้โปรแกรมปิด): ใช้จ่ายเกิน minSpend และ CPA เกิน cpr → pause แคมเปญ
-      // ต้องเป็นระดับ CAMPAIGN เท่านั้น (ADSET+เงื่อนไขต้นทุน FB ไม่ให้ใช้กับงบ CBO — พิสูจน์แล้ว), หน่วยเงิน = สตางค์
-      if (data.autoRule && Number(data.autoRule.cpr) > 0) {
-        try {
-          await fb(`${acct}/adrules_library`, {
-            name: `หยุดอัตโนมัติ: ${data.campaign.name}`,
-            schedule_spec: { schedule_type: 'SEMI_HOURLY' },
-            evaluation_spec: {
-              evaluation_type: 'SCHEDULE',
-              filters: [
-                { field: 'entity_type', value: 'CAMPAIGN', operator: 'EQUAL' },
-                { field: 'campaign.id', value: [campaignId], operator: 'IN' },
-                { field: 'time_preset', value: 'LIFETIME', operator: 'EQUAL' },
-                { field: 'spent', value: money.toMinor(data.autoRule.minSpend || 0), operator: 'GREATER_THAN' },
-                { field: 'cpa', value: money.toMinor(data.autoRule.cpr), operator: 'GREATER_THAN' },
-              ],
-            },
-            execution_spec: { execution_type: 'PAUSE' },
-          }, 'POST', token);
-          send({ type: 'progress', msg: `ตั้งกฎหยุดอัตโนมัติแล้ว (CPA เกิน ${money.both(data.autoRule.cpr)} หลังใช้เกิน ${money.both(data.autoRule.minSpend || 0)})` });
-        } catch (e) {
-          send({ type: 'warn', index: 0, msg: `ตั้งกฎหยุดอัตโนมัติไม่สำเร็จ (${e.message}) — แอดขึ้นต่อตามปกติ` });
-        }
-      }
+  // แคมเปญของแต่ละแอด — สร้างในขั้นของแอดตัวนั้น (หลังเตรียมสื่อเสร็จ) และลบทิ้งถ้าแอดตัวนั้นพัง
+  // ไม่งั้นแคมเปญเปล่าพร้อมงบจะค้างในบัญชี • ใช้แคมเปญเดิมซ้ำ (data.campaignId จากหน้าเว็บรุ่นเก่า) ไม่รองรับแล้ว
+  const newCampaign = async (ad) => {
+    const campaignParams = {
+      name: `${data.campaign.name} - ${ad.name}`.slice(0, 250),
+      objective: data.campaign.objective,
+      status,
+      special_ad_categories: [],
+    };
+    if (data.campaignBudget) {
+      campaignParams.daily_budget = money.toMinor(data.campaignBudget);
+      campaignParams.bid_strategy = 'LOWEST_COST_WITHOUT_CAP';
     }
-    send({ type: 'campaign', id: campaignId });
+    return (await fb(`${acct}/campaigns`, campaignParams, 'POST', token)).id;
+  };
+  const madeCampaigns = [];
 
+  try {
     let verifyDone = false;
 
     const processAd = async (i) => {
       const ad = data.ads[i];
+      let campaignId = null;
       try {
         if (aborted) throw new Error('ยกเลิกแล้ว');
         let file = files[ad.imageField];
@@ -1977,6 +1959,8 @@ app.post('/api/launch', upload.any(), async (req, res) => {
           targeting.flexible_spec = [{ interests: ad.interests.map((x) => ({ id: x.id, name: x.name })) }];
         }
 
+        send({ type: 'status', index: i, msg: 'สร้างแคมเปญ...' });
+        campaignId = await newCampaign(ad);
         send({ type: 'status', index: i, msg: 'สร้างชุดโฆษณา...' });
         const adsetParams = {
           name: `${ad.name} - Ad Set`,
@@ -1986,7 +1970,7 @@ app.post('/api/launch', upload.any(), async (req, res) => {
           targeting,
           status,
         };
-        // งบอยู่ที่ระดับแคมเปญเสมอ (CBO) — ไม่ต้องตั้งที่ ad set
+        // งบอยู่ที่ระดับแคมเปญเสมอ (แคมเปญของแอดตัวนี้ตัวเดียว) — ไม่ต้องตั้งที่ ad set
         // กลยุทธ์วงจรลูกค้า — เลือกจากหน้าเว็บ: '100' = รับทุกกลุ่ม, '0' = หาลูกค้าใหม่, '' = ไม่ส่ง ปล่อยตาม default ของ FB
         const lifecycleStrategy = data.lifecycleStrategy === undefined ? '100' : String(data.lifecycleStrategy);
         if (objInfo.needsPixel) {
@@ -2088,8 +2072,11 @@ app.post('/api/launch', upload.any(), async (req, res) => {
         // จดไว้ว่าวิดีโอตัวนี้ขึ้นบัญชีนี้แล้ว — รอบหน้าตัวจัดแผนจะได้เลี่ยงไปหยิบตัวอื่น
         if (ad.mediaId) markVideoUsed(ad.mediaId, acctId);
 
-        send({ type: 'result', index: i, ok: true, adId: adRes.id, adsetId: adset.id });
+        madeCampaigns.push(campaignId);
+        send({ type: 'result', index: i, ok: true, adId: adRes.id, adsetId: adset.id, campaignId });
       } catch (e) {
+        // แอดพังหลังสร้างแคมเปญแล้ว = ลบแคมเปญเปล่าที่มีงบทิ้ง (ของเราเองเมื่อครู่ ยังไม่มีแอด)
+        if (campaignId) { try { await fb(campaignId, { status: 'DELETED' }, 'POST', token); } catch { /* ข้าม */ } }
         send({ type: 'result', index: i, ok: false, error: e.message });
       }
     };
@@ -2104,7 +2091,33 @@ app.post('/api/launch', upload.any(), async (req, res) => {
       }
     }));
 
-    send({ type: 'done', campaignId, account: acct.replace('act_', '') });
+    // กฎหยุดอัตโนมัติบนเซิร์ฟเวอร์ Meta (ทำงานแม้โปรแกรมปิด): ใช้จ่ายเกิน minSpend และ CPA เกิน cpr → pause แคมเปญ
+    // ต้องเป็นระดับ CAMPAIGN เท่านั้น (ADSET+เงื่อนไขต้นทุน FB ไม่ให้ใช้กับงบ CBO — พิสูจน์แล้ว), หน่วยเงิน = สตางค์
+    // กฎเดียวครอบทุกแคมเปญของรอบนี้ — FB ประเมินทีละแคมเปญเอง (entity_type CAMPAIGN) ไม่ต้องสร้างกฎทีละตัว
+    if (data.autoRule && Number(data.autoRule.cpr) > 0 && madeCampaigns.length) {
+      try {
+        await fb(`${acct}/adrules_library`, {
+          name: `หยุดอัตโนมัติ: ${data.campaign.name}`,
+          schedule_spec: { schedule_type: 'SEMI_HOURLY' },
+          evaluation_spec: {
+            evaluation_type: 'SCHEDULE',
+            filters: [
+              { field: 'entity_type', value: 'CAMPAIGN', operator: 'EQUAL' },
+              { field: 'campaign.id', value: madeCampaigns, operator: 'IN' },
+              { field: 'time_preset', value: 'LIFETIME', operator: 'EQUAL' },
+              { field: 'spent', value: money.toMinor(data.autoRule.minSpend || 0), operator: 'GREATER_THAN' },
+              { field: 'cpa', value: money.toMinor(data.autoRule.cpr), operator: 'GREATER_THAN' },
+            ],
+          },
+          execution_spec: { execution_type: 'PAUSE' },
+        }, 'POST', token);
+        send({ type: 'progress', msg: `ตั้งกฎหยุดอัตโนมัติแล้ว (CPA เกิน ${money.both(data.autoRule.cpr)} หลังใช้เกิน ${money.both(data.autoRule.minSpend || 0)})` });
+      } catch (e) {
+        send({ type: 'warn', index: 0, msg: `ตั้งกฎหยุดอัตโนมัติไม่สำเร็จ (${e.message}) — แอดขึ้นต่อตามปกติ` });
+      }
+    }
+
+    send({ type: 'done', campaignIds: madeCampaigns, account: acct.replace('act_', '') });
   } catch (e) {
     send({ type: 'fatal', error: e.message });
   }
@@ -2811,57 +2824,23 @@ const AP_COUNTS_AS_LIVE = new Set(['ACTIVE', 'PENDING_REVIEW', 'IN_PROCESS']);
 // ทุกแคมเปญที่สร้างเกินมาคือค่าโฆษณาอีกก้อนต่อวัน ที่ไม่มีใครไปเก็บกวาดให้
 const AP_CAMPAIGN_PREFIX = 'Autopilot ';
 
-// getMoney = ตัวแปลงเงินของบัญชี เรียกเฉพาะตอนต้องสร้างแคมเปญใหม่ (ตั้งงบ) — แคมเปญเดิมยังเปิดอยู่ไม่ต้องใช้เรต
-// คืน { id, created } created = { budgetText, rateText } ตอนสร้างใหม่ ไว้ให้ log บอกว่างบบาทกลายเป็นเท่าไหร่ในสกุลบัญชี
-async function apGetCampaign(acct, token, s, acctId, d, objInfo, getMoney) {
-  const known = (s.campaign || {})[acctId];
-  if (known) {
-    try {
-      const c = await fb(known, { fields: 'id,status,effective_status' }, 'GET', token);
-      if (c && c.status === 'ACTIVE') return { id: known };
-    } catch { /* อ่านไม่ได้ ไปหาตามชื่อต่อ */ }
-    // ไม่ ACTIVE หรืออ่านไม่ได้ = ยังสรุปไม่ได้ว่าต้องสร้างใหม่
-    // FB รวม "ถูกลบ" กับ "ไม่มีสิทธิ์/สะดุดชั่วคราว" ไว้ในข้อความเดียวกัน แยกไม่ออก
-    // จึงต้องกวาดดูในบัญชีก่อน ดีกว่าเดาแล้วสร้างซ้ำกินงบอีกก้อนต่อวัน
-  }
-
-  // ตามหาแคมเปญของระบบที่มีอยู่แล้ว — กันการสร้างซ้ำเมื่อ state หายหรืออ่าน id เดิมไม่ได้
-  let mine = [];
-  try {
-    const all = await fbAll(`${acct}/campaigns`, { fields: 'id,name,status,objective', limit: 200 }, token);
-    mine = all.filter((c) => String(c.name || '').startsWith(AP_CAMPAIGN_PREFIX));
-  } catch {
-    return {};   // กวาดไม่ได้ก็ยังไม่ตัดสิน รอรอบหน้า ปลอดภัยกว่าสร้างมั่ว
-  }
-  // วัตถุประสงค์ต้องตรงกับที่ตั้งไว้ ไม่งั้น adset ที่สร้างจะยิงไม่ผ่านทุกตัวและวนเตือนทุกรอบ
-  const want = d.objective || 'OUTCOME_SALES';
-  const live = mine.find((c) => c.status === 'ACTIVE' && (!c.objective || c.objective === want));
-  if (live) {
-    s.campaign = s.campaign || {};
-    s.campaign[acctId] = live.id;
-    // ตั้งใจไม่ใส่ลง s.owned — ชื่อขึ้นต้นตรงกันไม่ใช่หลักฐานว่าเราสร้าง
-    // แคมเปญที่ผู้ใช้ตั้งชื่อเองว่า "Autopilot อะไรสักอย่าง" จะได้ไม่โดนขยายงบหรือโดนปิดแอดข้างใน
-    // ใช้เป็นที่เติมแอดได้ แต่ไม่ได้สิทธิ์ไปยุ่งกับงบของมัน
-    return { id: live.id };
-  }
-  // ไม่มีของระบบที่ยังเปิดอยู่เลย → สร้างใหม่ (เจ้าของเลือกให้ระบบดูแลเองเต็มที่)
-
+// 1 แอด = 1 แคมเปญ (ผู้ใช้สั่ง 12 ต.ค. 2026) — เดิมทุกแอดของบัญชีอยู่ในแคมเปญเดียวงบ CBO ก้อนเดียว
+// FB เทงบไปที่แอดตัวเดียว (วัดจริงวันแรก: rosegold 802 บาท vs columbia 73 บาท) แอดที่เหลือไม่เคยถูกทดสอบจริง
+// แยกแคมเปญ = แต่ละแอดได้งบ campaignBudget เต็มของตัวเอง → งบจริงต่อบัญชี = แอดที่ยิงอยู่ (minAds) × campaignBudget
+// เข้า s.owned ทุกตัว — ตัวขยายงบ/ตัวปิดแอดขาดทุนทำงานรายแคมเปญ = รายแอดไปโดยปริยาย
+async function apNewCampaign(acct, token, s, d, money, item) {
   const params = {
-    name: `${AP_CAMPAIGN_PREFIX}${new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10)}`,
+    name: `${AP_CAMPAIGN_PREFIX}${new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10)} • ${item.name}`.slice(0, 250),
     objective: d.objective || 'OUTCOME_SALES',
     status: 'ACTIVE',
     special_ad_categories: [],
   };
   const budget = Number(d.campaignBudget) || 0;
-  const money = await getMoney();
   if (budget > 0) { params.daily_budget = money.toMinor(budget); params.bid_strategy = 'LOWEST_COST_WITHOUT_CAP'; }
   const c = await fb(`${acct}/campaigns`, params, 'POST', token);
-  s.campaign = s.campaign || {};
-  s.campaign[acctId] = c.id;
-  // จดไว้ว่าแคมเปญนี้ระบบเป็นคนสร้าง — apScale จะขึ้นงบได้เฉพาะของตัวเองเท่านั้น
   s.owned = s.owned || [];
   if (!s.owned.includes(c.id)) s.owned.push(c.id);
-  return { id: c.id, created: { budgetText: money.both(budget), rateText: money.rateText } };
+  return c.id;
 }
 
 async function apCreateOneAd(acct, token, campaignId, pageId, pixelId, d, objInfo, item, testMode, beneficiaryId) {
@@ -3203,23 +3182,10 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz, ta
     for (const list of lists) for (const v of list) if (!usedHere.has(v.id)) return v;
     return ranked[i % ranked.length];   // คลังเล็กกว่าจำนวนแอดที่ต้องเติม — ยอมซ้ำในรอบเดียว
   };
-  // งบในค่าตั้งต้นเป็นบาท — แปลงเป็นสกุลของบัญชีเฉพาะตอนต้องสร้างแคมเปญใหม่ ไม่มีเรต = ไม่สร้าง (ไม่เดาเรต) เตือนวันละครั้ง
-  // เดิมบังคับต้องมีเรตก่อนเสมอ แม้แคมเปญเดิมยังเปิดอยู่และไม่ต้องตั้งงบอะไร = เรตล่มแล้วการเติมแอดหยุดไปด้วยเปล่าๆ
-  let fxErr = null;
-  const getMoney = () => acctMoney(a.currency).catch((e) => { fxErr = e; throw e; });
-  let camp;
-  try { camp = await apGetCampaign(acct, prof.accessToken, s, acctId, d, objInfo, getMoney); }
-  catch (e) {
-    if (fxErr) { apFxWarn(s, a, alerts, fxErr); return; }
-    const m = `⚠️ ${a.name}: สร้างแคมเปญให้ไม่สำเร็จ (${e.message})`;
-    alerts.push(m); apLog(s, 'warn', m, acctId);
-    return;
-  }
-  const campaignId = camp.id;
-  if (!campaignId) {
-    apLog(s, 'sleep', `${a.name}: ยังยืนยันแคมเปญของระบบไม่ได้รอบนี้ — ข้ามการเติมแอดไว้ก่อน`, acctId);
-    return;
-  }
+  // งบในค่าตั้งต้นเป็นบาท — แอดทุกตัวได้แคมเปญใหม่ของตัวเอง จึงต้องแปลงเป็นสกุลบัญชีทุกครั้งที่เติม
+  // ไม่มีเรต = ไม่สร้าง (ไม่เดาเรต) เตือนวันละครั้ง
+  let money;
+  try { money = await acctMoney(a.currency); } catch (e) { apFxWarn(s, a, alerts, e); return; }
 
   // cursor แยกต่อโปรไฟล์ — แต่ละล็อกอิน FB หมุนเพจของตัวเองอิสระ ไม่ให้ offset ปนกันข้ามล็อกอิน
   // migration: ของเดิมบนดิสก์เป็นตัวเลข (cursor รวม) — ไม่ใช่ object เมื่อไหร่รีเซ็ตเป็น {} ก่อนใช้
@@ -3235,7 +3201,9 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz, ta
     const item = { mediaId: v.id, name: `${v.name} - auto`, message: cap.message, headline: cap.headline };
     // บาลานซ์เพจแบบ round-robin: แต่ละแอดหมุนไปเพจถัดไปในพูลของโปรไฟล์นี้ (cursor สะสมข้ามรอบ)
     const pageId = pagePool[(s.pageCursor[prof.id] = (s.pageCursor[prof.id] || 0) + 1) % pagePool.length];
+    let campaignId = null;
     try {
+      campaignId = await apNewCampaign(acct, prof.accessToken, s, d, money, item);
       const adId = await apCreateOneAd(acct, prof.accessToken, campaignId, pageId, pixelId, d, objInfo, item, testMode,
         beneficiaryId);
       // จดว่าแอดตัวนี้ใช้คลิป+แคปชั่นไหน ไว้ให้รอบตรวจให้คะแนนย้อนกลับเมื่อรู้ผลรีวิว
@@ -3247,6 +3215,11 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz, ta
       if (testMode) { s.tested = s.tested || {}; (s.tested[acctId] = s.tested[acctId] || []).push(Date.now()); }
       ok++;
     } catch (e) {
+      // แคมเปญที่เพิ่งสร้างแต่แอดไม่สำเร็จ = แคมเปญเปล่าที่มีงบค้างอยู่ในบัญชี — ลบทิ้ง (ของเราเองเมื่อครู่ ยังไม่มีแอด)
+      if (campaignId) {
+        try { await fb(campaignId, { status: 'DELETED' }, 'POST', prof.accessToken); } catch { /* ลบไม่ได้ก็ไม่มีแอดให้ใช้เงินอยู่ดี */ }
+        s.owned = (s.owned || []).filter((id) => id !== campaignId);
+      }
       const need = FB_NEEDS_HUMAN[e.fbSubcode];
       if (need) {
         // หยุดเติมแอดให้บัญชีนี้จนกว่าคนจะแก้แล้วกดปลดล็อก — ลองซ้ำไปก็โดนข้อเดิม
@@ -3261,13 +3234,8 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz, ta
     }
   }
   if (ok) {
-    // งบอยู่ที่แคมเปญ (CBO) เติมแอดไม่ได้เพิ่มเงิน • สร้างแคมเปญใหม่รอบนี้ = ต้องบอกยอดในสกุลบัญชีกับเรตที่ใช้
-    // (เดิมบอกแต่บาท ระบบอัตโนมัติไม่เคยจดว่าแปลงเป็นเท่าไหร่ เรตผิดทีเดียวเงียบสนิท)
-    const budgetNote = camp.created
-      ? `แคมเปญใหม่ งบ ${camp.created.budgetText}/วัน${camp.created.rateText ? ` • ${camp.created.rateText}` : ''}`
-      : String(a.currency || 'THB').toUpperCase() === 'THB'
-        ? `งบรวมยังคุมที่ ${Number(d.campaignBudget).toLocaleString()} บาท/วัน`
-        : 'งบรวมยังคุมที่งบของแคมเปญเดิม';
+    // แอดละแคมเปญ = เติมแอดคือเพิ่มงบ — ต้องบอกงบต่อแคมเปญ (ในสกุลบัญชี + เรตที่ใช้) ทุกครั้ง
+    const budgetNote = `แยกแคมเปญละแอด งบแคมเปญละ ${money.both(Number(d.campaignBudget) || 0)}/วัน${money.rateText ? ` • ${money.rateText}` : ''}`;
     const m = testMode
       ? `🧪 ${a.name}: สร้างแอดทดสอบ ${ok} ตัว — ปิดไว้ ยังไม่ใช้เงินสักบาท เข้า Ads Manager ดูได้เลย ชื่อขึ้นต้นด้วย [ทดสอบ]`
       : `➕ ${a.name}: แอดยิงอยู่ ${activeCount}/${target} ตัว — เติมให้อีก ${ok} ตัว (เปิดยิงแล้ว ${budgetNote})`;
@@ -3308,7 +3276,7 @@ async function apPauseLosers(cfg, prof, a, ads, s, alerts) {
 
   // ดูเฉพาะแอดที่ยิงอยู่จริงและอยู่ในแคมเปญที่ระบบ "สร้างเอง" (s.owned) เท่านั้น
   // ห้ามรวม s.campaign — ตัวนั้นมีแคมเปญที่ "รับมาใช้" จากชื่อขึ้นต้น Autopilot ปนอยู่
-  // ซึ่ง apGetCampaign จงใจไม่ใส่ owned เพื่อไม่แตะของที่เจ้าของตั้งไว้เอง (ดูคอมเมนต์ที่นั่น)
+  // (state รุ่นก่อน 12 ต.ค. 2026 ที่ยังรับแคมเปญชื่อ Autopilot มาใช้) ซึ่งจงใจไม่ใส่ owned เพื่อไม่แตะของที่เจ้าของตั้งไว้เอง
   const owned = new Set(s.owned || []);
   const live = ads.filter((x) => x.effective_status === 'ACTIVE' && !s.paused[x.id]);
   if (!live.length) return;
@@ -3402,7 +3370,7 @@ async function apScale(cfg, prof, a, s, alerts) {
   // ขึ้นงบได้เฉพาะแคมเปญที่ระบบสร้างเอง (s.owned) — เดิมไล่ทุกแคมเปญในบัญชี
   // แปลว่าแคมเปญที่เจ้าของทำเองและตั้งงบไว้ตั้งใจแล้ว โดนระบบขยับงบให้วันละ 20% โดยไม่ได้ขอ
   // และห้ามรวม s.campaign ด้วย — แคมเปญ "รับมาใช้" (ชื่อขึ้นต้น Autopilot แต่ไม่ได้สร้างเอง)
-  // อยู่ในนั้น ซึ่งสัญญาไว้ที่ apGetCampaign ว่าจะไม่ขยับงบ/ไม่ปิดแอดข้างใน
+  // อยู่ในนั้น (state รุ่นก่อน 12 ต.ค. 2026) ซึ่งสัญญาไว้ว่าจะไม่ขยับงบ/ไม่ปิดแอดข้างใน
   const owned = new Set(s.owned || []);
   for (const c of camps) {
     if (!owned.has(c.id)) continue;

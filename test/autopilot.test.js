@@ -68,31 +68,53 @@ describe('รอบแรกหลังเปิดระบบ', () => {
   });
 });
 
-describe('การจัดการแคมเปญ (P0-3)', () => {
-  test('บัญชีมีแคมเปญของระบบเปิดอยู่แล้ว ต้องรับมาใช้ ไม่สร้างซ้ำ', async (t) => {
+describe('แอดละแคมเปญ (ผู้ใช้สั่ง 12 ต.ค. 2026)', () => {
+  const campPosts = (world) => world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/campaigns`);
+  test('เติมแอด 2 ตัว = 2 แคมเปญ งบเต็มแคมเปญละ campaignBudget แต่ละแคมเปญมีชุดโฆษณาของตัวเอง', async (t) => {
+    // เดิม 1 บัญชี = 1 แคมเปญงบ CBO ก้อนเดียว FB เทงบไปแอดตัวเดียว (วัดจริง 802 vs 73 บาท)
+    const { base, world, dir } = await boot(t);
+    await post(base, '/api/autopilot/run');
+    const camps = campPosts(world);
+    assert.strictEqual(camps.length, 2);
+    assert.ok(camps.every((c) => c.params.daily_budget === '333300'), 'แต่ละแคมเปญต้องได้งบ 3,333 บาทเต็ม');
+    const sets = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/adsets`);
+    assert.strictEqual(new Set(sets.map((c) => c.params.campaign_id)).size, 2, 'ชุดโฆษณาต้องอยู่คนละแคมเปญ');
+    const owned = readState(dir).owned;
+    assert.ok(world.campaigns.every((c) => owned.includes(c.id)), 'ทุกแคมเปญต้องเป็นของระบบ (ขยายงบ/ปิดแอดขาดทุนได้)');
+  });
+
+  test('มีแคมเปญ Autopilot แบบเก่า (CBO รวม) เปิดอยู่แต่ไม่มีแอดยิง ต้องไม่ใส่แอดเพิ่มเข้าไป — สร้างแคมเปญใหม่ต่อแอด', async (t) => {
     const world = freshWorld({
       campaigns: [{ id: 'C_EXIST', acct: ACCT, name: 'Autopilot 2026-07-01', status: 'ACTIVE', daily_budget: '333300' }],
     });
     const { base } = await boot(t, { world });
-    await runTwice(base);
-    const made = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/campaigns`);
-    assert.strictEqual(made.length, 0, 'ต้องไม่สร้างแคมเปญใหม่ทับของเดิม');
+    await post(base, '/api/autopilot/run');
+    const sets = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/adsets`);
+    assert.ok(sets.length > 0 && sets.every((c) => c.params.campaign_id !== 'C_EXIST'));
+    assert.ok(!world.calls.some((c) => c.method === 'POST' && c.path === 'C_EXIST'), 'ห้ามแตะแคมเปญเดิม');
   });
 
-  test('ไม่มีแคมเปญของระบบเลย ต้องสร้างให้', async (t) => {
-    const { base, world } = await boot(t);
-    await runTwice(base);
-    const made = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/campaigns`);
-    assert.strictEqual(made.length, 1, 'ต้องสร้างแคมเปญ 1 ตัว');
-  });
-
-  test('กวาดหาแคมเปญไม่ได้ (FB สะดุด) ต้องไม่สร้างมั่ว', async (t) => {
-    const world = freshWorld();
-    world.route = (m, p) => (m === 'GET' && p === `act_${ACCT}/campaigns` ? { error: 'ล่มชั่วคราว' } : null);
+  test('แคมเปญที่ยังมีแอดยิงอยู่ครบเป้า ต้องไม่สร้างเพิ่ม (งบรวมคุมด้วยจำนวนแอดที่ยิงอยู่)', async (t) => {
+    const world = freshWorld({
+      ads: [
+        { id: 'A1', acct: ACCT, name: 'ยิงอยู่ 1', effective_status: 'ACTIVE', adset_id: 'S1' },
+        { id: 'A2', acct: ACCT, name: 'ยิงอยู่ 2', effective_status: 'ACTIVE', adset_id: 'S2' },
+      ],
+    });
     const { base } = await boot(t, { world });
-    await runTwice(base);
-    const made = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/campaigns`);
-    assert.strictEqual(made.length, 0, 'อ่านไม่ได้ต้องรอรอบหน้า ไม่ใช่เดาแล้วสร้างงบเพิ่มอีกก้อน');
+    await post(base, '/api/autopilot/run');
+    assert.strictEqual(campPosts(world).length, 0);
+  });
+
+  test('แอดพังหลังสร้างแคมเปญแล้ว ต้องลบแคมเปญทิ้ง (ไม่ค้างแคมเปญเปล่าที่มีงบ)', async (t) => {
+    const world = freshWorld({
+      route: (m, p) => (m === 'POST' && p === `act_${ACCT}/ads` ? { error: 'จำลองสร้างแอดไม่ผ่าน' } : null),
+    });
+    const { base, dir } = await boot(t, { world });
+    await post(base, '/api/autopilot/run');
+    assert.strictEqual(campPosts(world).length, 1, 'พลาดแล้วหยุดรอบนี้ ไม่รัวสร้างต่อ');
+    assert.ok(world.campaigns.every((c) => c.status === 'DELETED'), 'แคมเปญที่สร้างค้างต้องถูกลบ');
+    assert.ok(!(readState(dir).owned || []).includes(world.campaigns[0].id), 'ลบแล้วต้องเอาออกจากรายการของระบบด้วย');
   });
 });
 
@@ -332,18 +354,6 @@ describe('ค่าเงิน (P2-10)', () => {
     assert.ok(logText(dir).includes('ไม่ปิดแอดขาดทุน'), 'ต้องบอกว่าระหว่างนี้ระบบไม่ปิดแอดขาดทุนให้');
   });
 
-  test('ดึงเรตไม่ได้แต่แคมเปญของระบบยังเปิดอยู่ ต้องเติมแอดเข้าแคมเปญเดิมต่อได้ (ไม่ต้องใช้เรต)', async (t) => {
-    const world = freshWorld({
-      fxDown: true, accounts: [acctIn('USD')],
-      campaigns: [{ id: 'C_EXIST', acct: ACCT, name: 'Autopilot 2026-10-01', status: 'ACTIVE', objective: 'OUTCOME_SALES', daily_budget: '9999' }],
-    });
-    const { base } = await boot(t, { world });
-    await runTwice(base);
-    assert.strictEqual(madeBudget(world), undefined, 'ไม่สร้างแคมเปญใหม่');
-    const adsets = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/adsets`);
-    assert.ok(adsets.length > 0 && adsets.every((c) => c.params.campaign_id === 'C_EXIST'), 'ต้องเติมแอดเข้าแคมเปญเดิม');
-  });
-
   test('บัญชี USD ใช้งบวันนี้ครบ ข้อความต้องติดป้าย USD ไม่ใช่ "บาท"', async (t) => {
     const world = freshWorld({
       accounts: [acctIn('USD')],
@@ -357,15 +367,30 @@ describe('ค่าเงิน (P2-10)', () => {
     assert.ok(line.includes('99/100 USD') && !line.includes('บาท'), line);
   });
 
-  test('ขึ้นแอดเองเข้าแคมเปญเดิมตอนดึงเรตไม่ได้ ต้องขึ้นได้ (ไม่ได้ตั้งงบใหม่ ไม่ต้องใช้เรต)', async (t) => {
+  test('ขึ้นแอดเอง 2 แอด = 2 แคมเปญ งบแคมเปญละเต็ม และกฎหยุดอัตโนมัติกฎเดียวครอบทั้งสองแคมเปญ', async (t) => {
+    const { base, world } = await boot(t, { world: freshWorld({ accounts: [acctIn('USD')] }) });
+    const ad = (n) => ({ mediaId: 'v1', name: `Ad-${n}`, message: 'ทดสอบ', link: 'https://example.com/', ageMin: 20, ageMax: 65, gender: '', countries: ['TH'], interests: [] });
+    const out = await (await fetch(base + '/api/launch', { method: 'POST', body: launchForm({ autoRule: { cpr: 100, minSpend: 150 }, ads: [ad(1), ad(2)] }) })).text();
+    const camps = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/campaigns`);
+    assert.strictEqual(camps.length, 2);
+    assert.ok(camps.every((c) => c.params.daily_budget === '900'), '300 บาท = 9 ดอลลาร์ ต่อแคมเปญ');
+    assert.deepStrictEqual(camps.map((c) => c.params.name).sort(), ['เทสขึ้นแอด - Ad-1', 'เทสขึ้นแอด - Ad-2']);
+    const rules = world.calls.filter((c) => c.method === 'POST' && /adrules_library$/.test(c.path));
+    assert.strictEqual(rules.length, 1);
+    const ids = JSON.parse(rules[0].params.evaluation_spec).filters.find((f) => f.field === 'campaign.id').value;
+    assert.strictEqual(ids.length, 2);
+    const done = out.trim().split('\n').map((l) => JSON.parse(l)).find((e) => e.type === 'done');
+    assert.strictEqual(done.campaignIds.length, 2);
+  });
+
+  test('ขึ้นแอดเอง: แอดตัวไหนพังหลังสร้างแคมเปญ ต้องลบแคมเปญของตัวนั้นทิ้ง', async (t) => {
     const world = freshWorld({
-      fxDown: true, accounts: [acctIn('USD')],
-      campaigns: [{ id: 'C_OLD', acct: ACCT, name: 'แคมเปญเดิม', status: 'ACTIVE', objective: 'OUTCOME_SALES', daily_budget: '1000' }],
+      route: (m, p) => (m === 'POST' && p === `act_${ACCT}/ads` ? { error: 'จำลองสร้างแอดไม่ผ่าน' } : null),
     });
     const { base } = await boot(t, { world });
-    const out = await (await fetch(base + '/api/launch', { method: 'POST', body: launchForm({ campaignId: 'C_OLD', currency: 'USD' }) })).text();
-    assert.ok(!out.includes('"fatal"'), out.slice(0, 300));
-    assert.ok(world.calls.some((c) => c.method === 'POST' && c.path === `act_${ACCT}/ads`), 'ต้องสร้างแอดได้');
+    await (await fetch(base + '/api/launch', { method: 'POST', body: launchForm() })).text();
+    assert.strictEqual(world.campaigns.length, 1);
+    assert.strictEqual(world.campaigns[0].status, 'DELETED');
   });
 
   test('ขึ้นแอดเองตอนอ่านสกุลเงินจาก FB ไม่ได้ ต้องใช้สกุลจากรายชื่อบัญชีที่หน้าเว็บส่งมา (บัญชีบาทไม่ควรติด)', async (t) => {
@@ -1046,7 +1071,7 @@ describe('เกราะ rate limit ของ Meta', () => {
     const { base } = await boot(t, { world });
     await runTwice(base);
     const made = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/campaigns`);
-    assert.strictEqual(made.length, 1, 'โควตาปกติ รอบเต็มต้องเดินงานตามเดิม (สร้างแคมเปญได้)');
+    assert.strictEqual(made.length, 2, 'โควตาปกติ รอบเต็มต้องเดินงานตามเดิม (minAds 2 = แอดละแคมเปญ 2 แคมเปญ)');
   });
 });
 
@@ -1217,7 +1242,7 @@ describe('ซ่อนบัญชี/เพจจากหน้าสุขภ
     await post(base, '/api/hidden', { kind: 'account', id: ACCT, hidden: false });
     await runTwice(base);   // ตอนซ่อนอยู่บัญชีไม่เคยถูก baseline — ปลดแล้วรอบแรก baseline รอบสองเติมจริง
     const after = world.calls.filter((c) => c.method === 'POST' && c.path === `act_${ACCT}/campaigns`);
-    assert.strictEqual(after.length, 1, 'กดโชว์กลับแล้ว autopilot ต้องกลับมาดูแลต่อ');
+    assert.strictEqual(after.length, 2, 'กดโชว์กลับแล้ว autopilot ต้องกลับมาดูแลต่อ (แอดละแคมเปญ)');
   });
 
   test('ซ่อนเพจ = autopilot ไม่เอาเพจนั้นขึ้นแอด (ตัดออกจากพูล round-robin)', async (t) => {
@@ -1255,7 +1280,7 @@ describe('autopilot เช็คบัตรก่อนเติมแอด', 
     const noCard = w.calls.filter((c) => c.method === 'POST' && c.path === 'act_901/campaigns');
     const withCard = w.calls.filter((c) => c.method === 'POST' && c.path === 'act_902/campaigns');
     assert.strictEqual(noCard.length, 0, 'บัญชีไม่มีบัตรต้องถูกข้าม — สร้างไปก็โดนปฏิเสธ เสีย API เปล่า');
-    assert.strictEqual(withCard.length, 1, 'บัญชีมีบัตรต้องเติมตามปกติ ไม่โดนลากพัง');
+    assert.strictEqual(withCard.length, 2, 'บัญชีมีบัตรต้องเติมตามปกติ ไม่โดนลากพัง (แอดละแคมเปญ)');
   });
 
   test('ผูกบัตรแล้ว รอบถัดไปต้องกลับมาเติมให้เอง', async (t) => {
@@ -1267,7 +1292,7 @@ describe('autopilot เช็คบัตรก่อนเติมแอด', 
     assert.strictEqual(w.calls.filter((c) => c.method === 'POST' && c.path === 'act_903/campaigns').length, 0, 'ยังไม่มีบัตรต้องไม่เติม');
     w.accounts[0].funding_source_details = { id: 'f_new', display_string: 'VISA 1234' };   // ผู้ใช้ผูกบัตรแล้ว
     await runTwice(base);
-    assert.strictEqual(w.calls.filter((c) => c.method === 'POST' && c.path === 'act_903/campaigns').length, 1,
+    assert.strictEqual(w.calls.filter((c) => c.method === 'POST' && c.path === 'act_903/campaigns').length, 2,
       'ผูกบัตรแล้วระบบต้องกลับมาเติมเอง ไม่ต้องกดอะไรเพิ่ม');
   });
 });

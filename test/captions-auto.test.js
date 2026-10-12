@@ -64,3 +64,22 @@ test('แคปชั่นที่พิมพ์เองแบบแยก�
   assert.ok(made.every((m) => !have.has(m.normalize('NFC'))), 'ต้องไม่สร้างคำที่มีอยู่แล้วซ้ำ');
   assert.strictEqual(made.length, total - typed.length, 'ต้องสร้างได้ครบเฉพาะคู่ที่ยังไม่มี');
 });
+
+test('ใส่ลิงก์ปลายทาง: แคปชั่นต้องเป็น "ลิงก์" ขึ้นบรรทัดใหม่ "วลี" • ลิงก์แปลกต้องไม่ผ่าน', async (t) => {
+  const { base, saved } = await boot(t);
+  const r = await post(base, '/api/captions/auto', { count: 5, link: 'https://heylink.me/VtMwM/' });
+  assert.strictEqual(r.added.length, 5);
+  for (const c of r.added) {
+    const [first, second, ...rest] = c.message.split('\n');
+    assert.strictEqual(first, 'https://heylink.me/VtMwM/');
+    assert.ok(second && second.split(' ').length <= 4 && !rest.length, c.message);
+  }
+  assert.ok(saved().every((c) => c.message.startsWith('https://heylink.me/VtMwM/\n')));
+  // วลีเดิมกับลิงก์อื่น = คนละแคปชั่น ไม่นับว่าซ้ำ
+  const r2 = await post(base, '/api/captions/auto', { count: 100, link: 'https://heylink.me/other/' });
+  assert.strictEqual(r2.added.length, 100);
+  for (const bad of ['javascript:alert(1)', 'heylink.me/x', 'https://a b']) {
+    const res = await fetch(base + '/api/captions/auto', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ count: 1, link: bad }) });
+    assert.strictEqual(res.status, 400, bad);
+  }
+});
