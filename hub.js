@@ -94,6 +94,8 @@ async function startKid(id) {
       PUBLIC_URL: process.env.PUBLIC_URL || `http://localhost:${PORT}`,
       // ให้ลูกหา config ของโปรไฟล์อื่นได้ (ใช้กันบอท Telegram ตัวเดียวกันถูกใช้หลายโปรไฟล์)
       HUB_ROOT_CONFIG: ROOT_CONFIG,
+      // ให้บอทของโปรไฟล์หนึ่งขอตารางเช็คของโปรไฟล์อื่นผ่านตัวกลางได้ (/w/<id>/api/check-table — ดู tgCheckOther)
+      HUB_PORT: String(PORT),
     },
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'],   // ช่อง IPC = สายชีวิต: ตัวกลางตาย ลูกปิดตัวเองตาม (ดูท้าย server.js)
   });
