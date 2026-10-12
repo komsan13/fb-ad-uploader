@@ -482,6 +482,7 @@ describe('คำสั่งเช็คตารางแคมเปญ "/<โ
     assert.deepStrictEqual(tg.state.calls.find((c) => c.method === 'setMyCommands').body.commands.map((c) => c.command),
       ['top_check', 'jub_check'], 'เมนู "/" ต้องมีคำสั่งของทุกโปรไฟล์');
 
+    await until(() => tg.state.polls >= 1);   // รอบแรกหลังบูตทิ้งของค้าง — ส่งก่อนนั้นข้อความหาย
     tg.push(CHAT, '@jub_check');   // แบบที่ผู้ใช้พิมพ์
     await until(() => tables(tg).length >= 1, 30000, `@jub_check ต้องได้ตารางของ JUB\n${log}`);
     const msg = tables(tg)[0].text;
@@ -490,11 +491,86 @@ describe('คำสั่งเช็คตารางแคมเปญ "/<โ
     const camps = (tok) => fb.world.calls.filter((c) => c.path === `act_${ACCT}/campaigns` && c.params.access_token === tok).length;
     assert.ok(camps('tokj') > 0, 'ข้อมูล JUB ต้องดึงด้วย token ของ JUB');
     assert.strictEqual(camps('tok'), 0, 'TOP ต้องไม่ดึงตารางเองด้วย token ของ TOP');
+    assert.deepStrictEqual(fb.world.calls.filter((c) => c.method !== 'GET'), [], 'เช็คอย่างเดียว ห้ามเขียน FB');
 
     tg.push(CHAT, '/nope_check');
     await until(() => tg.state.sent.some((m) => /ไม่มีโปรไฟล์นี้/.test(m.text)), 20000);
     assert.match(tg.state.sent.find((m) => /ไม่มีโปรไฟล์นี้/.test(m.text)).text, /\/top_check {2}\/jub_check/);
     assert.strictEqual(ai.state.requests.length, 0, 'คำสั่งเช็คต้องไม่เรียก AI');
+  });
+
+  test('บอทของโปรไฟล์อื่น (ไม่ใช่ TOP) เช็คได้แค่ของตัวเอง — แชทของคนอื่นห้ามเห็นตัวเลขของ TOP', async (t) => {
+    const root = tmpDir();
+    fs.writeFileSync(path.join(root, 'workspaces.json'), JSON.stringify({ list: [{ id: 'top', name: 'TOP' }, { id: 'p62', name: 'JUB' }] }));
+    const { tg, srv } = await bootTg(t, {
+      cfg: cfgCheck(), fbWorld: checkWorld('JUB '),
+      env: { WS_ID: 'p62', HUB_ROOT_CONFIG: path.join(root, 'config.json') },
+    });
+    await until(() => tg.state.calls.some((c) => c.method === 'setMyCommands'), 20000, 'บอทต้องลงเมนู');
+    assert.deepStrictEqual(tg.state.calls.find((c) => c.method === 'setMyCommands').body.commands.map((c) => c.command), ['jub_check']);
+    await until(() => tg.state.polls >= 1);
+    tg.push(CHAT, '/top_check');
+    await until(() => tg.state.sent.some((m) => /ไม่มีโปรไฟล์นี้/.test(m.text)), 20000, '/top_check จากบอท JUB ต้องไม่ได้ตาราง');
+    assert.match(tg.state.sent.find((m) => /ไม่มีโปรไฟล์นี้/.test(m.text)).text, /พิมพ์ได้: \/jub_check$/);
+    assert.strictEqual(tables(tg).length, 0);
+
+    // ทางเข้าภายในของตัวกลาง: ไม่มี header ของบอท (เช่นหน้าเว็บอื่นสั่ง GET ข้ามเว็บ) = ไม่ยิง FB
+    const before = srv.fbWorld.calls.length;
+    assert.strictEqual((await fetch(`${srv.base}/api/check-table`)).status, 403);
+    assert.strictEqual(srv.fbWorld.calls.length, before, 'ปฏิเสธแล้วต้องไม่ยิง FB สักคำขอ');
+    const ok = await (await fetch(`${srv.base}/api/check-table`, { headers: { 'x-fbad-check': '1' } })).json();
+    assert.match(ok.messages[0], /^📋 <b>JUB<\/b> · /);
+  });
+
+  test('บัญชีสกุลอื่นชื่อยาว / ชื่อมีอีโมจิ / เศษสตางค์ — รหัสสกุลไม่หาย ข้อความไม่เสีย ยอดรวมตรงกับแถว', async (t) => {
+    const w = {
+      accounts: [
+        { name: 'sss10 backup2', account_id: '301', account_status: 1, currency: 'USD' },
+        { name: 'r1', account_id: '302', account_status: 1, currency: 'THB' },
+      ],
+      campaigns: [
+        { id: 'U1', acct: '301', name: 'Sale 50%🔥xyz', objective: 'OUTCOME_SALES', daily_budget: '1000' },
+        ...[1, 2, 3].map((n) => ({ id: `R${n}`, acct: '302', name: `r1 ${n}/3`, objective: 'OUTCOME_SALES', daily_budget: '177700' })),
+      ],
+      ads: ['U1', 'R1', 'R2', 'R3'].map((id) => ({ id: `A${id}`, acct: id[0] === 'U' ? '301' : '302', campaign_id: id, effective_status: 'ACTIVE' })),
+      adsets: [],
+      insights: [
+        { acct: '301', campaign_id: 'U1', spend: '10.5' },
+        { acct: '301', campaign_id: 'U9', objective: 'OUTCOME_SALES', spend: '2.34' },   // ลบแล้ว
+        ...[1, 2, 3].map((n) => ({ acct: '302', campaign_id: `R${n}`, spend: '0.6' })),
+      ],
+      pixels: [{ id: 'px1' }],
+    };
+    const { tg } = await bootTg(t, { cfg: cfgCheck(), fbWorld: w });
+    await until(() => tg.state.polls >= 1);
+    tg.push(CHAT, '/check');
+    await until(() => tables(tg).length >= 1, 20000, 'ต้องได้ตาราง');
+    const msg = tables(tg)[0].text;
+    assert.ok(msg.isWellFormed(), 'ตัดชื่อกลางอีโมจิแล้วข้อความเสีย = Telegram ปฏิเสธทั้งก้อน');
+    const lines = preOf(msg).split('\n');
+    assert.match(lines[0], /^sss10 backu… USD +12\.84$/, 'รหัสสกุลต้องอยู่ครบหลังตัดชื่อ — หายแล้วตัวเลขดอลลาร์ดูเหมือนบาท');
+    assert.ok(lines.some((l) => /^ {2}Sale 50%🔥… +10 +10\.5 +0 {2}🟢$/u.test(l)), lines.join('\n'));
+    assert.ok(lines.some((l) => /^ {2}- +- +2\.34 +0 {2}🗑$/.test(l)));
+    // 0.6 สามแถว: แถวโชว์ 1, 1, 1 → บรรทัดบัญชีและยอดรวมต้องเป็น 3 (ไม่ใช่ 2 จากการปัดผลรวม)
+    assert.ok(lines.some((l) => /^r1 +3$/.test(l)), lines.join('\n'));
+    assert.strictEqual(lines.filter((l) => /^ {2}\d\/3 +1,777 +1 +0 {2}🟢$/.test(l)).length, 3);
+    assert.match(msg, /^💰 ใช้วันนี้รวม 12\.84 USD \+ 3 บาท$/m);
+  });
+
+  test('โควตา Meta เกิน 90% (ช่วงกันไว้ก่อนของเรา) — หยุดดึง และบอกตามจริงว่าโควตาใกล้เต็ม ไม่ใช่ "Meta จำกัด"', async (t) => {
+    const w = checkWorld('');
+    w.headers = { 'x-app-usage': '{"call_count":95,"total_time":10,"total_cputime":10}' };
+    const { tg, srv } = await bootTg(t, { cfg: cfgCheck(), fbWorld: w });
+    await until(() => tg.state.polls >= 1);
+    tg.push(CHAT, '/check');
+    await until(() => tables(tg).length >= 1, 20000, 'ต้องได้ข้อความตอบ');
+    const msg = tables(tg)[0].text;
+    assert.match(msg, /โควตาเรียก API ของ Meta ใกล้เต็ม \(เกิน 90%\) — .* ลองใหม่หลัง \d\d:\d\d น\./);
+    assert.ok(!/Meta จำกัดการเข้า API/.test(msg), 'soft ไม่ใช่ Meta สั่งพัก — ห้ามบอกผิด');
+    const n = srv.fbWorld.calls.length;
+    tg.push(CHAT, '/check');   // สั่งซ้ำตอนยังอยู่ในช่วงพัก = ไม่ยิง FB เลย
+    await until(() => tables(tg).length >= 2, 20000);
+    assert.strictEqual(srv.fbWorld.calls.length, n, 'ช่วงพักห้ามยิง FB เพิ่ม — กินโควตาเดียวกับ autopilot');
   });
 
   test('บัญชีที่อ่านไม่ได้ต้องบอกตรงๆ ไม่ใช่หายไปหรือโชว์ใช้ 0', async (t) => {
