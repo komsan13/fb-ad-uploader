@@ -2656,6 +2656,11 @@ async function watchTick() {
       }
     } catch { /* ข้ามรอบนี้ */ }
   }
+  // รอบนี้ถือ state ไว้ระหว่างรอ FB เป็นวินาที-นาที — งานสรุปเช้า 8 โมงเขียน lastSummaryDay ลงไฟล์เดียวกันได้ในช่วงนั้น
+  // เขียนทับทั้งก้อน = ลบวันที่ที่เพิ่งจดทิ้ง แล้วรอบเช็คถัดไป (5 นาที) ส่งสรุปเช้าซ้ำ (วัดแล้ว: ได้ 2 ข้อความ)
+  // คีย์นั้นเป็นของงานสรุปคนเดียว ค่าบนดิสก์ชนะเสมอ
+  const disk = loadWatchState();
+  if (disk.lastSummaryDay !== undefined) state.lastSummaryDay = disk.lastSummaryDay;
   saveWatchState(state);
   if (alerts.length) await tgSend(cfg, '📣 FB Ad Uploader แจ้งเตือน\n\n' + alerts.join('\n'));
 }
@@ -2878,7 +2883,8 @@ const AP_DEFAULTS = () => ({
   // adScore: adId -> {v:'ok'|'bad', ts} ผลรีวิวที่นับไปแล้ว (กันนับซ้ำ และรองรับกรณีผ่านแล้วโดนถอดทีหลัง)
   // libStats: 'v:<id>'|'c:<id>' -> {ok, bad} ตัวนับสะสมว่าครีเอทีฟชิ้นนั้นขึ้นง่ายแค่ไหน
   // relaunch: adId -> จำนวนครั้งที่แอดสายนี้ถูกขึ้นใหม่มาแล้ว (นับสะสมข้ามรุ่น)
-  creative: {}, adScore: {}, libStats: {}, relaunch: {},
+  // watched: acctId -> เวลาล่าสุดที่รอบตรวจได้เห็นรายการแอดของบัญชีนี้ (ใช้ตัดสินว่าประวัติยังครบไหม ดู apTouchSeen)
+  creative: {}, adScore: {}, libStats: {}, relaunch: {}, watched: {},
 });
 
 // ---------- คะแนน "ขึ้นง่าย" ของคลิป/แคปชั่น ----------
@@ -2993,7 +2999,9 @@ function loadAp() {
 // และทุกครั้งที่หน้าเว็บถามสถานะ ปล่อยให้โตไปเรื่อยๆ คือแบกภาระเพิ่มขึ้นทุกวันโดยไม่มีเพดาน
 const AP_KEEP_MS = 60 * 24 * 3600 * 1000;     // เก็บประวัติ 60 วันพอ
 const apMark = (obj, id, v) => { obj[id] = { v, ts: Date.now() }; };
-function apPrune(s) {
+// expire=false = แปลงรูปแบบเก่าอย่างเดียว ยังไม่ลบตามอายุ — ใช้ตอนต้นรอบตรวจ ซึ่งยังไม่รู้ว่าแอดไหนยังอยู่
+// (ลบตอนต้นรอบ = ประวัติของแอดที่ยังค้างในบัญชีหายก่อน apTouchSeen ได้ต่ออายุ ดูคอมเมนต์ที่นั่น)
+function apPrune(s, expire = true) {
   for (const key of ['handled', 'retryOf', 'retries', 'counted', 'paused', 'reasonCounted', 'creative', 'adScore', 'relaunch']) {
     const bag = s[key] || {};
     for (const id of Object.keys(bag)) {
@@ -3003,12 +3011,42 @@ function apPrune(s) {
       if (!e) { delete bag[id]; continue; }
       // ของเดิมเก็บเป็นค่าดิบไม่มีเวลา — ประทับเวลาให้ตอนนี้ แล้วปล่อยให้หมดอายุตามปกติ
       if (typeof e !== 'object' || !e.ts) { bag[id] = { v: e, ts: Date.now() }; continue; }
-      if (Date.now() - e.ts > AP_KEEP_MS) delete bag[id];
+      if (expire && Date.now() - e.ts > AP_KEEP_MS) delete bag[id];
     }
   }
+  if (!expire) return;
   for (const id of Object.keys(s.scaled || {})) {
     if (Date.now() - s.scaled[id] > AP_KEEP_MS) delete s.scaled[id];
   }
+}
+
+// ---------- ประวัติของแอดที่ยังอยู่ในบัญชีห้ามหมดอายุ ----------
+// FB ไม่ลบแอดที่โดนปฏิเสธทิ้งเอง มันค้างอยู่ใน act_X/ads เป็นเดือนเป็นปี แต่ประวัติของเรา (handled/counted/relaunch...)
+// เดิมหมดอายุตามเวลา 60 วันอย่างเดียว ผลที่วัดได้ (รีวิว 12 ต.ค. 2026): แอดที่โดนปฏิเสธเมื่อ 61 วันก่อนถูกนับเป็น
+// "โดนใหม่" ทั้งชุด = ตัวนับ freeze เต็มทั้งที่ไม่มีอะไรเกิด (บัญชีถูกหยุด + หยุดเติมแอด) และสายที่ "ตายถาวร"
+// ครบ maxRelaunchPerAd แล้วถูก AI แก้แล้วขึ้นใหม่อีกรอบ = เกราะรั่ว
+// วิธีแก้: ทุกรอบที่เห็นรายการแอดของบัญชี ต่ออายุทุกรายการของแอดที่ยังเห็นอยู่ — ที่หมดอายุได้มีแต่แอดที่หายไปจริง
+// paused ไม่ต่ออายุ: พฤติกรรมเดิม (แอดที่เคยปิดเพราะขาดทุนแล้วคนเปิดกลับ ถูกพิจารณาใหม่ได้หลัง 60 วัน) ไม่เกี่ยวกับบั๊กนี้
+const AP_TOUCH_MS = 24 * 3600 * 1000;   // ต่ออายุเมื่อเก่ากว่าวันหนึ่ง — ทุกรอบ (10 นาที) ไม่จำเป็น
+const AP_SEEN_BAGS = ['handled', 'retryOf', 'retries', 'counted', 'creative', 'adScore', 'relaunch'];
+// บัญชีที่ไม่ได้ถูกเฝ้านานกว่านี้ (ปิดระบบ/ถูก freeze/ถูกซ่อน/บัญชีถูกปิด) อาจมีประวัติหมดอายุไปแล้วบางส่วน
+// = ต้องตั้งต้นใหม่ (baseline) เหมือนเจอบัญชีครั้งแรก ไม่ใช่เดาว่าประวัติยังครบ
+// รายการล่าสุดถูกต่ออายุไม่เกิน AP_TOUCH_MS ก่อนเห็นครั้งสุดท้าย จึงหายได้เร็วสุดเมื่อห่างเกิน AP_KEEP_MS - AP_TOUCH_MS
+const AP_REBASE_MS = AP_KEEP_MS - AP_TOUCH_MS;
+// watched=false = ต่ออายุอย่างเดียว ไม่นับว่า "ได้เฝ้า" (บัญชีที่ถูกหยุด/ซ่อน — ระบบไม่ได้จัดการแอดของมันจริง)
+function apTouchSeen(s, acctId, ads, watched = true) {
+  const now = Date.now();
+  const touch = (bag, k) => {
+    const e = bag && bag[k];
+    // แทนที่ object ใหม่ ไม่ mutate ของเดิม — saveApMerged ใช้ ref แยก "ของที่ tick นี้เขียน" (counted/creative/adScore/reasonCounted)
+    // mutate ตรงๆ = ตัว merge มองว่าไม่ได้แตะ แล้วเอาค่าเวลาเก่าบนดิสก์กลับมาทับ
+    if (e && typeof e === 'object' && e.ts && now - e.ts > AP_TOUCH_MS) bag[k] = { ...e, ts: now };
+  };
+  for (const ad of ads) {
+    for (const key of AP_SEEN_BAGS) touch(s[key], ad.id);
+    touch(s.reasonCounted, `${acctId}|${ad.id}`);
+  }
+  if (watched) (s.watched = s.watched || {})[acctId] = now;
 }
 // เขียนลงไฟล์ชั่วคราวแล้ว rename ทับ — เขียนตรงๆ แล้วถูก kill กลางคันจะได้ไฟล์ JSON ขาด
 // ซึ่ง loadAp จะ parse ไม่ผ่านแล้วคืนค่าเปล่า = ปลดล็อกบัญชีที่ถูก freeze ทิ้งหมด (เกราะกันแบนหาย)
@@ -3052,7 +3090,8 @@ function apSnapshot(s) {
     logSeen: new Set(s.log || []),
   };
 }
-function saveApMerged(s, base) {
+// prune=false ใช้ตอนบันทึกกลางรอบ (apCheckpoint) — บัญชีที่รอบนี้ยังไล่ไม่ถึงยังไม่ถูกต่ออายุ ห้ามลบตามอายุก่อน
+function saveApMerged(s, base, prune = true) {
   const cur = loadAp();
   s.killSwitch = cur.killSwitch;                 // ปุ่มหยุดฉุกเฉินเป็นของผู้ใช้เสมอ
 
@@ -3086,9 +3125,49 @@ function saveApMerged(s, base) {
   const fresh = (s.log || []).filter((e) => !base.logSeen.has(e));
   s.log = fresh.concat(cur.log || []).sort((a, b) => b.ts - a.ts).slice(0, AP_LOG_MAX);
 
-  apPrune(s);   // ฐานมาจากดิสก์ (ยังไม่ prune) ต้อง prune ซ้ำ ไม่ให้ของหมดอายุฟื้นคืนทุกรอบ
+  if (prune) apPrune(s);   // ฐานมาจากดิสก์ (ยังไม่ prune) ต้อง prune ซ้ำ ไม่ให้ของหมดอายุฟื้นคืนทุกรอบ
   saveAp(s);
 }
+
+// ---------- บันทึกกลางรอบหลังลงมือเรื่องเงินแต่ละครั้ง ----------
+// เดิมบันทึกครั้งเดียวตอนจบรอบ — redeploy ฆ่าโปรเซสกลางรอบเมื่อไหร่ ทุกอย่างที่รอบนั้นทำบน FB หายจาก state (วัดแล้ว):
+// แคมเปญที่สร้างไปไม่เข้า owned = ตัวปิดแอดขาดทุน/ขยายงบไม่ดูแลมันอีกเลย, แอดที่แก้ข้อความไปแล้วไม่อยู่ใน handled
+// = รีสตาร์ทแล้วแก้ซ้ำอีกตัว (เกราะแก้ครั้งเดียวรั่ว), ตัวนับรายวันหาย = เพดานรายวันทะลุ
+// autopilotTick ตั้งตัวนี้ตอนเริ่มรอบ (apRunning กันไม่ให้มีสองรอบซ้อน) — นอกรอบเป็น no-op
+// ใช้ saveApMerged ตัวเดียวกับตอนจบรอบ: คำสั่งผู้ใช้ระหว่างรอบ (หยุดฉุกเฉิน/ปลดล็อก) ยังชนะเหมือนเดิม
+let apCheckpoint = () => {};
+
+// ---------- คำสั่งหยุด/ค่าตั้งค่าใหม่ต้องมีผลกลางรอบ ----------
+// รอบหนึ่งกินเวลาเป็นนาที (อัปวิดีโอทีละตัว) — เดิมเช็คหยุดฉุกเฉินแค่ตอนขึ้นบัญชีใหม่ และใช้ค่าตั้งค่าที่อ่านไว้ตอนเริ่มรอบ
+// วัดแล้ว (รีวิว 12 ต.ค. 2026): กดหยุดฉุกเฉิน / ปิดระบบ / เปิดโหมดทดสอบ / ตั้ง minAds 0 ระหว่างเติมแอด
+// ระบบยังสร้างแคมเปญงบเต็ม 3,333 บาท/วัน ต่ออีก 3 ตัว แล้วตัวขยายงบยังขึ้นงบต่อ — ผิดคำว่า "หยุดทุกอย่างทันที"
+// จึงอ่านสดจากดิสก์ทุกครั้งก่อนเขียนอะไรที่ใช้เงิน (สร้างแคมเปญ/ขึ้นแอด/แก้แอดโดนปฏิเสธ/ขยายงบ)
+// ค่าที่กำหนดเงินเปลี่ยนไปจากตอนเริ่มรอบ (ทางไหนก็ตาม) = หยุดรอบนี้ รอบหน้า (≤10 นาที) ทำงานตามค่าใหม่เอง
+// ใช้ค่าเก่าลงมือต่อไม่ได้ — เช่นลดงบต่อแอดแล้ว รอบที่วิ่งอยู่ยังสร้างแคมเปญด้วยงบเดิม
+// คืนเหตุผล (ข้อความ) ถ้าต้องหยุด • '' = ทำต่อได้
+function apMustStop(cfg) {
+  if (loadAp().killSwitch) return 'กดหยุดฉุกเฉิน';
+  const now = loadConfig();
+  const ap = now.autopilot || {}, was = cfg.autopilot || {};
+  if (!ap.enabled) return 'ปิดระบบอัตโนมัติ';
+  if (!!ap.testMode !== !!was.testMode) return ap.testMode ? 'เปิดโหมดทดสอบ' : 'ปิดโหมดทดสอบ';
+  const n = (o, k) => Number((o || {})[k]) || 0;
+  if (n(ap, 'minAds') !== n(was, 'minAds')) return `เปลี่ยนจำนวนแอดขั้นต่ำเป็น ${n(ap, 'minAds')}`;
+  if (n(ap, 'scaleMaxBudget') !== n(was, 'scaleMaxBudget')) return 'เปลี่ยนเพดานขยายงบ';
+  const d = now.launchDefaults || {}, dw = cfg.launchDefaults || {};
+  if (n(d, 'campaignBudget') !== n(dw, 'campaignBudget')) return 'เปลี่ยนงบต่อแอด';
+  // เกณฑ์ตัดสินตัวขาดทุน/ตัวชนะ, เพดานกันพัง และบัญชี/เพจที่ซ่อน ก็ถูกอ่านไว้ตอนเริ่มรอบเหมือนกัน (รีวิวรอบยืนยันเจอ)
+  if (n(d, 'ruleCpr') !== n(dw, 'ruleCpr') || !!d.ruleOn !== !!dw.ruleOn) return 'เปลี่ยนเกณฑ์ต้นทุน/ผลลัพธ์';
+  if (JSON.stringify(apLimits(now)) !== JSON.stringify(apLimits(cfg))) return 'แก้เพดานกันพัง';
+  if (JSON.stringify(now.hidden || {}) !== JSON.stringify(cfg.hidden || {})) return 'ซ่อน/เลิกซ่อนบัญชีหรือเพจ';
+  return '';
+}
+// ลิมิตของ Meta (throttle) = ชั่วคราว ไม่ใช่คำตัดสินว่าแอดนี้ขึ้นใหม่ไม่ได้
+// fb() ลองครบ 3 ครั้งแล้วตั้ง hard cooldown ก่อนโยน (มี fbCode) • uploadVideo ไม่ใส่ fbCode แต่ตั้ง hard cooldown เหมือนกัน
+// ยกเว้นสายหลุดตอน POST ("เชื่อมต่อ FB ไม่สำเร็จ") แม้ช่วงพักตั้งอยู่ — ไม่รู้ว่า FB สร้างแอดไปแล้วหรือยัง ลองซ้ำเสี่ยงแอดซ้ำ
+// error ที่มี fbCode อื่น = FB ตอบปฏิเสธด้วยเหตุผลจริง ไม่ใช่ลิมิต
+const apThrottled = (e) => THROTTLE_CODES.has(e && e.fbCode)
+  || (fbHardCooling() && !(e && e.fbCode) && !/^เชื่อมต่อ FB ไม่สำเร็จ/.test((e && e.message) || ''));
 // ---------- ช่องส่งสดไปหน้าเว็บ (SSE) ----------
 // ทางเดียวจากเซิร์ฟเวอร์ไปเบราว์เซอร์ก็พอ ไม่ต้องพึ่งไลบรารีเพิ่ม และเบราว์เซอร์ต่อใหม่เองเมื่อหลุด
 const apClients = new Set();
@@ -3183,7 +3262,8 @@ async function aiDiagnoseRejection(apiKey, info) {
 }
 
 // สร้างแอดใหม่จากครีเอทีฟเดิม เปลี่ยนแค่ข้อความ
-async function apResubmit(acct, token, origCreative, adsetId, adName, newMessage, newHeadline) {
+// guard(ชื่อแอดใหม่) = ด่านสุดท้ายก่อน POST ads (แอดเปิดยิงจริง) — โยนเมื่อต้องหยุด ดูที่ autopilotTick
+async function apResubmit(acct, token, origCreative, adsetId, adName, newMessage, newHeadline, guard) {
   const spec = JSON.parse(JSON.stringify(origCreative.object_story_spec || {}));
   if (spec.video_data) {
     spec.video_data.message = newMessage;
@@ -3197,8 +3277,10 @@ async function apResubmit(acct, token, origCreative, adsetId, adName, newMessage
   const creative = await fb(`${acct}/adcreatives`, {
     name: `${adName} (แก้ข้อความ) - Creative`, object_story_spec: spec,
   }, 'POST', token);
+  const name = `${adName} (แก้ข้อความ)`.slice(0, 100);
+  if (guard) guard(name);
   const ad = await fb(`${acct}/ads`, {
-    name: `${adName} (แก้ข้อความ)`.slice(0, 100),
+    name,
     adset_id: adsetId,
     creative: { creative_id: creative.id },
     status: 'ACTIVE',
@@ -3208,7 +3290,8 @@ async function apResubmit(acct, token, origCreative, adsetId, adName, newMessage
 
 // สร้างแอดใหม่ในชุดโฆษณาเดิม เปลี่ยน "คลิป" ข้อความคงเดิม (ใช้เมื่อ AI ชี้ว่าปัญหาอยู่ที่ตัววิดีโอ)
 // ไม่สร้าง adset ใหม่ — เป้าหมาย/งบ/พิกเซลของเดิมผ่านมาแล้ว เปลี่ยนแค่ตัวที่ถูกตัดสินว่าผิด
-async function apRelaunchNewVideo(acct, token, origCreative, adsetId, adName, mediaId) {
+// guard(ชื่อแอดใหม่) เหมือน apResubmit — ทางนี้อัปคลิป+รอประมวลผลเป็นนาที คนกดหยุดระหว่างนั้นได้ (รีวิวรอบยืนยันพิสูจน์แล้ว)
+async function apRelaunchNewVideo(acct, token, origCreative, adsetId, adName, mediaId, guard) {
   const spec = JSON.parse(JSON.stringify(origCreative.object_story_spec || {}));
   if (!spec.video_data) throw new Error('ครีเอทีฟนี้ไม่ใช่วิดีโอ สับคลิปให้ไม่ได้');
   const m = resolveMedia(mediaId);
@@ -3224,8 +3307,10 @@ async function apRelaunchNewVideo(acct, token, origCreative, adsetId, adName, me
   const creative = await fb(`${acct}/adcreatives`, {
     name: `${adName} (สับคลิป) - Creative`, object_story_spec: spec,
   }, 'POST', token);
+  const name = `${adName} (สับคลิป)`.slice(0, 100);
+  if (guard) guard(name);
   const ad = await fb(`${acct}/ads`, {
-    name: `${adName} (สับคลิป)`.slice(0, 100),
+    name,
     adset_id: adsetId,
     creative: { creative_id: creative.id },
     status: 'ACTIVE',
@@ -3260,7 +3345,8 @@ async function apNewCampaign(acct, token, s, d, money, item, testMode) {
   return c.id;
 }
 
-async function apCreateOneAd(acct, token, campaignId, pageId, pixelId, d, objInfo, item, testMode, beneficiaryId) {
+// guard = เรียกก่อนยิงคำขอที่ทำให้เงินเดิน (POST ads) — โยนเมื่อต้องหยุด ให้ทางลบชุด/แคมเปญเปล่าเดิมเก็บกวาดต่อ
+async function apCreateOneAd(acct, token, campaignId, pageId, pixelId, d, objInfo, item, testMode, beneficiaryId, guard) {
   const targeting = {
     geo_locations: { countries: String(d.countries || 'TH').split(',').map((x) => x.trim().toUpperCase()).filter(Boolean) },
     age_min: Number(d.ageMin) || 18,
@@ -3319,14 +3405,14 @@ async function apCreateOneAd(acct, token, campaignId, pageId, pixelId, d, objInf
   // ขั้นหลังจากนี้พัง = ชุดโฆษณาที่เพิ่งสร้างกลายเป็นชุดเปล่าค้างในบัญชี (เดิมค้างเพิ่มทุกรอบที่ลองซ้ำ)
   // ลบทิ้งแบบพยายามเต็มที่ — เป็นชุดที่เราเพิ่งสร้างเมื่อครู่และยังไม่มีแอดข้างใน ลบไม่ได้ก็ไม่ใช่เหตุให้ล้มซ้ำ
   try {
-    return await apFillAdset(acct, token, adset, d, item, pageId, testMode);
+    return await apFillAdset(acct, token, adset, d, item, pageId, testMode, guard);
   } catch (e) {
     try { await fb(adset.id, { status: 'DELETED' }, 'POST', token); } catch { /* ข้าม */ }
     throw e;
   }
 }
 
-async function apFillAdset(acct, token, adset, d, item, pageId, testMode) {
+async function apFillAdset(acct, token, adset, d, item, pageId, testMode, guard) {
   // อัปวิดีโอจากคลังขึ้น FB แล้วรอประมวลผล
   const m = resolveMedia(item.mediaId);
   if (!m) throw new Error('ไฟล์วิดีโอหายจากคลัง');
@@ -3346,6 +3432,8 @@ async function apFillAdset(acct, token, adset, d, item, pageId, testMode) {
   };
   if (thumb) spec.video_data.image_url = thumb;
   const creative = await fb(`${acct}/adcreatives`, { name: `${item.name} - Creative`, object_story_spec: spec }, 'POST', token);
+  // อัปวิดีโอ+รอประมวลผลกินเวลา — คนกดหยุดระหว่างนั้นได้ ด่านสุดท้ายก่อนแอดเปิดยิงจริง
+  if (guard) guard();
   // โหมดทดสอบ: สร้างของจริงครบทุกขั้นแต่ไม่เปิดยิง — แคมเปญที่มีแต่แอดปิดอยู่ใช้เงิน 0 บาท
   // ให้ดูได้ว่า AI ประกอบแอดออกมาหน้าตายังไงก่อนตัดสินใจปล่อยเงินจริง
   const ad = await fb(`${acct}/ads`, {
@@ -3612,7 +3700,12 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz, ta
   if (!s.pageCursor || typeof s.pageCursor !== 'object') s.pageCursor = {};
 
   let ok = 0;
+  let halt = '';
+  // ด่านก่อนแอดเปิดยิง — โยน error ที่ทางเก็บกวาดข้างล่างรู้จัก (ลบชุด/แคมเปญเปล่าที่เพิ่งสร้างทิ้ง แล้วออกจากลูป)
+  const guard = () => { const why = apMustStop(cfg); if (why) throw Object.assign(new Error(why), { apStop: why }); };
   for (let i = 0; i < want; i++) {
+    // ถามทุกตัว ไม่ใช่ครั้งเดียวต่อบัญชี — เติม 4 ตัว = แคมเปญงบเต็ม 4 ก้อน แต่ละตัวห่างกันเป็นนาที (อัปวิดีโอ)
+    if ((halt = apMustStop(cfg))) break;
     const v = pickVideo(i);
     usedHere.add(v.id);
     if (taken) taken.add(v.id);
@@ -3624,8 +3717,9 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz, ta
     let campaignId = null;
     try {
       campaignId = await apNewCampaign(acct, prof.accessToken, s, d, money, item, testMode);
+      apCheckpoint();   // แคมเปญมีงบอยู่บน FB แล้ว — ต้องอยู่ใน owned บนดิสก์ แม้โปรเซสตายระหว่างอัปวิดีโอ
       const adId = await apCreateOneAd(acct, prof.accessToken, campaignId, pageId, pixelId, d, objInfo, item, testMode,
-        beneficiaryId);
+        beneficiaryId, guard);
       // จดว่าแอดตัวนี้ใช้คลิป+แคปชั่นไหน ไว้ให้รอบตรวจให้คะแนนย้อนกลับเมื่อรู้ผลรีวิว
       // โหมดทดสอบไม่จด: แอดถูกสร้างเป็น PAUSED ไม่เคยผ่านรีวิว จะนับเป็น "ผ่าน" ไม่ได้
       // (s.creative = s.creative || {}) — state บนดิสก์รุ่นเก่าไม่มีคีย์นี้ ถ้าอ่านตรงๆ จะ TypeError ฆ่าทั้งรอบ
@@ -3634,6 +3728,7 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz, ta
       s.created[acctId].push(Date.now());
       if (testMode) { s.tested = s.tested || {}; (s.tested[acctId] = s.tested[acctId] || []).push(Date.now()); }
       ok++;
+      apCheckpoint();
     } catch (e) {
       // แคมเปญที่เพิ่งสร้างแต่แอดไม่สำเร็จ = แคมเปญเปล่าที่มีงบค้างอยู่ในบัญชี — ลบทิ้ง (ของเราเองเมื่อครู่ ยังไม่มีแอด)
       if (campaignId) {
@@ -3642,6 +3737,7 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz, ta
           s.owned = (s.owned || []).filter((id) => id !== campaignId);
         } catch { /* ลบไม่ได้ = เก็บไว้ใน owned — ถ้า FB สร้างแอดได้จริงแต่คำตอบหลุด ตัวปิดแอดขาดทุน/ขยายงบยังดูแลมันได้ */ }
       }
+      if (e.apStop) { halt = e.apStop; break; }   // คนสั่งหยุด ไม่ใช่ความล้มเหลว — ไม่เตือนว่า "เติมไม่สำเร็จ"
       const need = FB_NEEDS_HUMAN[e.fbSubcode];
       if (need) {
         // หยุดเติมแอดให้บัญชีนี้จนกว่าคนจะแก้แล้วกดปลดล็อก — ลองซ้ำไปก็โดนข้อเดิม
@@ -3663,6 +3759,7 @@ async function apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz, ta
       : `➕ ${a.name}: แอดยิงอยู่ ${activeCount}/${target} ตัว — เติมให้อีก ${ok} ตัว (เปิดยิงแล้ว ${budgetNote})`;
     alerts.push(m); apLog(s, testMode ? 'test' : 'refill', m, acctId);
   }
+  return halt;   // ไม่ว่าง = มีคำสั่งหยุด autopilotTick ต้องหยุดทั้งรอบ ไม่ใช่ไปบัญชีถัดไป
 }
 
 // ---------- หยุดแอดที่ขาดทุน ----------
@@ -3747,6 +3844,7 @@ async function apPauseLosers(cfg, prof, a, ads, s, alerts) {
       }
       const m = `🛑 ${a.name}: ปิดแอด "${ad.name}" — ${why}`;
       alerts.push(m); apLog(s, 'pause', m, acctId);
+      apCheckpoint();   // pausedLog คือเพดานรายวัน — หายตอนรีสตาร์ท = ปิดเกินเพดานได้
     } catch (e) {
       apLog(s, 'warn', `${a.name}: ปิดแอด "${ad.name}" ไม่สำเร็จ (${e.message})`, acctId);
     }
@@ -3821,15 +3919,20 @@ async function apScale(cfg, prof, a, s, alerts) {
     if (nextMinor <= curMinor) continue;
     const cur = curMinor / cf, next = nextMinor / cf;
 
+    // ถามสดก่อนขึ้นงบทุกแคมเปญ — คืนเหตุผลให้ autopilotTick หยุดทั้งรอบ (เดิมกดหยุดแล้วยังขึ้นงบต่อ วัดแล้ว)
+    const halt = apMustStop(cfg);
+    if (halt) return halt;
     try {
       await fb(c.id, { daily_budget: nextMinor }, 'POST', token);
       s.scaled[c.id] = Date.now();
       const m = `📈 ${a.name}: "${c.name}" ต้นทุน ${money.text(cpa)}/ผล (เพดาน ${money.text(targetCpa)}) — ขยายงบ ${money.text(cur)} → ${money.text(next)}/วัน`;
       alerts.push(m); apLog(s, 'scale', m, a.account_id);
+      apCheckpoint();   // cooldown วันละครั้งต้องรอดรีสตาร์ท ไม่งั้นขึ้นงบซ้ำ +20% ในวันเดียว
     } catch (e) {
       apLog(s, 'warn', `${a.name}: ขยายงบ "${c.name}" ไม่สำเร็จ (${e.message})`, a.account_id);
     }
   }
+  return '';
 }
 
 // ---------- เตือนก่อนคลังแห้ง ----------
@@ -3876,7 +3979,9 @@ async function autopilotTick(mode = 'full') {
 
   const s = loadAp();
   if (s.killSwitch) return;
-  apPrune(s);
+  // ยังไม่ลบตามอายุตอนนี้ — รอให้รอบนี้เห็นรายการแอดแล้วต่ออายุของที่ยังอยู่ก่อน (apTouchSeen)
+  // ลบตอนจบรอบใน saveApMerged แทน: ปิดระบบไปนานแล้วเปิดใหม่ ประวัติของแอดที่ยังค้างในบัญชีต้องไม่หายในรอบแรก
+  apPrune(s, false);
   // คลิปที่ถูกหยิบไปแล้วในรอบตรวจนี้ — ใช้ร่วมกันข้ามบัญชี ไม่ให้ทุกบัญชีได้คลิปเดียวกันหมดในรอบเดียว
   // (นอกจากซ้ำจนเสี่ยงโดนจับเป็น spam แล้ว ยังทำให้คลิปนั้นได้ ok เท่าจำนวนบัญชีรวดเดียว)
   const takenThisTick = new Set();
@@ -3908,11 +4013,13 @@ async function autopilotTick(mode = 'full') {
   apBroadcast({ type: 'tick', phase: 'start', mode });
 
   // จับภาพ state ตอนเริ่ม — ตอนบันทึก saveApMerged ใช้เทียบว่าอะไรคือของที่ tick นี้เพิ่งเขียน
-  const base = apSnapshot(s);
-  let stopped = false;
+  // บันทึกกลางรอบแต่ละครั้งจับภาพใหม่ — รอบถัดไปเทียบกับสิ่งที่เพิ่งบันทึก ไม่ใช่ตอนเริ่มรอบ
+  let base = apSnapshot(s);
+  apCheckpoint = () => { saveApMerged(s, base, false); base = apSnapshot(s); };
+  let halt = '';      // เหตุผลที่ต้องหยุดกลางรอบ (apMustStop) — ไม่ว่าง = ทุกชั้นออกตามกันหมด
   let fbOk = false;   // มี call สำเร็จจริงอย่างน้อยหนึ่ง — ใช้ยืนยันก่อนประกาศ "กลับมาแล้ว"
   for (const prof of cfg.profiles || []) {
-    if (stopped) break;
+    if (halt) break;
     // Meta สั่งพักกลางรอบ (call ก่อนหน้าตั้ง hard cool) — หยุดที่เหลือไว้รอบหน้า ไม่ฝืนยิงต่อจนจบ
     if (Date.now() < fbCoolUntil && fbCoolHard) break;
     if (!prof.accessToken) continue;
@@ -3950,17 +4057,23 @@ async function autopilotTick(mode = 'full') {
       // เช็คซ้ำระดับบัญชี — งานหนัก (เติมแอด/ขยายงบ/อัปวิดีโอ) อยู่ในลูปนี้ โดนสั่งหยุดแล้วต้องหยุดจริง
       if (Date.now() < fbCoolUntil && fbCoolHard) break;
       const acctId = a.account_id;
+      const acct = `act_${acctId}`;
+      // รอบหนึ่งกินเวลาเป็นนาที — ผู้ใช้กดหยุดฉุกเฉิน/เปลี่ยนค่าแล้วต้องหยุดตรงนี้ ไม่ใช่ไล่ทำต่อจนจบ
+      if ((halt = apMustStop(cfg))) break;
       // บัญชีที่ผู้ใช้กดซ่อน (ปุ่มตาหน้าสุขภาพ) = autopilot ไม่แตะเลย — ไม่เติมแอด ไม่ขยายงบ ไม่แก้แอด
       // (watchTick ยังเฝ้าสถานะ/แอดโดนปฏิเสธของบัญชีพวกนี้ต่อ เป็นตาข่ายสุดท้ายว่าเงินไม่เดินเงียบๆ)
-      if (((cfg.hidden || {}).accounts || {})[acctId]) continue;
-      const acct = `act_${acctId}`;
-      // รอบหนึ่งกินเวลาเป็นนาที — ผู้ใช้กดหยุดฉุกเฉินแล้วต้องหยุดตรงนี้ ไม่ใช่ไล่ทำต่อจนจบ
-      if (loadAp().killSwitch) {
-        apLog(s, 'info', '🛑 กดหยุดฉุกเฉินระหว่างรอบตรวจ — หยุดกลางคัน');
-        stopped = true;
-        break;
+      // บัญชีที่ถูกซ่อน/ถูกหยุด ยังต้องต่ออายุประวัติของแอดที่ค้างอยู่ — อ่านรายการแอดอย่างเดียว วันละครั้ง
+      // ไม่งั้นหยุดนานเกิน 60 วัน รุ่น (relaunch) ของแอดที่ยังยิงอยู่หมดอายุ โดนปฏิเสธทีหลังถูกแก้ซ้ำเกินเพดาน (รีวิวรอบยืนยันเจอ)
+      // ไม่นับเป็น "ได้เฝ้า" — กลับมาหลังห่างนานยังตั้งต้นใหม่ แอดที่โดนระหว่างนั้นไม่ถูกนับรวดเดียว
+      if (((cfg.hidden || {}).accounts || {})[acctId] || s.frozen[acctId]) {
+        if (s.baselined[acctId] && s.warned['keep:' + acctId] !== apToday()) {
+          try {
+            apTouchSeen(s, acctId, await fbAll(`${acct}/ads`, { fields: 'id', limit: 200 }, prof.accessToken), false);
+            s.warned['keep:' + acctId] = apToday();
+          } catch { /* อ่านไม่ได้ รอบหน้าลองใหม่ */ }
+        }
+        continue;
       }
-      if (s.frozen[acctId]) continue;
 
       let ads = [];
       try {
@@ -3984,10 +4097,54 @@ async function autopilotTick(mode = 'full') {
       // รอบแรกของบัญชีนี้ = แอดที่โดนปฏิเสธอยู่ก่อนแล้วจดไว้เฉยๆ ไม่แตะ กันไปไล่แก้ของเก่าที่ค้างมานานรวดเดียว
       // (จดเป็น handled → ลูปข้างล่างข้ามเอง) แต่ไม่ข้ามทั้งบัญชี — เดิม continue ทิ้งการเติมแอด/ขยายงบไปด้วย
       // เปิดระบบกับบัญชีที่ยังไม่มีแอดเลย รอบแรกเลยไม่ทำอะไร ต้องรออีก 20 นาทีถึงขึ้นแอด (ผู้ใช้เจอจริง 12 ต.ค. 2026)
-      if (!s.baselined[acctId]) {
-        rejected.forEach((x) => apMark(s.handled, x.id, 'baseline'));
+      //
+      // ไม่ได้เห็นบัญชีนี้นานจนประวัติอาจหมดอายุไปแล้ว (ปิดระบบนาน/ถูก freeze/ถูกซ่อน/บัญชีถูกปิด) = ตั้งต้นใหม่แบบเดียวกัน
+      // ไม่ตั้งต้นใหม่ = แอดที่โดนปฏิเสธเมื่อหลายเดือนก่อนถูกนับเป็นของใหม่รวดเดียว (freeze ฟรี) และสายที่ตายถาวรถูกแก้ซ้ำ
+      // state บน production (วัด 12 ต.ค. 2026): baselined อายุ 76–85 วัน แต่ handled/counted/retryOf/relaunch ถูกลบหมดแล้ว
+      // → ทุกบัญชีเข้าเงื่อนไขนี้ตอนเปิดระบบรอบแรกหลังอัปเดต = migration ในตัว ไม่ต้องมีธงเวอร์ชัน
+      // state รุ่นก่อนไม่มี watched — ใช้ baselined แทน: ทุกรายการเกิดหลัง baseline จึงยังไม่หมดอายุถ้า baseline ยังไม่เก่าเกิน
+      const lastWatch = (s.watched || {})[acctId] || s.baselined[acctId] || 0;
+      const rebase = !!lastWatch && Date.now() - lastWatch > AP_REBASE_MS;
+      if (!s.baselined[acctId] || rebase) {
+        // ไม่ทับแอดที่มีประวัติอยู่แล้ว (fixed/dead-after-retry...) — ตั้งต้นเฉพาะตัวที่ยังไม่มี
+        rejected.forEach((x) => { if (!s.handled[x.id]) apMark(s.handled, x.id, 'baseline'); });
         s.baselined[acctId] = Date.now();
-        apLog(s, 'info', `เริ่มเฝ้า ${a.name} — แอดที่โดนปฏิเสธอยู่ก่อนแล้ว ${rejected.length} ตัว จะไม่แตะ`, acctId);
+        apLog(s, 'info', rebase
+          ? `กลับมาเฝ้า ${a.name} หลังไม่ได้เฝ้า ${Math.floor((Date.now() - lastWatch) / 864e5)} วัน — แอดที่โดนปฏิเสธอยู่ตอนนี้ ${rejected.length} ตัว ถือเป็นของเดิม ไม่นับ ไม่แก้ (ประวัติที่เก่ากว่า 60 วันอาจหมดอายุไปแล้ว)`
+          : `เริ่มเฝ้า ${a.name} — แอดที่โดนปฏิเสธอยู่ก่อนแล้ว ${rejected.length} ตัว จะไม่แตะ`, acctId);
+      }
+      apTouchSeen(s, acctId, ads);
+
+      // ล่มชั่วคราว (AI 429/529/เน็ตหลุด, ลิมิตของ Meta) ไม่ใช่คำตัดสินว่าแอดนี้แก้ไม่ได้ — ลองใหม่รอบหน้าแบบมีเพดาน
+      // ทาง AI กับทาง FB ใช้โควตาเดียวกัน (maxDiagRetry ต่อแอด) • เดิมทาง FB ตีตก "ล้มเหลวถาวร" ทันทีแม้แค่โดน throttle (วัดแล้ว)
+      const retryLater = (ad, e, failMark, what) => {
+        const n = ((s.retries[ad.id] || {}).v || 0) + 1;
+        apMark(s.retries, ad.id, n);
+        if (n >= apLim.maxDiagRetry) {
+          apMark(s.handled, ad.id, failMark);
+          const m = `⚠️ ${a.name}: "${ad.name}" โดนปฏิเสธ แต่${what}ไม่สำเร็จ ${n} ครั้ง เลิกลอง (${e.message})`;
+          alerts.push(m); apLog(s, 'warn', m, acctId);
+        } else {
+          apLog(s, 'warn', `${a.name}: "${ad.name}" ${what}ไม่สำเร็จ ครั้งที่ ${n}/${apLim.maxDiagRetry} จะลองใหม่รอบหน้า (${e.message})`, acctId);
+        }
+      };
+
+      // ค้าง "กำลังแก้" จากรอบก่อน = โปรเซสตายระหว่างขึ้นแอดที่แก้แล้ว (redeploy) — ไม่รู้ว่าแอดใหม่ขึ้นสำเร็จไหม
+      // ห้ามลองซ้ำ (เสี่ยงได้แอดซ้ำ = เกราะแก้ครั้งเดียวรั่ว) แต่ต้องบอกคนให้ไปดูเอง ไม่ใช่เงียบ
+      // ทำก่อนลูปหลัก: แอดใหม่ที่อาจถูกสร้างไปแล้วต้องได้ประวัติก่อนที่ลูปจะเจอมัน (ถ้ามันโดนปฏิเสธอยู่ด้วย)
+      for (const ad of rejected) {
+        const done = s.handled[ad.id];
+        if (!done || done.v !== 'fixing') continue;
+        // ตามหาจากชุดโฆษณา+ชื่อที่จดไว้ก่อนยิง แล้วจดรุ่น/สายพันธุ์ให้ — ไม่จด = แอดนั้นโดนปฏิเสธทีหลังจะถูกนับเป็นรุ่นแรก
+        // แล้วถูกแก้ซ้ำเกิน maxRelaunchPerAd (รีวิวรอบยืนยันพิสูจน์แล้ว)
+        const twin = ads.find((x) => x.id !== ad.id && x.adset_id === done.adset && x.name === done.name && !s.relaunch[x.id]);
+        if (twin) { apMark(s.retryOf, twin.id, ad.id); apMark(s.relaunch, twin.id, done.gen || 1); }
+        s.fixes.push(Date.now());   // ไม่รู้ผล = นับเข้าเพดานแก้รายวันไว้ก่อน (ทางที่ปลอดภัย)
+        apMark(s.handled, ad.id, 'interrupted');
+        const m = twin
+          ? `⚠️ ${a.name}: "${ad.name}" ระบบถูกปิดระหว่างกำลังขึ้นแอดที่แก้แล้ว — เจอแอดใหม่ "${twin.name}" (${twin.id}) ในชุดเดิม จดเป็นรุ่นที่ ${done.gen || 1} แล้ว ไม่ลองซ้ำ • ตรวจใน Ads Manager ว่าไม่มีตัวซ้ำ`
+          : `⚠️ ${a.name}: "${ad.name}" ระบบถูกปิดระหว่างกำลังขึ้นแอดที่แก้แล้ว — ไม่รู้ว่าขึ้นสำเร็จไหม ไม่ลองซ้ำให้ (กันแอดซ้ำ) เข้าไปดูใน Ads Manager`;
+        alerts.push(m); apLog(s, 'warn', m, acctId);
       }
 
       for (const ad of rejected) {
@@ -4078,6 +4235,17 @@ async function autopilotTick(mode = 'full') {
           continue;
         }
 
+        // โหมดทดสอบ = ไม่ใช้เงินสักบาท — การแก้แอดโดนปฏิเสธคือขึ้นแอดใหม่ที่เปิดยิงในชุดโฆษณาจริง
+        // (เดิมยิง status ACTIVE ทั้งที่อยู่โหมดทดสอบ วัดแล้ว) จึงไม่วินิจฉัย/ไม่ขึ้นใหม่ เหมือนที่ไม่ปิดแอดขาดทุนและไม่ขยายงบ
+        // ไม่ปิดเคส: ปิดโหมดทดสอบเมื่อไหร่รอบถัดไปจัดการต่อเอง • นับ freeze/หมวดเดิมไปแล้วข้างบน เกราะยังทำงานเหมือนเดิม
+        if (ap.testMode) {
+          if (s.warned['testfix:' + acctId] !== apToday()) {
+            const m = `🧪 ${a.name}: มีแอดโดนปฏิเสธ — โหมดทดสอบไม่แก้และไม่ขึ้นแอดใหม่ให้ (แอดที่แก้แล้วจะเปิดยิงจริง) ปิดโหมดทดสอบแล้วระบบจะจัดการต่อเอง`;
+            alerts.push(m); apLog(s, 'test', m, acctId); s.warned['testfix:' + acctId] = apToday();
+          }
+          continue;
+        }
+
         const spec = (ad.creative || {}).object_story_spec || {};
         const vd = spec.video_data || spec.link_data || {};
         const curMsg = vd.message || '';
@@ -4101,22 +4269,30 @@ async function autopilotTick(mode = 'full') {
           continue;
         }
 
+        // Meta สั่งพักกลางรอบ (call ก่อนหน้าโดน throttle) = เลิกทั้งบัญชี — เดิมไล่แอดถัดไปต่อ เรียก AI เสียเงินเปล่า
+        // แล้วยิง FB ซ้ำตัวละ 3 ครั้งระหว่างที่ Meta สั่งหยุด (วัดแล้ว: รอบเดียว 120 วิ ยิง 6 ครั้ง) มีแต่ยืดเวลาโดนแขวน
+        if (fbHardCooling()) break;
+        if ((halt = apMustStop(cfg))) break;
+
         let dx;
         try {
           dx = await aiDiagnoseRejection(apiKey, { policy, reason, message: curMsg, headline: curHead });
         } catch (e) {
           // AI ล่มชั่วคราว (429/529/เน็ตหลุด) ไม่ใช่คำตัดสินว่าแอดนี้แก้ไม่ได้ — ให้โอกาสลองใหม่แบบมีเพดาน
-          const n = ((s.retries[ad.id] || {}).v || 0) + 1;
-          apMark(s.retries, ad.id, n);
-          if (n >= apLim.maxDiagRetry) {
-            apMark(s.handled, ad.id, 'diag-failed');
-            const m = `⚠️ ${a.name}: "${ad.name}" โดนปฏิเสธ แต่วินิจฉัยไม่สำเร็จ ${n} ครั้ง เลิกลอง (${e.message})`;
-            alerts.push(m); apLog(s, 'warn', m, acctId);
-          } else {
-            apLog(s, 'warn', `${a.name}: "${ad.name}" วินิจฉัยไม่สำเร็จ ครั้งที่ ${n}/${apLim.maxDiagRetry} จะลองใหม่รอบหน้า (${e.message})`, acctId);
-          }
+          retryLater(ad, e, 'diag-failed', 'วินิจฉัย');
           continue;
         }
+        // ก่อนขึ้นแอดใหม่ทั้งสองทาง: ถามคำสั่งหยุดสดอีกที (AI คิดเป็นนาทีได้ — กดหยุดระหว่างนั้นต้องไม่ขึ้นแอด
+        // เคสค้างไว้ รอบหน้าวินิจฉัยใหม่) — ถามก่อนเริ่ม (ไม่อัปคลิปเปล่า) และถามซ้ำที่ fixGuard ก่อน POST ads
+        const beginFix = () => !(halt = apMustStop(cfg));
+        // ด่านสุดท้ายก่อน POST ads (หลังอัปคลิป/รอประมวลผลเป็นนาที): หยุดได้ถึงวินาทีสุดท้าย แล้วจด "กำลังแก้"
+        // พร้อมชุดโฆษณา+ชื่อแอดที่กำลังสร้างลงดิสก์ก่อนยิง — โปรเซสตายตรงนั้น รอบหน้าไม่แก้ซ้ำ และตามหาแอดใหม่ไปจดประวัติได้ (ดูต้นลูป)
+        const fixGuard = (name) => {
+          const why = apMustStop(cfg);
+          if (why) throw Object.assign(new Error(why), { apStop: why });
+          s.handled[ad.id] = { v: 'fixing', ts: Date.now(), adset: ad.adset_id, name, gen: relaunched + 1 };
+          apCheckpoint();
+        };
 
         // ---- AI ชี้ว่าปัญหาอยู่ที่ตัววิดีโอ: สับคลิปแล้วขึ้นใหม่ในชุดโฆษณาเดิม ----
         // เปิดใช้เฉพาะเมื่อตั้งเพดาน "ขึ้นใหม่ได้กี่ครั้ง" เกิน 1 — ตั้งต้น 1 = พฤติกรรมเดิมเป๊ะ
@@ -4132,8 +4308,9 @@ async function autopilotTick(mode = 'full') {
             alerts.push(m); apLog(s, 'manual', m, acctId);
             continue;
           }
+          if (!beginFix()) break;
           try {
-            const newId = await apRelaunchNewVideo(acct, prof.accessToken, ad.creative, ad.adset_id, ad.name, alt.id);
+            const newId = await apRelaunchNewVideo(acct, prof.accessToken, ad.creative, ad.adset_id, ad.name, alt.id, fixGuard);
             // นับแอดตัวใหม่ในรอบนี้เลย — รายการแอดดึงมาตั้งแต่ต้นรอบ ไม่นับ = apRefill เห็นว่าขาด
             // แล้วสร้างแคมเปญงบเต็มเพิ่มอีกตัว (แอดละแคมเปญ: +campaignBudget/วัน ค้างถาวร — รีวิวพิสูจน์แล้ว)
             ads.push({ id: newId, name: ad.name, effective_status: 'PENDING_REVIEW', adset_id: ad.adset_id, campaign_id: ad.campaign_id });
@@ -4146,7 +4323,11 @@ async function autopilotTick(mode = 'full') {
             s.fixes.push(Date.now());
             const m = `🎬 ${a.name}: "${ad.name}" โดนปฏิเสธที่ตัววิดีโอ (${dx.violation})\n   → สับเป็นคลิป "${alt.name}" แล้วขึ้นใหม่ให้ (ครั้งที่ ${relaunched + 1}/${apLim.maxRelaunchPerAd})`;
             alerts.push(m); apLog(s, 'fixed', m, acctId);
+            apCheckpoint();
           } catch (e) {
+            if (e.apStop) { halt = e.apStop; break; }   // หยุดก่อนยิงแอด — ยังไม่มีอะไรเกิดขึ้น เคสค้างไว้ให้รอบหน้า
+            // โดนลิมิตของ Meta = ยังไม่มีแอดใหม่เกิดขึ้น ลองใหม่รอบหน้าได้ แล้วเลิกทั้งบัญชี (Meta สั่งพัก)
+            if (apThrottled(e)) { delete s.handled[ad.id]; retryLater(ad, e, 'swap-failed', 'สับคลิป'); break; }
             apMark(s.handled, ad.id, 'swap-failed');
             const m = `⚠️ ${a.name}: "${ad.name}" สับคลิปไม่สำเร็จ (${e.message})`;
             alerts.push(m); apLog(s, 'warn', m, acctId);
@@ -4177,8 +4358,9 @@ async function autopilotTick(mode = 'full') {
           continue;
         }
 
+        if (!beginFix()) break;
         try {
-          const newId = await apResubmit(acct, prof.accessToken, ad.creative, ad.adset_id, ad.name, nm, nh || undefined);
+          const newId = await apResubmit(acct, prof.accessToken, ad.creative, ad.adset_id, ad.name, nm, nh || undefined, fixGuard);
           ads.push({ id: newId, name: ad.name, effective_status: 'PENDING_REVIEW', adset_id: ad.adset_id, campaign_id: ad.campaign_id });   // นับในรอบนี้ (ดูข้างบน)
           apMark(s.handled, ad.id, 'fixed');
           apMark(s.retryOf, newId, ad.id);
@@ -4189,7 +4371,12 @@ async function autopilotTick(mode = 'full') {
           const left = apLim.maxRelaunchPerAd - (relaunched + 1);
           const m = `🔧 ${a.name}: "${ad.name}" โดนปฏิเสธเพราะ ${dx.violation}\n   → แก้ข้อความแล้วขึ้นใหม่ให้ (ครั้งที่ ${relaunched + 1}/${apLim.maxRelaunchPerAd}${left ? '' : ' — โดนอีกหยุดถาวร'})\n   ข้อความใหม่: ${nm.slice(0, 150)}`;
           alerts.push(m); apLog(s, 'fixed', m, acctId);
+          apCheckpoint();
         } catch (e) {
+          if (e.apStop) { halt = e.apStop; break; }   // หยุดก่อนยิงแอด — ยังไม่มีอะไรเกิดขึ้น เคสค้างไว้ให้รอบหน้า
+          // โดนลิมิตของ Meta = ยังไม่มีแอดใหม่เกิดขึ้น ลองใหม่รอบหน้าได้ แล้วเลิกทั้งบัญชี (Meta สั่งพัก)
+          // error อื่น (รวมสายหลุดตอน POST) ยังตีตกถาวรเหมือนเดิม — ไม่รู้ว่า FB สร้างแอดไปแล้วหรือยัง ยิงซ้ำเสี่ยงแอดซ้ำ
+          if (apThrottled(e)) { delete s.handled[ad.id]; retryLater(ad, e, 'resubmit-failed', 'ขึ้นแอดที่แก้ข้อความแล้ว'); break; }
           apMark(s.handled, ad.id, 'resubmit-failed');
           const m = `⚠️ ${a.name}: "${ad.name}" แก้ข้อความได้แต่สร้างแอดใหม่ไม่สำเร็จ (${e.message})`;
           alerts.push(m); apLog(s, 'warn', m, acctId);
@@ -4199,20 +4386,30 @@ async function autopilotTick(mode = 'full') {
         const m = `⚠️ ${a.name}: ตรวจแอดโดนปฏิเสธล้มเหลวกลางคัน (${e.message}) — ข้ามบัญชีนี้รอบนี้ บัญชีอื่นทำงานต่อ`;
         alerts.push(m); apLog(s, 'warn', m, acctId);
       }
+      // มีคำสั่งหยุด / Meta สั่งพัก = ไม่ไปต่อเรื่องเงินของบัญชีนี้ (ปิดแอดขาดทุน/เติมแอด/ขยายงบ) และไม่ไปบัญชีถัดไป
+      // ถามสดอีกที — ช่วงแอดโดนปฏิเสธเรียก AI ได้หลายนาที
+      if (halt || (halt = apMustStop(cfg)) || fbHardCooling()) break;
 
       // เติมแอดให้ครบเป้า — ทำหลังจัดการของที่โดนปฏิเสธเสร็จ และเฉพาะบัญชีที่ยังไม่ถูกหยุด
       if (mode === 'full' && !s.frozen[acctId]) {
         // ปิดตัวขาดทุนก่อนเติม เพื่อให้ apRefill เห็นช่องว่างจริงแล้วเอาครีเอทีฟใหม่เข้าไปแทนในรอบเดียวกัน
         try { await apPauseLosers(cfg, prof, a, ads, s, alerts); }
         catch (e) { apLog(s, 'warn', `ปิดแอดขาดทุนใน ${a.name} ไม่สำเร็จ: ${e.message}`, acctId); }
-        try { await apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz, takenThisTick); }
+        // apRefill/apScale ถามคำสั่งหยุดเองก่อนยิงทุกครั้ง แล้วคืนเหตุผลกลับมา — เดิมกดหยุดระหว่างเติมแอด
+        // ตัวขยายงบของบัญชีเดียวกันยังขึ้นงบต่อหลังจากนั้น (วัดแล้ว)
+        try { halt = (await apRefill(cfg, prof, a, ads, s, alerts, livePages, verifiedBiz, takenThisTick)) || ''; }
         catch (e) { apLog(s, 'warn', `เติมแอดให้ ${a.name} ไม่สำเร็จ: ${e.message}`, acctId); }
-        try { await apScale(cfg, prof, a, s, alerts); }
-        catch (e) { apLog(s, 'warn', `ขยายงบใน ${a.name} ไม่สำเร็จ: ${e.message}`, acctId); }
+        if (!halt && !fbHardCooling()) {
+          try { halt = (await apScale(cfg, prof, a, s, alerts)) || ''; }
+          catch (e) { apLog(s, 'warn', `ขยายงบใน ${a.name} ไม่สำเร็จ: ${e.message}`, acctId); }
+        }
         liveAccounts++;
+        if (halt || fbHardCooling()) break;
       }
     }
   }
+  // บอกครั้งเดียวว่าหยุดกลางคันเพราะอะไร — ร่องรอยว่าคำสั่งมีผลจริง (เดิมมีเฉพาะกรณีกดหยุดฉุกเฉิน)
+  if (halt) apLog(s, 'info', `🛑 ${halt}ระหว่างรอบตรวจ — หยุดกลางคัน${halt === 'กดหยุดฉุกเฉิน' || halt === 'ปิดระบบอัตโนมัติ' ? '' : ' รอบหน้าทำงานตามค่าใหม่'}`);
   if (mode === 'full') apStockCheck(cfg, s, alerts, liveAccounts);
 
   // เคยเตือนว่าพักไป และรอบนี้มี call สำเร็จจริง = พิสูจน์แล้วว่ากลับมาได้ — ค่อยประกาศ (ครั้งเดียว)
@@ -4227,6 +4424,7 @@ async function autopilotTick(mode = 'full') {
   }
 
   saveApMerged(s, base);
+  apCheckpoint = () => {};   // นอกรอบตรวจไม่มี state ในมือให้บันทึก
   apBroadcast({ type: 'tick', phase: 'end', mode });
   if (alerts.length) await tgSend(cfg, '🤖 ระบบอัตโนมัติ\n\n' + alerts.join('\n\n'));
 }
@@ -4399,14 +4597,20 @@ function startAutopilotTimers() {
 }
 
 // ดึงยอดใช้จ่ายทุกบัญชีที่ใช้งานได้ตาม date_preset ของ FB — ใช้ร่วมกันระหว่างสรุปเช้ากับตอบคำถามใน Telegram
+// cooling = Meta สั่งพัก (hard) ตั้งแต่ก่อนเริ่มหรือระหว่างดึง — ตัวเลขที่ได้ไม่ครบ คนเรียกต้องบอกตรงๆ
+// เดิมไม่ดูช่วงพักเลย: ทุกบัญชียิงซ้ำ 3 ครั้ง (รอ 20+40 วิ) ระหว่างที่ Meta สั่งหยุด = ยืดเวลาโดนแขวน
+// แล้วส่งยอดที่ขาดบางบัญชีไปเหมือนเป็นยอดจริง
 async function spendLines(cfg, datePreset) {
   const lines = [];
   const totals = {};   // รวมแยกต่อสกุลเงิน — ต่างสกุลเอามาบวกกันตรงๆ ไม่ได้
+  let cooling = false;
   for (const prof of cfg.profiles || []) {
     if (!prof.accessToken) continue;
+    if ((cooling = fbHardCooling())) break;
     try {
       const accts = await fbAll('me/adaccounts', { fields: 'name,account_id,account_status,currency', limit: 100 }, prof.accessToken);
       for (const a of accts.filter((x) => x.account_status === 1)) {
+        if ((cooling = fbHardCooling())) break;
         try {
           const ins = await fb(`act_${a.account_id}/insights`, { fields: 'spend,impressions', date_preset: datePreset }, 'GET', prof.accessToken);
           const row = (ins.data || [])[0];
@@ -4420,15 +4624,18 @@ async function spendLines(cfg, datePreset) {
   }
   const totalLine = Object.entries(totals)
     .map(([cur, v]) => `${v.toLocaleString(undefined, { minimumFractionDigits: 2 })} ${cur}`).join(' + ');
-  return { lines, totalLine };
+  return { lines, totalLine, cooling: cooling || fbHardCooling() };
 }
+const SPEND_COOLING_NOTE = '⏳ Meta จำกัดการเข้า API อยู่ — ดึงยอดได้ไม่ครบ (หรือไม่ได้เลย) ตัวเลขนี้ยังไม่ใช่ยอดจริงทั้งหมด';
 
 // สรุปยอดเมื่อวานทุกเช้า 08:00 เวลาไทย
 async function dailySummary() {
   const cfg = loadConfig();
   if (!(cfg.telegram || {}).botToken) return;
-  const { lines, totalLine } = await spendLines(cfg, 'yesterday');
-  await tgSend(cfg, `🌅 สรุปการใช้จ่ายเมื่อวาน\n\n${lines.length ? `${lines.join('\n')}\n\nรวม: ${totalLine}` : 'ไม่มีการใช้จ่าย'}`);
+  const { lines, totalLine, cooling } = await spendLines(cfg, 'yesterday');
+  // ช่วงพักห้ามบอก "ไม่มีการใช้จ่าย" — ไม่ได้ดึง ไม่ใช่ใช้ศูนย์บาท
+  const body = lines.length ? `${lines.join('\n')}\n\nรวม: ${totalLine}` : cooling ? '' : 'ไม่มีการใช้จ่าย';
+  await tgSend(cfg, `🌅 สรุปการใช้จ่ายเมื่อวาน\n\n${[body, cooling ? SPEND_COOLING_NOTE : ''].filter(Boolean).join('\n\n')}`);
 }
 
 // ---------- ตอบคำถามยอดใช้จ่ายจาก Telegram ----------
@@ -4452,9 +4659,9 @@ async function tgAnswer(cfg, text) {
   else if (/7|สัปดาห์|week/.test(q)) { preset = 'last_7d'; label = '7 วันล่าสุด'; }
   else if (/สรุป|ใช้เงิน|ใช้จ่าย|spend|วันนี้|today/.test(q)) { preset = 'today'; label = 'วันนี้'; }
   if (!preset) return TG_HELP;
-  const { lines, totalLine } = await spendLines(cfg, preset);
-  if (!lines.length) return `💸 ${label}: ยังไม่มีการใช้จ่าย`;
-  return `💸 ใช้เงิน${label}\n\n${lines.join('\n')}\n\nรวม: ${totalLine}`;
+  const { lines, totalLine, cooling } = await spendLines(cfg, preset);
+  if (!lines.length) return cooling ? `💸 ${label}: ${SPEND_COOLING_NOTE}` : `💸 ${label}: ยังไม่มีการใช้จ่าย`;
+  return `💸 ใช้เงิน${label}\n\n${lines.join('\n')}\n\nรวม: ${totalLine}${cooling ? `\n\n${SPEND_COOLING_NOTE}` : ''}`;
 }
 
 // ---------- ข้อมูลครบชุดสำหรับ AI — ต่อบัญชี ต่อแคมเปญ พร้อม id ที่ใช้สั่งงานได้ ----------
@@ -4463,11 +4670,16 @@ async function tgContext(cfg) {
   // ชื่อบัญชี/แคมเปญ/ข้อความ log มาจาก FB ซึ่งคนอื่นตั้งได้ — ตัด < > ทิ้งกันปลอมแท็กรั้วข้อมูล
   const clean = (x) => String(x || '').replace(/[<>]/g, '');
   const parts = [];
+  // Meta สั่งพัก (hard) = ไม่ยิง FB เลย — เดิมทุกบัญชียิง 3 คำขอ × ลองซ้ำ 3 ครั้ง (รอ 20+40 วิ) ระหว่างที่ Meta สั่งหยุด
+  // คำถามเดียวในแชทจึงกินเวลาเป็นสิบนาทีและยืดเวลาโดนแขวน • AI ต้องรู้ว่าข้อมูลขาด ไม่ใช่เห็นช่องว่างแล้วตอบ "ไม่ใช้เงิน"
+  let cooling = false;
   for (const prof of cfg.profiles || []) {
     if (!prof.accessToken) continue;
+    if ((cooling = fbHardCooling())) break;
     let accts = [];
     try { accts = await fbAll('me/adaccounts', { fields: 'name,account_id,account_status,currency', limit: 100 }, prof.accessToken); } catch { continue; }
     for (const a of accts.filter((x) => x.account_status === 1)) {
+      if ((cooling = fbHardCooling())) break;
       const acct = `act_${a.account_id}`;
       const cf = curFactor(a.currency);
       let ins = {}, camps = [], cins = [], readOk = true;
@@ -4496,12 +4708,14 @@ async function tgContext(cfg) {
   }
 
   const [yest, week] = await Promise.all([spendLines(cfg, 'yesterday'), spendLines(cfg, 'last_7d')]);
+  cooling = cooling || yest.cooling || week.cooling;
   const st = loadAp();
   const day = 24 * 3600 * 1000;
   const ap = cfg.autopilot || {};
   const lim = apLimits(cfg);
   return [
-    `รายละเอียดต่อบัญชี (วันนี้):\n${parts.join('\n') || 'ไม่มีบัญชีที่ใช้งานได้'}`,
+    ...(cooling ? [`${SPEND_COOLING_NOTE} — ห้ามตอบว่าไม่มีการใช้จ่ายหรือใช้ 0 บาท ให้บอกเจ้าของตรงๆ ว่าตอนนี้ดึงตัวเลขจาก FB ไม่ได้/ไม่ครบ`] : []),
+    `รายละเอียดต่อบัญชี (วันนี้):\n${parts.join('\n') || (cooling ? 'ดึงไม่ได้ (Meta จำกัดการเข้า API)' : 'ไม่มีบัญชีที่ใช้งานได้')}`,
     `ยอดเมื่อวาน:\n${yest.lines.join('\n') || 'ไม่มี'}${yest.totalLine ? `\nรวม: ${yest.totalLine}` : ''}`,
     `ยอด 7 วันล่าสุด:\n${week.lines.join('\n') || 'ไม่มี'}${week.totalLine ? `\nรวม: ${week.totalLine}` : ''}`,
     // ค่าตั้งค่าเป็นบาทเสมอ (ระบบแปลงเป็นสกุลบัญชีให้เอง) ส่วนตัวเลขของแคมเปญ/บัญชีเป็นสกุลของบัญชี — ต้องติดหน่วยทุกตัว
@@ -4558,15 +4772,68 @@ function tgValidAction(cfg, a) {
   }
 }
 
+// ---------- งบรายวันจริงที่คำสั่งนี้จะปล่อย — ต้องเห็นก่อนพิมพ์ "ยืนยัน" ----------
+// CLAUDE.md: minAds × จำนวนบัญชี × งบต่อแอด คืองบรายวันจริง (10 บัญชี × 3,333 = 33,330 บาท/วัน) ต้องทวนก่อนเปิดระบบเสมอ
+// เดิมแชทถามยืนยันแค่ "เปิดระบบอัตโนมัติ" / "ตั้งเป้าเติมแอด = 5" ไม่บอกเลยว่าวันละกี่บาท
+// นับบัญชีจาก FB จริงตอนเสนอ (ใช้งานได้ + ไม่ได้ซ่อน = บัญชีที่ autopilot เติมแอดให้ นับต่อโปรไฟล์แบบเดียวกับรอบตรวจ)
+// นับไม่ได้ (Meta สั่งพัก/อ่านไม่ได้) = บอกตรงๆ ว่าไม่รู้จำนวนบัญชี ไม่เดาเลข
+const tgMovesMoney = (a) => (a.type === 'autopilotEnabled' && a.on) || (a.type === 'testMode' && !a.on)
+  || (a.type === 'killSwitch' && !a.on) || a.type === 'setMinAds';
+async function tgSpendPlan(cfg, a) {
+  const ap = cfg.autopilot || {};
+  const hidden = (cfg.hidden || {}).accounts || {};
+  let accts = 0;
+  let known = !fbHardCooling();
+  for (const prof of known ? cfg.profiles || [] : []) {
+    if (!prof.accessToken) continue;
+    try {
+      const list = await fbAll('me/adaccounts', { fields: 'account_id,account_status', limit: 100 }, prof.accessToken);
+      accts += list.filter((x) => x.account_status === 1 && !hidden[x.account_id]).length;
+    } catch { known = false; }
+  }
+  return {
+    minAds: a.type === 'setMinAds' ? a.value : Number(ap.minAds) || 0,
+    budget: Number((cfg.launchDefaults || {}).campaignBudget) || 0,
+    accts: known ? accts : null,
+    scaleMax: Number(ap.scaleMaxBudget) || 0,
+    // ยังไม่ใช้เงินจริงแม้ยืนยัน — บอกด้วย ไม่งั้นเจ้าของเห็นเลขแล้วตกใจผิดเรื่อง
+    testMode: a.type === 'testMode' ? !!a.on : !!ap.testMode,
+    enabled: a.type === 'autopilotEnabled' ? !!a.on : !!ap.enabled,
+  };
+}
+function tgSpendText(p) {
+  if (!p.minAds) return '💰 จำนวนแอดขั้นต่ำ = 0 → ไม่เติมแอดใหม่ ไม่สร้างแคมเปญใหม่';
+  const per = p.minAds * p.budget;
+  return `💰 งบจริงต่อวัน = ${p.minAds} แอด × ${p.accts == null ? '? บัญชี' : `${p.accts} บัญชี`} × ${p.budget.toLocaleString()} บาท`
+    + (p.accts == null
+      ? ` — นับจำนวนบัญชีจาก FB ไม่ได้ตอนนี้: บัญชีละ ${per.toLocaleString()} บาท/วัน คูณจำนวนบัญชีที่เปิดใช้งานเอง`
+      : ` = ${(per * p.accts).toLocaleString()} บาท/วัน`)
+    + (p.scaleMax > p.budget ? ` • ตัวชนะขยายงบได้ถึง ${p.scaleMax.toLocaleString()} บาท/วัน/แคมเปญ` : '')
+    + (p.testMode ? '\n   (โหมดทดสอบเปิดอยู่ — แอดใหม่ถูกปิดไว้ ใช้ 0 บาท จนกว่าจะปิดโหมดทดสอบ)'
+      : !p.enabled ? '\n   (ระบบอัตโนมัติยังปิดอยู่ — เริ่มใช้เงินเมื่อเปิดระบบ)' : '');
+}
+
 function tgDescribeAction(cfg, a) {
   const lim = AP_LIMIT_SPEC[a.key];
+  // a.plan แนบมาตอนเสนอ (tgSpendPlan) — ข้อความยืนยัน/ทำแล้ว/log ต้องมีงบรายวันติดไปด้วยทุกที่
+  const money = a.plan ? `\n${tgSpendText(a.plan)}` : '';
   switch (a.type) {
-    case 'killSwitch': return a.on ? 'กดหยุดฉุกเฉิน — ระบบหยุดทุกอย่างทันที' : 'ปลดหยุดฉุกเฉิน — ระบบกลับมาทำงาน';
-    case 'autopilotEnabled': return a.on ? 'เปิดระบบอัตโนมัติ' : 'ปิดระบบอัตโนมัติ';
-    case 'testMode': return a.on ? 'เปิดโหมดทดสอบ (แอดใหม่ถูกปิดไว้ ไม่ใช้เงิน)' : 'ปิดโหมดทดสอบ (แอดใหม่เปิดยิงจริง ใช้เงินจริง)';
-    case 'setMinAds': return `ตั้งเป้าเติมแอดขั้นต่ำ = ${a.value} ตัว/บัญชี`;
+    case 'killSwitch': return a.on ? 'กดหยุดฉุกเฉิน — ระบบหยุดทุกอย่างทันที' : `ปลดหยุดฉุกเฉิน — ระบบกลับมาทำงาน${money}`;
+    case 'autopilotEnabled': return a.on ? `เปิดระบบอัตโนมัติ${money}` : 'ปิดระบบอัตโนมัติ';
+    case 'testMode': return a.on ? 'เปิดโหมดทดสอบ (แอดใหม่ถูกปิดไว้ ไม่ใช้เงิน)' : `ปิดโหมดทดสอบ (แอดใหม่เปิดยิงจริง ใช้เงินจริง)${money}`;
+    case 'setMinAds': return `ตั้งเป้าเติมแอดขั้นต่ำ = ${a.value} ตัว/บัญชี${money}`;
     case 'setScaleMaxBudget': return `ตั้งเพดานขยายงบ = ${a.value.toLocaleString()} บาท/วัน/แคมเปญ${a.value === 0 ? ' (ปิดการขยายงบ)' : ''}`;
-    case 'setLimit': return `ตั้งเพดาน "${lim ? lim.label : a.key}" = ${a.value} (กรอบ ${lim ? `${lim.min}-${lim.max}` : '?'})`;
+    case 'setLimit': {
+      let t = `ตั้งเพดาน "${lim ? lim.label : a.key}" = ${a.value} (กรอบ ${lim ? `${lim.min}-${lim.max}` : '?'})`;
+      // คำเตือนชุดเดียวกับ dialog ในหน้าเว็บ (apConfirmLoosen) — แชทต้องไม่ใช่ทางลัดที่ข้ามคำเตือนเกราะกันแบน
+      // เดิม maxRelaunchPerAd 1→2 (= เปิดการสับคลิปยิงซ้ำหลังโดนปฏิเสธ) ผ่านแชทได้โดยไม่มีคำเตือนสักคำ
+      const cur = apLimits(cfg)[a.key];
+      if (lim && lim.rail && a.value > lim.def && a.value > cur) {
+        t += `\n⚠️ กำลังหย่อนเกราะกันบัญชีโดนแบน: ${cur} → ${a.value} — บัญชีจะสะสมประวัติเสียได้มากขึ้นก่อนระบบหยุดตัวเอง บัญชีที่โดนแบนแล้วเอาคืนไม่ได้`;
+        if (a.key === 'maxRelaunchPerAd') t += `\n⚠️ ${lim.hint}`;
+      }
+      return t;
+    }
     case 'unfreeze': return `ปลดล็อกบัญชี ${a.accountId}`;
     case 'campaignStatus': return `${a.status === 'PAUSED' ? 'หยุด' : 'เปิด'}แคมเปญ id ${a.campaignId}`;
     case 'setCampaignBudget':
@@ -4719,7 +4986,9 @@ async function tgPollOnce() {
   if (!t.botToken || !t.chatId) return 60 * 1000;    // ยังไม่ตั้งค่า — เช็คใหม่ทุกนาที
   let j;
   try {
-    const r = await fetch(`${TG_API}/bot${t.botToken}/getUpdates?offset=${tgOffset}&timeout=25`);
+    // รอบทิ้งของค้างตอนบูตต้องไม่รอ (timeout=0) — เดิมใช้ long poll 25 วิ ข้อความที่เจ้าของพิมพ์ในช่วงนั้น
+    // (หลัง redeploy มักพิมพ์เช็คทันที) มาถึงระหว่างรอ แล้วถูกนับเป็น "ของค้าง" ทิ้งเงียบๆ ไม่มีคำตอบ (วัดแล้ว)
+    const r = await fetch(`${TG_API}/bot${t.botToken}/getUpdates?offset=${tgOffset}&timeout=${tgDrained ? 25 : 0}`);
     j = await r.json();
   } catch { return 30 * 1000; }                      // เน็ต/Telegram สะดุด
   if (!j.ok || !Array.isArray(j.result)) return 60 * 1000;  // token ผิด หรือมี webhook ค้าง (409)
@@ -4789,6 +5058,8 @@ async function tgPollOnce() {
         action = null;
       }
     }
+    // คำสั่งที่ทำให้ระบบเริ่ม/เพิ่มการใช้เงิน — คำนวณงบรายวันจริงแนบไปกับข้อเสนอ ให้เห็นตัวเลขก่อนยืนยัน
+    if (action && tgMovesMoney(action)) action.plan = await tgSpendPlan(cfg, action);
     if (action) {
       // AI เสนอการกระทำ — เก็บเป็น pending แล้วถามยืนยัน ยังไม่มีอะไรถูกแตะทั้งสิ้น
       tgPending = { action, created: Date.now(), expires: Date.now() + TG_PENDING_MS };
@@ -4826,6 +5097,9 @@ function startBackgroundJobs() {
   // จำวันที่ส่งล่าสุดลงไฟล์ ไม่ใช่ตัวแปรในหน่วยความจำ — restart ช่วง 8-9 โมงจะได้ไม่ส่งสรุปซ้ำ
   const st = loadWatchState();
   if (st.lastSummaryDay === day) return;
+  // Meta สั่งพักอยู่ = ดึงยอดไม่ได้ — รอในชั่วโมงนี้ก่อน (เช็คทุก 5 นาที) จด/ส่งทันทีตอนพัก = สรุปจริงของวันนั้นไม่มีวันมา
+  // ถึง 08:50 ยังพักอยู่ค่อยส่งแบบบอกตรงๆ ว่าดึงไม่ได้ (เงียบไปเลยคนจะไม่รู้ว่าระบบยังอยู่)
+  if (fbHardCooling() && th.getUTCMinutes() < 50) return;
   st.lastSummaryDay = day;
   saveWatchState(st);
     dailySummary().catch(() => {});

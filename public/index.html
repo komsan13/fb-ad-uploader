@@ -1273,13 +1273,13 @@
 
           <div class="set-sec" id="setApSwitch">
             <h2 class="set-h">ระบบอัตโนมัติ (Autopilot)</h2>
-            <div class="set-desc">เฝ้าแอดทุก 2 นาที เจอแอดโดนปฏิเสธก็วินิจฉัยและแก้ให้เอง</div>
+            <div class="set-desc">เช็คแอดโดนปฏิเสธทุก <span id="apFastMins">10</span> นาที (รอบเต็ม เติมแอด/ขยายงบ ทุก <span id="apFullMins">20</span> นาที) เจอแอดโดนปฏิเสธก็วินิจฉัยและแก้ให้เอง</div>
             <label class="set-row">
               <span class="sr-text"><span class="sr-label">เปิดระบบอัตโนมัติ</span><span class="sr-desc">ให้มันลงมือแก้เองโดยไม่ต้องถาม</span></span>
               <span class="switch"><input type="checkbox" id="apEnabled" onchange="saveAutopilot()"><span class="sl"></span></span>
             </label>
             <label class="set-row">
-              <span class="sr-text"><span class="sr-label">โหมดทดสอบ</span><span class="sr-desc">สร้างแอดจริงบัญชีละ 1 ตัวแต่<b>ปิดไว้ ไม่ใช้เงินสักบาท</b> ให้ดูฝีมือก่อน • ไม่ปิดแอดขาดทุนและไม่ขยายงบ</span></span>
+              <span class="sr-text"><span class="sr-label">โหมดทดสอบ</span><span class="sr-desc">สร้างแอดจริงบัญชีละ 1 ตัวแต่<b>ปิดไว้ ไม่ใช้เงินสักบาท</b> ให้ดูฝีมือก่อน • ไม่ปิดแอดขาดทุน ไม่ขยายงบ และไม่แก้/ขึ้นใหม่แอดที่โดนปฏิเสธ</span></span>
               <span class="switch"><input type="checkbox" id="apTest" onchange="saveAutopilot()"><span class="sl"></span></span>
             </label>
             <label class="set-row">
@@ -4206,10 +4206,18 @@ function apConfirmLoosen(sending) {
 }
 let apLoaded = false;   // โหลดค่าจริงจากเซิร์ฟเวอร์มาแล้วหรือยัง — ก่อนหน้านั้นห้ามส่งทุกช่องไปบันทึก
 let apLast = {};        // ค่าที่โหลดมาล่าสุด — บันทึกส่งเฉพาะช่องที่ผู้ใช้เปลี่ยนจริง
+let apStatusHtml = '';  // บรรทัดสถานะของการโหลดที่สำเร็จล่าสุด — โหลดพังต้องคงไว้ ไม่ใช่วาดทับด้วยค่าว่าง
 async function loadAutopilot() {
   if (!document.getElementById('apEnabled')) return;
   let d;
-  try { d = await (await fetch('/api/autopilot')).json(); } catch { return; }
+  try { d = await apiJson('/api/autopilot'); }
+  catch (e) {
+    // เดิมเอา {error} / หน้า 502-503 ตอนรีสตาร์ทมาวาดเป็นข้อมูล: สวิตช์โชว์ "ปิด", minAds 0, "แก้ไปแล้ว undefined/undefined"
+    // ทั้งที่ระบบยังยิงเงินอยู่ — คนเห็นแล้วเข้าใจผิด/กดเปิดทับ • คงหน้าจอเดิมไว้แล้วบอกตรงๆ ว่าโหลดไม่ได้
+    document.getElementById('apStatus').innerHTML = `<b style="color:var(--red)">${ic('warn')} โหลดสถานะไม่สำเร็จ: ${esc(e.message)}`
+      + ` — ค่าบนจออาจไม่ใช่ค่าล่าสุด กด "รีเฟรชบันทึก" อีกครั้ง</b>${apStatusHtml ? ` • ${apStatusHtml}` : ''}`;
+    return;
+  }
   apLoaded = true;
   apLast = { enabled: !!d.enabled, testMode: !!d.testMode, autoLinkPixel: d.autoLinkPixel !== false,
     minAds: d.minAds || 0, scaleMaxBudget: d.scaleMaxBudget || 0 };
@@ -4218,6 +4226,9 @@ async function loadAutopilot() {
   document.getElementById('apTest').checked = d.testMode;
   document.getElementById('apAutoPx').checked = d.autoLinkPixel !== false;
   document.getElementById('apCap').textContent = d.maxPerDay;
+  // ระยะรอบมาจากเซิร์ฟเวอร์ — เดิมคำอธิบายเขียนตายตัว "ทุก 2 นาที" ทั้งที่เลนเร็ววิ่งทุก 10 นาที
+  if (d.fastMins) document.getElementById('apFastMins').textContent = d.fastMins;
+  if (d.fullMins) document.getElementById('apFullMins').textContent = d.fullMins;
   // หน้านี้รีเฟรชเองทุกจบรอบ (SSE) — เขียนทับช่องที่กำลังพิมพ์คือดีดตัวเลขคามือแล้วที่พิมพ์หายเงียบ
   for (const [id, v] of [['apMinAds', d.minAds || 0], ['apScaleMax', d.scaleMaxBudget || 0]]) {
     const el = document.getElementById(id);
@@ -4229,7 +4240,7 @@ async function loadAutopilot() {
   const st = [];
   if (d.testMode && d.enabled && !d.killSwitch) st.push(`<b style="color:#b8860b">${ic('flask')} โหมดทดสอบ — แอดที่สร้างจะถูกปิดไว้ ไม่ใช้เงิน</b>`);
   st.push(d.killSwitch ? `<b style="color:var(--red)">${ic('stop')} หยุดฉุกเฉินอยู่ — ไม่ทำอะไรทั้งสิ้น</b>`
-    : d.enabled ? `<b style="color:var(--brand-dark)">▶️ ทำงานอยู่</b> — เช็คแอดโดนปฏิเสธทุก ${d.fastMins || 2} นาที, รอบเต็มทุก ${d.fullMins || 20} นาที <span id="apLive" class="muted"></span>`
+    : d.enabled ? `<b style="color:var(--brand-dark)">▶️ ทำงานอยู่</b> — เช็คแอดโดนปฏิเสธทุก ${d.fastMins || 10} นาที, รอบเต็มทุก ${d.fullMins || 20} นาที <span id="apLive" class="muted"></span>`
     : '<span class="muted">⏸️ ปิดอยู่</span>');
   st.push(`แก้ข้อความไปแล้ววันนี้ ${d.fixesToday}/${d.maxPerDay} ครั้ง`);
   if (d.minAds) st.push(`เติมแอดไปแล้ววันนี้ ${d.createdToday} ตัว (เพดาน ${d.maxNewPerAcct}/บัญชี)`);
@@ -4249,7 +4260,8 @@ async function loadAutopilot() {
   const alertBox = document.getElementById('apAlert');
   alertBox.innerHTML = warn.join('<br>');
   alertBox.hidden = !warn.length;
-  document.getElementById('apStatus').innerHTML = st.join(' • ');
+  apStatusHtml = st.join(' • ');
+  document.getElementById('apStatus').innerHTML = apStatusHtml;
 
   const log = d.log || [];
   document.getElementById('apLog').innerHTML = log.length
@@ -4268,6 +4280,14 @@ function apConnectLive() {
   apES.onmessage = (e) => {
     let ev;
     try { ev = JSON.parse(e.data); } catch { return; }
+    // เซิร์ฟเวอร์รับช่องสดครบเพดานแล้ว (เปิดหลายแท็บ) — เดิมไม่สนแล้วเบราว์เซอร์ต่อใหม่ทุก 3 วิไม่รู้จบ
+    // ปิดไว้ ต่อใหม่เองตอนโหลดหน้านี้ครั้งถัดไป (กดรีเฟรช/บันทึก)
+    if (ev.type === 'full') {
+      apES.close(); apES = null;
+      const tag = document.getElementById('apLive');
+      if (tag) tag.textContent = '• ดูสดไม่ได้ (เปิดหน้านี้ค้างไว้หลายแท็บเกินไป)';
+      return;
+    }
     if (ev.type === 'log') {
       apPushLog(ev.entry);
       // ตอนหยุดฉุกเฉิน/ปิดระบบ รอบตรวจไม่ส่ง tick — การเปลี่ยนจากที่อื่น (Telegram/อีกแท็บ) มาถึงแท็บนี้ทาง log เท่านั้น
@@ -4307,17 +4327,32 @@ function apPushLog(l) {
 async function apSetKill(el) {
   const want = el.checked;
   try {
-    const r = await fetch('/api/autopilot', {
+    // apiJson: 200 ที่เป็นหน้า HTML (หน้าใส่รหัสของตัวกลาง) ก็ต้องนับว่าไม่สำเร็จ — เดิมเช็คแค่ r.ok
+    await apiJson('/api/autopilot', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ killSwitch: want }),
     });
-    if (!r.ok) throw new Error('เซิร์ฟเวอร์ตอบ ' + r.status);
   } catch (e) {
     // ส่งไม่ถึง = คืนสวิตช์ทันที — เดิมค้างสีแดง "หยุด" ทั้งที่เซิร์ฟเวอร์ยังทำงาน (toast หายใน 6 วิ เหลือแต่จอที่โกหก)
+    // 502/หมดเวลา = คำขออาจถึงเซิร์ฟเวอร์แล้วแต่คำตอบหาย — ห้ามยืนยันว่า "ยังเป็นค่าเดิม" ให้บอกว่าไม่รู้ผลแล้วดึงของจริงมาทับ
     el.checked = !want;
-    toast(`${want ? 'กดหยุดฉุกเฉิน' : 'ปลดหยุดฉุกเฉิน'}ไม่สำเร็จ: ${e.message} — สวิตช์ยังเป็นค่าเดิม`, 'err');
+    toast(`${want ? 'กดหยุดฉุกเฉิน' : 'ปลดหยุดฉุกเฉิน'}ไม่สำเร็จหรือไม่รู้ผล: ${e.message} — สวิตช์แสดงค่าล่าสุดที่รู้ กด "รีเฟรชบันทึก" เช็คของจริงอีกครั้ง`, 'err');
+    loadAutopilot();
     return;
   }
   loadAutopilot();
+}
+// คืนทุกช่องในบล็อกนี้เป็นค่าที่โหลดจากเซิร์ฟเวอร์ล่าสุด — ใช้ตอนบันทึกไม่สำเร็จ/ผู้ใช้กดยกเลิก
+// พึ่ง loadAutopilot อย่างเดียวไม่ได้: ตัวกลางกำลังรีสตาร์ทมันก็พังด้วย แล้วจอค้างโชว์ค่าที่ไม่เคยถูกบันทึก
+function apRestoreInputs() {
+  document.getElementById('apEnabled').checked = !!apLast.enabled;
+  document.getElementById('apTest').checked = !!apLast.testMode;
+  document.getElementById('apAutoPx').checked = apLast.autoLinkPixel !== false;
+  document.getElementById('apMinAds').value = apLast.minAds || 0;
+  document.getElementById('apScaleMax').value = apLast.scaleMaxBudget || 0;
+  for (const el of document.querySelectorAll('[id^="apLim_"]')) {
+    const k = el.id.slice(6);
+    if (apCur && k in apCur) el.value = apCur[k];
+  }
 }
 // ช่องสวิตช์/ตัวเลขที่ผู้ใช้เปลี่ยนจากค่าที่โหลดมา — ช่องที่ไม่ได้แตะไม่ส่ง
 function apChanged() {
@@ -4343,9 +4378,9 @@ async function saveAutopilot(extra) {
   // ช่องต่างๆ เรียกผ่าน onchange="saveAutopilot()" ซึ่งไม่ส่ง arg มา แต่กันไว้ไม่ให้ Event
   // หลุดเข้าไปกลายเป็น body ถ้าวันหน้ามีคนเผลอผูก onchange="saveAutopilot" แบบไม่มีวงเล็บ
   const reset = !!(extra && extra.resetLimits === true);
-  if (!reset && !apConfirmLoosen(limits)) { loadAutopilot(); return; }
+  if (!reset && !apConfirmLoosen(limits)) { apRestoreInputs(); loadAutopilot(); return; }
   try {
-    const r = await fetch('/api/autopilot', {
+    await apiJson('/api/autopilot', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       // ไม่ส่ง killSwitch เด็ดขาด (มีปุ่มของมันเองที่ apSetKill) — เดิมส่งทุกช่องเสมอ แท็บที่เปิดค้างไว้
       // ไปแก้ช่องไหนก็ตาม = ส่ง killSwitch=false ค่าเก่าบนจอ ปลดหยุดฉุกเฉินที่กดจาก Telegram/อีกแท็บทิ้งเงียบๆ
@@ -4354,15 +4389,19 @@ async function saveAutopilot(extra) {
         ...(reset ? { resetLimits: true } : { limits }),
       }),
     });
-    if (!r.ok) throw new Error('เซิร์ฟเวอร์ตอบ ' + r.status);
-  } catch (e) { toast('บันทึกไม่สำเร็จ: ' + e.message); }
+  } catch (e) {
+    // ไม่ถึงเซิร์ฟเวอร์ = สวิตช์/ช่องที่เพิ่งเปลี่ยนต้องกลับเป็นค่าเดิมทันที — เดิมค้างตามที่กด
+    // แล้วถ้าโหลดซ้ำพังด้วย จอโกหกว่าเปิด/ปิดระบบแล้ว ทั้งที่ไม่มีอะไรถูกบันทึก
+    // คำตอบหาย (502/หมดเวลา) ไม่ได้แปลว่าไม่ถูกบันทึก — บอกว่าไม่รู้ผล ไม่ใช่ยืนยันว่าเป็นค่าเดิม
+    apRestoreInputs();
+    toast(`บันทึกไม่สำเร็จหรือไม่รู้ผล: ${e.message} — จอแสดงค่าล่าสุดที่โหลดได้ กด "รีเฟรชบันทึก" เช็คของจริงอีกครั้ง`, 'err');
+  }
   loadAutopilot();
 }
 async function apRunNow(btn) {
   btn.disabled = true; btn.textContent = 'กำลังตรวจ...';
   try {
-    const d = await (await fetch('/api/autopilot/run', { method: 'POST' })).json();
-    if (d.error) throw new Error(d.error);
+    const d = await apiJson('/api/autopilot/run', { method: 'POST' });
     if (d.paused) toast(d.message);   // รอบถูกพักเพราะ Meta จำกัด/บล็อก API — ต้องบอก ไม่ใช่เงียบ
   } catch (e) { toast('ตรวจไม่สำเร็จ: ' + e.message); }
   finally { btn.disabled = false; btn.textContent = 'ตรวจเดี๋ยวนี้'; loadAutopilot(); }
@@ -4370,10 +4409,9 @@ async function apRunNow(btn) {
 async function apUnfreeze(acctId) {
   if (!confirm(`ปลดล็อกบัญชี ${acctId}?\nดูก่อนนะครับว่าแก้ต้นเหตุที่ทำให้โดนปฏิเสธแล้วจริงๆ`)) return;
   try {
-    const d = await (await fetch('/api/autopilot/unfreeze', {
+    await apiJson('/api/autopilot/unfreeze', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ acctId }),
-    })).json();
-    if (d.error) throw new Error(d.error);
+    });
   } catch (e) { return toast('ปลดล็อกไม่สำเร็จ: ' + e.message); }
   loadAutopilot();
 }
