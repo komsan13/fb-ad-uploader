@@ -10,3 +10,8 @@ watch-state.json
 landing-assets/
 landing.json
 fx-rates.json
+fb-cooldown.json
+# หลายโปรไฟล์ (hub.js): รายชื่อโปรไฟล์ + โฟลเดอร์ข้อมูลของโปรไฟล์อื่น + ถังขยะ
+workspaces.json
+ws/
+ws-trash/

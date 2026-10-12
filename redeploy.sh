@@ -14,6 +14,7 @@ HASH="$(docker inspect fbad --format '{{index .Config.Labels "traefik.http.middl
 # หน้า Landing กับรูปของมันต้องเข้าถึงได้โดยไม่มีรหัสผ่าน เพราะคนที่กดโฆษณาไม่มี
 # และ Meta ต้องเข้ามาอ่านพิกเซล/รีวิวโฆษณาได้ด้วย
 # ใช้ Path() ตรงตัวไม่ใช่ PathPrefix(/lp) เพื่อให้ /lp/admin ยังอยู่หลังรหัสผ่าน
+# หลายโปรไฟล์: หน้า Landing ของโปรไฟล์อื่นอยู่ที่ /w/<id>/lp (+ รูปที่ /w/<id>/lp-asset/) — regex ตรงตัวเหมือนกัน
 docker rm -f fbad >/dev/null
 docker run -d --name fbad --restart unless-stopped \
   --network web \
@@ -28,15 +29,20 @@ docker run -d --name fbad --restart unless-stopped \
   --label traefik.http.routers.fbad.tls.certresolver=le \
   --label traefik.http.routers.fbad.middlewares=fbad-auth \
   --label "traefik.http.middlewares.fbad-auth.basicauth.users=$HASH" \
-  --label 'traefik.http.routers.fbadpub.rule=Host(`ad.senball.com`) && (Path(`/privacy.html`) || Path(`/terms.html`) || Path(`/lp`) || Path(`/lp/`) || PathPrefix(`/lp-asset/`))' \
+  --label 'traefik.http.routers.fbadpub.rule=Host(`ad.senball.com`) && (Path(`/privacy.html`) || Path(`/terms.html`) || Path(`/lp`) || Path(`/lp/`) || PathPrefix(`/lp-asset/`) || PathRegexp(`^/w/[a-z0-9-]+/lp/?$`) || PathRegexp(`^/w/[a-z0-9-]+/lp-asset/`))' \
   --label traefik.http.routers.fbadpub.entrypoints=websecure \
   --label traefik.http.routers.fbadpub.service=fbad \
   --label traefik.http.routers.fbadpub.tls.certresolver=le \
   --label traefik.http.services.fbad.loadbalancer.server.port=4000 \
   fbad:latest >/dev/null
 
-sleep 2
-docker exec fbad wget -qO /dev/null http://localhost:4000/ && echo "✅ deploy สำเร็จ: $(git log -1 --format='%h %s')" || { echo "❌ container ไม่ตอบ — ดู log: docker logs fbad"; exit 1; }
+# ตัวกลาง (hub.js) ต้องรอทุกโปรไฟล์บูตก่อน — รอได้ถึง 60 วิ ไม่ใช่ sleep ตายตัว
+OK=""
+for i in $(seq 1 30); do
+  if docker exec fbad wget -qO /dev/null http://localhost:4000/; then OK=1; break; fi
+  sleep 2
+done
+[ -n "$OK" ] && echo "✅ deploy สำเร็จ: $(git log -1 --format='%h %s')" || { echo "❌ container ไม่ตอบ — ดู log: docker logs fbad"; exit 1; }
 
 # หน้ากฎหมายต้องเปิดสาธารณะจริง (Meta ต้องกดดูได้ตอนรีวิวแอป) — เช็คของจริงผ่าน traefik ไม่ใช่เชื่อ label
 for P in /privacy.html /terms.html; do

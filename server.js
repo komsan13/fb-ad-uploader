@@ -12,6 +12,10 @@ const VIDEO_API = API.includes('graph.facebook.com') ? API.replace('graph.facebo
 const PORT = process.env.PORT || 4000;
 // URL สาธารณะของแอป (ตั้งผ่าน env ตอน deploy) — ใช้สร้าง redirect URI ของ OAuth
 const PUBLIC_URL = (process.env.PUBLIC_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
+// หลายโปรไฟล์ (hub.js): โปรไฟล์อื่นนอกจาก TOP เปิดหน้า Landing สาธารณะที่ /w/<id>/lp — ตัวกลางตัด prefix ก่อนส่งมา
+// เราต้องรู้ prefix ไว้ใส่หน้าลิงก์รูปในหน้า Landing และใช้เช็คว่าลิงก์ปลายทางคือหน้า Landing ของเราไหม
+// ค่าว่าง = โปรไฟล์ TOP / รันเดี่ยว (หน้า Landing อยู่ที่ /lp เหมือนเดิม)
+const LP_PREFIX = /^\/w\/[a-z0-9][a-z0-9-]*$/.test(process.env.LP_PREFIX || '') ? process.env.LP_PREFIX : '';
 
 const app = express();
 app.set('etag', false);
@@ -633,7 +637,7 @@ function lpIsOurLanding(link) {
   try {
     const u = new URL(String(link));
     const mine = new URL(PUBLIC_URL);
-    return u.host === mine.host && u.pathname.replace(/\/+$/, '') === '/lp';
+    return u.host === mine.host && u.pathname.replace(/\/+$/, '') === `${LP_PREFIX}/lp`;
   } catch { return false; }
 }
 
@@ -695,6 +699,9 @@ const lpEsc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
 // only = บัญชีโฆษณาที่พาคนมาหน้านี้ (จาก ?a=) — โหลดเฉพาะพิกเซลของบัญชีนั้น
 // ไม่ระบุ = โหลดทุกตัวเหมือนเดิม (ลิงก์เก่า/คนเข้าเองต้องไม่พัง)
 function lpRender(v) {
+  // รูปที่อัปเองเก็บเป็น /lp-asset/<ไฟล์> — หน้าสาธารณะของโปรไฟล์อื่นอยู่ใต้ /w/<id>/ ต้องเติม prefix ไม่งั้นรูปไปโหลดจากโปรไฟล์ TOP
+  const pub = (u) => (String(u || '').startsWith('/lp-asset/') ? LP_PREFIX + u : u);
+  v = { ...v, avatar: pub(v.avatar), bgImage: pub(v.bgImage) };
   // พื้นหลังเป็นตัวกำหนดชุดสีทั้งหมด — ยกเว้นตอนใช้รูปที่อัปเอง ซึ่งเราไม่รู้ว่ารูปสว่างหรือมืด
   // กรณีนั้นค่อยให้ theme ที่ผู้ใช้เลือกเป็นตัวตัดสิน
   const pal = LP_BGS[v.bg] || LP_BGS[''];
@@ -1140,7 +1147,7 @@ app.get('/api/logout', (req, res) => {
 app.get('/api/profiles', (req, res) => res.json(publicProfiles(loadConfig())));
 
 // redirect URI ที่ต้องเอาไปใส่ในแอป FB (เปลี่ยนตาม env ตอน deploy)
-app.get('/api/env', (req, res) => res.json({ redirectUri: REDIRECT_URI }));
+app.get('/api/env', (req, res) => res.json({ redirectUri: REDIRECT_URI, lpUrl: `${LP_PREFIX}/lp` }));
 
 app.post('/api/profiles', (req, res) => {
   const cfg = loadConfig();
@@ -4447,8 +4454,13 @@ app.post('/api/telegram-test', async (req, res) => {
 // สตาร์ทเซิร์ฟเวอร์เฉพาะตอนถูกรันตรงๆ (node server.js) — ถ้าถูก require เข้ามาให้เปิดฟังก์ชันภายในแทน
 // เทสจะได้เรียกตรรกะล้วนๆ ได้โดยไม่ต้องเปิดพอร์ต ส่วนการรันจริงยังเหมือนเดิมทุกอย่าง
 if (require.main === module) {
+  // รันเป็นโปรไฟล์ลูกของ hub.js (มีช่อง IPC) — ตัวกลางตายเมื่อไหร่ต้องปิดตัวเองตาม
+  // ไม่งั้นบน Windows โปรเซสลูกค้างถือพอร์ต + ระบบอัตโนมัติวิ่งต่อเงียบๆ แล้วพอตัวกลางเปิดใหม่ก็ได้สองชุดซ้อนกัน
+  if (process.send) process.on('disconnect', () => process.exit(0));
   startBackgroundJobs();
   app.listen(PORT, () => {
+    // โปรไฟล์ลูกของ hub.js ฟังพอร์ตภายใน — ห้ามบอกให้คนเปิดพอร์ตนี้ตรงๆ (ข้ามตัวกลาง = ข้ามการเลือกโปรไฟล์)
+    if (process.send) return console.log(`พร้อมทำงาน (โปรไฟล์ ${process.env.WS_ID || '?'})`);
     console.log('');
     console.log('  FB Ad Uploader พร้อมใช้งานแล้ว!');
     console.log(`  เปิดเบราว์เซอร์ที่ ->  http://localhost:${PORT}`);

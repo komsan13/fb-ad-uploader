@@ -66,6 +66,22 @@
   .ts-btn { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; background: rgba(255,255,255,.18); color: #fff; font-size: 12.5px; font-weight: 600; border-radius: var(--r-md); }
   .ts-btn:hover { background: #fff; color: var(--brand-dark); }
   .ts-btn svg { width: 15px; height: 15px; }
+  /* ดรอปดาวน์โปรไฟล์ (หลายแบรนด์) — โชว์เฉพาะตอนรันผ่าน hub.js */
+  .ws-wrap { position: relative; }
+  .ws-btn .ws-chev { width: 13px; height: 13px; opacity: .85; }
+  .ws-menu { position: absolute; right: 0; top: calc(100% + 8px); min-width: 250px; background: var(--card); color: var(--text); border-radius: var(--r-lg); box-shadow: 0 14px 36px rgba(15, 23, 42, .2); padding: 6px; z-index: 300; }
+  .ws-head { font-size: 11.5px; font-weight: 700; color: var(--muted); padding: 6px 10px 4px; }
+  .ws-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border-radius: var(--r-md); font-size: 13.5px; font-weight: 600; color: var(--text); background: none; text-align: left; cursor: pointer; }
+  .ws-item:hover { background: var(--bg); }
+  .ws-item.on { background: var(--brand-soft); color: var(--brand-dark); }
+  .ws-item .ws-ic { width: 26px; height: 26px; flex-shrink: 0; display: grid; place-items: center; border-radius: var(--r-md); background: var(--bg); color: var(--muted); font-size: 12px; font-weight: 700; }
+  .ws-item.on .ws-ic { background: var(--brand); color: #fff; }
+  .ws-item .ws-nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ws-del { width: 26px; height: 26px; display: grid; place-items: center; border-radius: var(--r-md); color: var(--muted); background: none; flex-shrink: 0; }
+  .ws-del:hover { background: var(--red-soft); color: var(--red); }
+  .ws-del svg { width: 14px; height: 14px; }
+  .ws-add { color: var(--brand-dark); }
+  .ws-add .ws-ic { background: var(--brand-soft); color: var(--brand-dark); }
   .ts-clock svg { width: 16px; height: 16px; }
 
   /* หัวข้อหน้า */
@@ -634,6 +650,14 @@
         <span id="clockNow"></span>
       </div>
       <div class="ts-right">
+        <div class="ws-wrap" id="wsWrap" hidden>
+          <button class="ts-btn ws-btn" onclick="wsToggle(event)" title="สลับโปรไฟล์ — แต่ละโปรไฟล์มีบัญชี FB, คลังคลิป/แคปชั่น, ระบบอัตโนมัติ, หน้า Landing และ Telegram ของตัวเอง">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg>
+            <span id="wsName"></span>
+            <svg class="ws-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div class="ws-menu" id="wsMenu" hidden></div>
+        </div>
         <button class="ts-btn" onclick="logout()" title="ล้างรหัสที่เบราว์เซอร์จำไว้ แล้วถามรหัสใหม่">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
           ออกจากระบบ
@@ -1104,7 +1128,7 @@
     <!-- ========== PAGE: หน้า Landing ========== -->
     <section class="page" id="page-landing">
       <div class="card">
-        <h2>ส่วนหัวของหน้า <span class="h-desc">— หน้าจริงอยู่ที่ <a href="/lp" target="_blank" style="color:var(--brand-dark)">/lp</a> เปิดดูได้ตลอด</span></h2>
+        <h2>ส่วนหัวของหน้า <span class="h-desc">— หน้าจริงอยู่ที่ <a href="/lp" data-lp-link data-lp-text target="_blank" style="color:var(--brand-dark)">/lp</a> เปิดดูได้ตลอด</span></h2>
         <div class="fgrid">
           <div class="field"><label>ชื่อร้าน/แบรนด์</label><input id="lpTitle"></div>
           <div class="field"><label>รูปโปรไฟล์</label>
@@ -1174,7 +1198,7 @@
 
       <div class="card" style="display:flex;gap:12px;align-items:center;position:sticky;bottom:12px">
         <button class="btn-primary" onclick="lpSave(this)">บันทึก</button>
-        <a class="btn-light btn-sm" href="/lp" target="_blank" style="text-decoration:none">ดูหน้าจริง ↗</a>
+        <a class="btn-light btn-sm" href="/lp" data-lp-link target="_blank" style="text-decoration:none">ดูหน้าจริง ↗</a>
         <span id="lpMsg" style="font-size:13.5px;font-weight:600"></span>
       </div>
     </section>
@@ -2092,6 +2116,86 @@ async function populateProfileCard(pid, force) {
   });
 }
 
+// ---------- โปรไฟล์ (หลายแบรนด์) ----------
+// ทำงานเฉพาะตอนรันผ่าน hub.js — รัน server.js เดี่ยว (/hub/api ไม่มี) ปุ่มนี้ซ่อนไปเฉยๆ
+// โปรไฟล์ที่เลือกจำใน cookie ซึ่งใช้ร่วมทุกแท็บ: สลับในแท็บหนึ่ง = แท็บอื่นที่เปิดค้างไว้กำลังโชว์ของโปรไฟล์เก่า
+// แต่คำขอใหม่จะวิ่งไปโปรไฟล์ใหม่ — กลับมาที่แท็บนั้นเมื่อไหร่ต้องโหลดใหม่ ไม่งั้นข้อมูลสองโปรไฟล์ปนกันบนจอ
+let wsPage = null;   // โปรไฟล์ของหน้าที่โหลดอยู่นี้
+let wsList = [];
+async function wsFetch() {
+  try {
+    const r = await fetch('/hub/api/workspaces', { cache: 'no-store' });
+    return r.ok ? await r.json() : null;
+  } catch { return null; }
+}
+async function loadWorkspaces() {
+  const d = await wsFetch();
+  if (!d) return;
+  if (!wsPage) wsPage = d.current;
+  if (d.current !== wsPage) return wsReload();
+  wsList = d.list;
+  const cur = wsList.find(w => w.id === wsPage) || {};
+  document.getElementById('wsName').textContent = cur.name || wsPage;
+  document.getElementById('wsWrap').hidden = false;
+  wsRenderMenu();
+}
+function wsReload() {
+  try { sessionStorage.clear(); } catch { /* ข้าม */ }   // แคชของโปรไฟล์เก่าห้ามโผล่ในโปรไฟล์ใหม่
+  location.href = '/';
+}
+function wsRenderMenu() {
+  const trash = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+  document.getElementById('wsMenu').innerHTML = '<div class="ws-head">โปรไฟล์</div>'
+    + wsList.map(w => `<div class="ws-item ${w.id === wsPage ? 'on' : ''}" onclick="wsSelect(${jsStr(w.id)})">
+        <span class="ws-ic">${esc((w.name || '?').trim().charAt(0).toUpperCase())}</span>
+        <span class="ws-nm">${esc(w.name)}</span>
+        ${w.id === 'top' ? '' : `<button class="ws-del" title="ลบโปรไฟล์นี้" onclick="wsDelete(event, ${jsStr(w.id)})">${trash}</button>`}
+      </div>`).join('')
+    + '<div class="ws-item ws-add" onclick="wsAdd()"><span class="ws-ic">+</span><span class="ws-nm">เพิ่มโปรไฟล์</span></div>';
+}
+function wsToggle(e) {
+  e.stopPropagation();
+  const m = document.getElementById('wsMenu');
+  m.hidden = !m.hidden;
+}
+document.addEventListener('click', (e) => {
+  const m = document.getElementById('wsMenu');
+  if (m && !m.hidden && !e.target.closest('#wsWrap')) m.hidden = true;
+});
+// กลับมาที่แท็บนี้ = เช็คว่ามีใครสลับโปรไฟล์ไปในแท็บอื่นหรือยัง
+document.addEventListener('visibilitychange', () => { if (!document.hidden && wsPage) loadWorkspaces(); });
+async function wsPost(url, body) {
+  try {
+    const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const t = await r.text();
+    try { return JSON.parse(t); } catch { return { error: `เซิร์ฟเวอร์ตอบผิดปกติ (HTTP ${r.status})` }; }
+  } catch (e) { return { error: 'ต่อเซิร์ฟเวอร์ไม่ได้ (' + e.message + ')' }; }
+}
+async function wsSelect(id) {
+  if (id === wsPage) { document.getElementById('wsMenu').hidden = true; return; }
+  const r = await wsPost('/hub/api/select', { id });
+  if (r.error) return toast('สลับโปรไฟล์ไม่สำเร็จ: ' + r.error, 'err');
+  wsReload();
+}
+async function wsAdd() {
+  const name = (prompt('ชื่อโปรไฟล์ใหม่ (เช่น ชื่อแบรนด์)') || '').trim();
+  if (!name) return;
+  toast('กำลังสร้างโปรไฟล์ "' + name + '"...');
+  const r = await wsPost('/hub/api/workspaces', { name });
+  if (r.error) return toast('สร้างโปรไฟล์ไม่สำเร็จ: ' + r.error, 'err');
+  wsSelect(r.id);
+}
+async function wsDelete(e, id) {
+  e.stopPropagation();
+  const w = wsList.find(x => x.id === id) || { name: id };
+  if (!confirm(`ลบโปรไฟล์ "${w.name}"?\n\nระบบอัตโนมัติของโปรไฟล์นี้จะหยุดทันที บัญชี FB คลังคลิป/แคปชั่น หน้า Landing และค่าตั้งค่าทั้งหมดของโปรไฟล์นี้จะถูกย้ายไปเก็บในถังขยะบนเซิร์ฟเวอร์ (กู้คืนได้ ไม่ได้ลบถาวร)`)) return;
+  const r = await wsPost('/hub/api/workspaces/delete', { id });
+  if (r.error) return toast('ลบไม่สำเร็จ: ' + r.error, 'err');
+  if (id === wsPage) return wsReload();
+  toast('✓ ลบโปรไฟล์ "' + w.name + '" แล้ว', 'ok');
+  loadWorkspaces();
+}
+
 // นาฬิกาบนแถบเขียว
 function tickClock() {
   const now = new Date();
@@ -2116,7 +2220,13 @@ setInterval(tickClock, 1000);
   try {
     const env = await (await fetch('/api/env')).json();
     if (env.redirectUri) document.getElementById('redirectUriText').textContent = env.redirectUri;
+    // หน้า Landing ของโปรไฟล์นี้ — TOP อยู่ที่ /lp โปรไฟล์อื่นอยู่ที่ /w/<id>/lp
+    if (env.lpUrl) document.querySelectorAll('a[data-lp-link]').forEach(a => {
+      a.href = env.lpUrl;
+      if (a.hasAttribute('data-lp-text')) a.textContent = env.lpUrl;
+    });
   } catch {}
+  loadWorkspaces();
   restoreCaches(); // ดึงข้อมูลที่จำไว้จากรอบก่อน (sessionStorage) — F5 แล้วหน้าโชว์ทันที
   const route = location.hash.replace(/^#/, '');
   // ไม่มีบัญชี = บังคับหน้าตั้งค่าเสมอ (hash ค้างจาก session เก่าห้ามชนะ), มีบัญชีค่อยเคารพ hash
