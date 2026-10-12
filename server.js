@@ -1378,7 +1378,14 @@ app.get('/api/accounts', async (req, res) => {
     const adAccounts = await fbAll('me/adaccounts', { fields: acctFields, limit: 100 }, prof.accessToken);
     // เพจแตก (บิน/ถูกจำกัด) ไม่โผล่ใน dropdown เลือกเพจ — เอาแค่เพจที่ลงโฆษณาได้จริง
     // (เพจแตกยังดูได้ในหน้า "สุขภาพบัญชี" ซึ่งใช้ /api/health-overview คนละเส้น)
-    const pages = (await fbPages(prof.accessToken)).filter((p) => p.ok);
+    // อ่านเพจพลาด (เช่น token ไม่มีสิทธิ์ pages_show_list) ต้องไม่ลากรายชื่อบัญชีโฆษณาหายไปด้วย
+    // เดิม error ก้อนเดียวทำทั้งแดชบอร์ด/ตารางบัญชีว่าง — ตอนนี้ส่งเพจว่าง + pagesError ให้หน้าเว็บบอกสาเหตุ
+    // ยกเว้น ?full=1 (หน้าต่างขึ้นแอดใช้ตัวเดียว) ยังพังทั้งก้อนเหมือนเดิม: แถวบัญชีที่ติ๊กค้างไว้ถูกส่งขึ้นแอด
+    // โดยไม่เช็คความพร้อมซ้ำ และเพจจะตกไปใช้เพจตั้งต้นของบัญชีที่ไม่มีใครยืนยันว่ายังลงโฆษณาได้ — เงินจริง ห้ามเดา
+    let pages = [];
+    let pagesError = null;
+    try { pages = (await fbPages(prof.accessToken)).filter((p) => p.ok); }
+    catch (e) { if (full) throw e; pagesError = e.message; }
     // ธุรกิจที่ยืนยันตัวตนแล้ว = ตัวเลือก "ผู้ลงโฆษณา" (ส่งเป็น id ใน regional_regulation_identities)
     let verifiedBiz = [];
     if (full) {
@@ -1409,6 +1416,7 @@ app.get('/api/accounts', async (req, res) => {
     res.json({
       name: me.name, adAccounts: visible,
       pages: pages.filter((p) => !(hidden.pages || {})[p.id]),
+      pagesError,
       hiddenAccounts: accounts.length - visible.length,   // ให้หน้าอื่นบอกได้ว่า "ซ่อนอยู่ N — เงินไม่ได้หาย"
     });
   } catch (e) {
@@ -1692,20 +1700,35 @@ app.get('/api/account-health', async (req, res) => {
 // ทางที่ถูกคือส่วนขยาย Chrome (โฟลเดอร์ extension/) ยิง Graph เองในเบราว์เซอร์ผู้ใช้
 // แล้วส่งมาแค่ "ตัวเลข" ผ่านเส้นนี้ — token ไม่เคยออกจากเครื่องผู้ใช้เลย
 app.post('/api/am-limits', (req, res) => {
+  // ต้องระบุบัญชีมาเสมอ — เดิมไม่ระบุก็ตกไปเขียนใส่บัญชีที่ใช้งานอยู่เงียบๆ
+  const pid = typeof req.body.profile === 'string' ? req.body.profile : '';
+  if (!pid) return res.status(400).json({ error: 'ไม่ได้ระบุบัญชี (profile)' });
   const cfg = loadConfig();
-  const prof = getProfile(cfg, req.body.profile);
+  const prof = getProfile(cfg, pid);
   if (!prof) return res.status(404).json({ error: 'ไม่พบบัญชีนี้' });
   if (!Array.isArray(req.body.limits)) return res.status(400).json({ error: 'limits ต้องเป็น array' });
-  const num = (v) => (v === undefined || v === null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
+  // รับเฉพาะตัวเลขจริง: number ที่ finite หรือสตริงตัวเลขล้วนแบบที่ Graph ส่ง ('11500')
+  // เดิม Number() แปลงทุกอย่าง — [] กับ ' ' กลายเป็น 0, true เป็น 1, '0x10' เป็น 16 = ตัวเลขปลอมโผล่บนจอ
+  // ค่าเพี้ยน = null (ไม่รู้) • ติดลบได้ตัวเดียวคือ dsl -1 = Meta ไม่จำกัดวงเงิน (หน้าเว็บโชว์ "ไม่จำกัด")
+  const num = (v, unlimitedOk) => {
+    const n = typeof v === 'number' ? v
+      : typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : NaN;
+    return Number.isFinite(n) && (n >= 0 || (unlimitedOk && n === -1)) ? n : null;
+  };
   const byAcct = {};
+  let skipped = 0;
   for (const it of req.body.limits) {
-    const id = String((it && it.id) || '').replace(/[^0-9]/g, '');
-    if (!id) continue;
-    byAcct[id] = { dsl: num(it.dsl), threshold: num(it.threshold) };
+    // id บัญชีต้องเป็นตัวเลขล้วน (มี act_ นำหน้าได้) — เดิมเก็บเฉพาะตัวเลขที่เจอ 'act_12a34' จึงกลายเป็นบัญชี 1234
+    const raw = it && (typeof it.id === 'string' || typeof it.id === 'number') ? String(it.id) : '';
+    const m = raw.match(/^(?:act_)?(\d{1,20})$/);
+    if (!m) { skipped++; continue; }
+    byAcct[m[1]] = { dsl: num(it.dsl, true), threshold: num(it.threshold, false) };
   }
+  // ไม่มีรายการที่ใช้ได้เลย = ไม่เขียนทับ — ตัวเลขชุดเดิมดีกว่าชุดว่างจาก client ที่ส่งของเพี้ยนมา
+  if (!Object.keys(byAcct).length) return res.status(400).json({ error: 'ไม่มีรายการวงเงินที่ถูกต้อง', skipped });
   prof.amLimits = { at: Date.now(), byAcct };
   saveConfig(cfg);
-  res.json({ ok: true, saved: Object.keys(byAcct).length });
+  res.json({ ok: true, saved: Object.keys(byAcct).length, skipped });
 });
 
 // ภาพรวมสุขภาพ: บัญชีโฆษณา (สถานะ/Pixel/บัตร) + เพจ (เผยแพร่/สิทธิ์ลงโฆษณา) ของ profile เดียว
@@ -1717,10 +1740,16 @@ app.get('/api/health-overview', async (req, res) => {
   const token = prof.accessToken;
   const hidden = cfg.hidden || {};
   try {
-    const [accts, pages] = await Promise.all([
+    // อ่านเพจพลาดอย่างเดียว (เช่น "(#10) Requires pages_show_list") ต้องไม่ลบตารางบัญชีโฆษณาทั้งตาราง
+    // เดิม Promise.all พังทั้งก้อน — ตอนนี้บัญชีโฆษณายังขึ้น ส่วนเพจบอกสาเหตุใน pagesError
+    const [acctRes, pageRes] = await Promise.allSettled([
       fbAll('me/adaccounts', { fields: 'name,account_id,account_status,currency,business{name},funding_source_details,adspixels.limit(15){id,name}', limit: 100 }, token),
       fbAll('me/accounts', { fields: 'name,is_published,promotion_eligible,promotion_ineligible_reason', limit: 100 }, token),
     ]);
+    if (acctRes.status === 'rejected') throw acctRes.reason;
+    const accts = acctRes.value;
+    const pages = pageRes.status === 'fulfilled' ? pageRes.value : [];
+    const pagesError = pageRes.status === 'rejected' ? pageRes.reason.message : null;
     // หน้าสุขภาพคือ "ตัวจัดการ" — โชว์ทุกตัวรวมที่ซ่อน/ถูกปิด พร้อมธง hidden ให้กดสลับได้
     const accounts = accts.map((a) => ({
       id: a.account_id, name: a.name, status: a.account_status,
@@ -1740,15 +1769,31 @@ app.get('/api/health-overview', async (req, res) => {
     const onLp = new Set(loadLp().pixels.filter((p) => p.type === 'meta').map((p) => p.id));
     for (const a of accounts) for (const x of a.pixels) x.onLp = onLp.has(String(x.id));
     // วงเงิน/วัน = ตัวเลขที่ส่วนขยายส่งมาเก็บไว้ ไม่ได้อ่านสดตรงนี้ (เซิร์ฟเวอร์ยิงเองไม่ได้ ดู /api/am-limits)
-    const stored = prof.amLimits || {};
+    // ส่วนขยายส่งเข้าบัญชี FB ตัวเดียว แต่บัญชีโฆษณาเดียวกันเห็นได้จากหลายบัญชี FB — ค้นจากทุกบัญชีในโปรไฟล์นี้
+    // เอาชุดที่ใหม่สุด (เดิมดูแค่ของบัญชีตัวเอง บัญชีอื่นขึ้น "ยังไม่เคยได้ตัวเลข" ตลอดไปทั้งที่มีตัวเลขอยู่แล้ว)
+    // ชุดที่มีตัวเลขชนะชุดที่ว่าง (null ทั้งคู่) เสมอ — บัญชีอื่นที่อ่านค่าไม่ได้ต้องไม่ลบตัวเลขจริงทิ้ง
+    let limitsAt = null;
+    const hasNum = (v) => v.dsl != null || v.threshold != null;
     for (const a of accounts) {
-      const v = (stored.byAcct || {})[a.id];
-      if (v) { a.dsl = v.dsl; a.threshold = v.threshold; }
+      let best = null;
+      for (const p of cfg.profiles) {
+        const s = p.amLimits || {};
+        const v = (s.byAcct || {})[a.id];
+        if (!v) continue;
+        const c = { ...v, at: s.at || 0 };
+        if (!best || (hasNum(c) && !hasNum(best)) || (hasNum(c) === hasNum(best) && c.at > best.at)) best = c;
+      }
+      if (!best) continue;
+      a.dsl = best.dsl;
+      a.threshold = best.threshold;
+      a.limitsAt = best.at || null;
+      if (best.at > (limitsAt || 0)) limitsAt = best.at;
     }
     res.json({
       accounts,
       boundToLp,
-      limitsAt: stored.at || null,
+      limitsAt: limitsAt || (prof.amLimits || {}).at || null,
+      pagesError,
       pages: (pages || []).map((p) => ({
         id: p.id, name: p.name, published: !!p.is_published,
         eligible: !!p.promotion_eligible, reason: p.promotion_ineligible_reason || null,

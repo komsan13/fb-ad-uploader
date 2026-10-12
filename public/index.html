@@ -1870,14 +1870,30 @@ async function openHealth(pid) {
 async function renderHealth() {
   const { pid, acct } = healthCtx;
   const body = document.getElementById('healthBody');
-  const res = await fetch(`/api/account-health?profile=${pid}&account=${acct}&_=${Date.now()}`, { cache: 'no-store' });
-  const d = await res.json();
-  if (d.error) { body.innerHTML = `<div style="color:var(--red)">ตรวจไม่สำเร็จ: ${esc(d.error)}</div>`; return; }
+  let d;
+  // เน็ตหลุด/ตัวกลางตอบ 502/หน้าใส่รหัส = ต้องบอกในหน้าต่าง เดิม .json() พังแล้วสปินเนอร์หมุนค้างตลอดไป
+  try { d = await apiJson(`/api/account-health?profile=${pid}&account=${acct}&_=${Date.now()}`, { cache: 'no-store' }); }
+  catch (e) { body.innerHTML = `<div style="color:var(--red)">ตรวจไม่สำเร็จ: ${esc(e.message)}</div>`; return; }
   const billUrl = `https://business.facebook.com/ads/manager/account_settings/account_billing/?act=${acct}`;
+  // สถานะบัญชีต้องมาก่อนเรื่องบัตร/Pixel — เดิมไม่อ่านเลย บัญชีที่ถูกปิดใช้งานขึ้น "เชื่อมบัตรแล้ว" เหมือนบัญชีปกติ
+  // บัญชีที่ตายแล้ว (ปิดใช้งาน/ปิดแล้ว) บัตรกับ Pixel ไม่มีผลอะไร จึงไม่โชว์สองหัวข้อนั้นเลย
+  const st = d.accountStatus;
+  const [stCls, stTxt] = st == null ? [] : (ACCT_STATUS[st] || ['warn', 'สถานะ ' + st]);
+  const stHtml = st == null ? '' : `
+    <div class="health-item">
+      <div class="hi-head">${ic(st === 1 ? 'checkCircle' : DEAD_ACCT.has(st) ? 'skull' : 'warn', { size: 14 })} สถานะบัญชี
+        <span class="hi-badge ${stCls === 'ok' ? 'ok' : 'bad'}">${esc(stTxt)}</span>
+      </div>
+      ${st === 1 ? '' : `<div style="font-size:13px;color:var(--muted)">${DEAD_ACCT.has(st)
+        ? 'บัญชีนี้ขึ้นแอดไม่ได้แล้ว — เพิ่มบัตรหรือสร้าง Pixel ก็ไม่ช่วย'
+        : 'บัญชีนี้ยังขึ้นแอดไม่ได้จนกว่าจะแก้สถานะนี้ใน Facebook (มีบัตร/Pixel ครบก็ตาม)'}
+        <a href="https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${encodeURIComponent(acct)}" target="_blank" rel="noopener">เปิด Ads Manager ↗</a></div>`}
+    </div>`;
+  if (DEAD_ACCT.has(st)) { body.innerHTML = stHtml; return; }
   const pxList = d.pixels.length
     ? d.pixels.map(p => `<div class="px-item">${ic('chart')} ${esc(p.name)} <code>${esc(p.id)}</code> <button class="btn-light btn-sm" style="margin-left:auto" onclick="copyPixel(${jsStr(p.id)})">คัดลอก ID</button></div>`).join('')
     : '<div style="color:var(--muted);font-size:13px;padding:6px 0">ยังไม่มี Pixel</div>';
-  body.innerHTML = `
+  body.innerHTML = stHtml + `
     <div class="health-item">
       <div class="hi-head"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px"><rect width="20" height="14" x="2" y="5" rx="2"/><path d="M2 10h20"/></svg> วิธีการชำระเงิน
         <span class="hi-badge ${d.hasPayment ? 'ok' : 'bad'}">${d.hasPayment ? 'เชื่อมบัตรแล้ว' : 'ยังไม่เชื่อมบัตร'}</span>
@@ -1903,12 +1919,12 @@ async function createPixel(btn) {
   const name = document.getElementById('newPixelName').value.trim();
   if (!name) return toast('ตั้งชื่อ Pixel ก่อนครับ');
   btn.disabled = true; btn.textContent = 'กำลังสร้าง...';
-  const res = await fetch('/api/create-pixel', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ profile: healthCtx.pid, account: healthCtx.acct, name }),
-  });
-  const d = await res.json();
-  if (d.error) { toast('สร้างไม่สำเร็จ: ' + d.error); btn.disabled = false; btn.textContent = '+ สร้าง Pixel'; return; }
+  try {
+    await apiJson('/api/create-pixel', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile: healthCtx.pid, account: healthCtx.acct, name }),
+    });
+  } catch (e) { toast('สร้างไม่สำเร็จ: ' + e.message); btn.disabled = false; btn.textContent = '+ สร้าง Pixel'; return; }
   await renderHealth();
 }
 function renderSettings() {
@@ -2106,6 +2122,7 @@ async function populateProfileCard(pid, force) {
       const pageSel = card.querySelector('.p-page');
       pageSel.innerHTML = data.pages.length
         ? data.pages.map(pg => `<option value="${pg.id}">${esc(pg.name)}</option>`).join('')
+        : data.pagesError ? `<option value="">— โหลดเพจไม่ได้: ${esc(data.pagesError)} —</option>`
         : '<option value="">— ไม่มีเพจที่ลงโฆษณาได้ (เพจบิน/ถูกจำกัด หรือ token ขาดสิทธิ์เพจ) —</option>';
       if (p.pageId) pageSel.value = p.pageId;
     }
@@ -2483,8 +2500,7 @@ async function loadHealthPage(force) {
   const results = await Promise.all(tokenProfiles.map(async (p) => {
     if (healthCache[p.id] && !force) return { p, ...healthCache[p.id] };
     try {
-      const d = await (await fetch(`/api/health-overview?profile=${p.id}&_=${Date.now()}`, { cache: 'no-store' })).json();
-      if (d.error) return { p, error: d.error };
+      const d = await apiJson(`/api/health-overview?profile=${p.id}&_=${Date.now()}`, { cache: 'no-store' });
       // รายชื่อที่เพิ่งถูกผูกเข้าหน้า Landing เป็นข่าวของรอบนี้เท่านั้น — ไม่เก็บลง cache ไม่งั้นเด้งซ้ำทุกครั้งที่เปิดหน้า
       const boundToLp = d.boundToLp || [];
       delete d.boundToLp;
@@ -2510,11 +2526,10 @@ async function toggleHidden(kind, id, hide, btn) {
   if (hide && kind === 'account' && !confirm('ซ่อนบัญชีนี้?\n\n• หายจากหน้าแดชบอร์ด/แคมเปญ/ขึ้นแอด\n• autopilot จะไม่เติมแอด ไม่ขยายงบ ไม่แก้แอดให้บัญชีนี้อีก\n• แอดที่ยังเปิดอยู่จะวิ่งต่อโดยไม่มีระบบดูแล — ถ้าไม่อยากให้เงินเดิน ปิดแอดก่อนซ่อน\n\nกดโชว์กลับได้ที่หน้านี้')) return;
   btn.disabled = true;
   try {
-    const d = await (await fetch('/api/hidden', {
+    await apiJson('/api/hidden', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ kind, id, hidden: hide }),
-    })).json();
-    if (d.error) throw new Error(d.error);
+    });
   } catch (e) { btn.disabled = false; return toast('บันทึกไม่สำเร็จ: ' + e.message); }
   // อัปเดต cache หน้าสุขภาพทุกโปรไฟล์ (เพจตัวเดียวโผล่ได้หลายโปรไฟล์) แล้ววาดใหม่ทันที
   for (const h of Object.values(healthCache)) {
@@ -2523,7 +2538,10 @@ async function toggleHidden(kind, id, hide, btn) {
     }
   }
   // รายชื่อบัญชี/เพจของหน้าอื่นเปลี่ยนแล้ว — ล้าง cache ให้หน้าพวกนั้นดึงชุดใหม่
-  [accountCache, dashCache, campCache].forEach(c => Object.keys(c).forEach(k => delete c[k]));
+  // หน้าต่างขึ้นแอดใช้คลังเต็มชุดแยก (fullAccountCache) + รายการที่สร้างค้างไว้ — เดิมไม่ล้าง
+  // บัญชีที่เพิ่งซ่อนยังโผล่ติ๊กไว้ในหน้าต่างขึ้นแอด
+  [accountCache, dashCache, campCache, fullAccountCache].forEach(c => Object.keys(c).forEach(k => delete c[k]));
+  launchAccountsBuilt = false;
   saveCaches();
   loadHealthPage();
 }
@@ -2546,15 +2564,17 @@ function limitCell(a) {
     + ` target="_blank" rel="noopener" title="${title}"`
     + ` href="https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${encodeURIComponent(a.id)}">${label}</a>`;
   // ปุ่มเปิด Ads Manager ใช้ทรงเดียวกับปุ่มไอคอนอื่นในตาราง (27px) ไม่ใช่กล่องเทาลอยขนาดพิเศษ
-  const refresh = openBtn(EXT_LINK_SVG, 'เปิด Ads Manager ของบัญชีนี้ — ส่วนขยายจะดึง token ใหม่ให้เองตอนหน้าโหลด', 'icon-btn');
+  const refresh = openBtn(EXT_LINK_SVG, 'เปิด Ads Manager ของบัญชีนี้ — ส่วนขยายจะดึง token ใหม่ให้เองตอนหน้าโหลด (ไม่ถี่กว่า 10 นาทีครั้ง ด่วนกว่านั้นกด &quot;ส่งเดี๋ยวนี้&quot; ในส่วนขยาย)', 'icon-btn');
   if (a.dsl === undefined || a.dsl === null) {
     return openBtn('เปิด Ads Manager ↗', 'ยังไม่มีตัวเลข — เปิดหน้านี้ให้ส่วนขยายดึง token แล้วกด "เช็คใหม่"', 'btn-sm');
   }
   const th = (a.threshold === undefined || a.threshold === null) ? ''
     : `<div class="res-label">เรียกเก็บที่ ${bt(a.threshold / minor)}</div>`;
+  // ตัวเลขอาจมาจากบัญชี FB อื่นที่เห็นบัญชีโฆษณาเดียวกัน (คนละรอบส่ง) — บอกเวลาของตัวเลขนี้เองด้วย
+  const at = a.limitsAt ? ` • อัปเดต ${new Date(a.limitsAt).toLocaleString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : '';
   const val = a.dsl === -1
-    ? '<span class="st-pill on">ไม่จำกัด</span>'
-    : `<span style="font-weight:600" title="ค่าดิบจาก Meta: adtrust_dsl=${esc(String(a.dsl))}">${bt(a.dsl)}</span>`;
+    ? `<span class="st-pill on" title="${esc(at.replace(/^ • /, ''))}">ไม่จำกัด</span>`
+    : `<span style="font-weight:600" title="ค่าดิบจาก Meta: adtrust_dsl=${esc(String(a.dsl))}${esc(at)}">${bt(a.dsl)}</span>`;
   return `<div style="display:flex;align-items:center;gap:6px">${val}${refresh}</div>${th}`;
 }
 
@@ -2575,7 +2595,7 @@ function renderAmBar(results) {
     + '1. Chrome → <code>chrome://extensions</code> → เปิด <b>โหมดนักพัฒนาซอฟต์แวร์</b><br>'
     + '2. <b>โหลดส่วนขยายที่แตกไฟล์แล้ว</b> → เลือกโฟลเดอร์ <code>extension</code><br>'
     + '3. กดไอคอนส่วนขยาย → เลือกบัญชี → บันทึก<br>'
-    + 'จากนั้นตัวเลขจะอัปเดตเองทุก 30 นาที และทุกครั้งที่เปิดหน้า Ads Manager (กดปุ่ม ↗ ในตารางได้เลย)<br><br>'
+    + 'จากนั้นตัวเลขจะอัปเดตเองทุก 30 นาที และตอนเปิดหน้า Ads Manager ไม่ถี่กว่า 10 นาทีครั้ง (กดปุ่ม ↗ ในตารางได้เลย)<br><br>'
     + '<span style="color:var(--red,#d93025)">ระบบจงใจไม่เก็บ token ของ Ads Manager ไว้บนเซิร์ฟเวอร์ — เคยเก็บแล้วโดน Meta สั่ง checkpoint ทั้งบัญชี เพราะ session ถูกใช้จาก IP ของเซิร์ฟเวอร์</span>'
     + '</div></details>';
 }
@@ -2593,7 +2613,10 @@ function renderHealthPage(results) {
     if (r.error) { errHtml.push(`<tr><td colspan="5" class="tbl-msg err" style="padding:12px 20px">⚠ ${esc(r.p.label)}: ${esc(r.error)}</td></tr>`); continue; }
     for (const a of r.accounts) {
       const dead = DEAD_ACCT.has(a.status);
-      rows.push({ ...a, pid: r.p.id, plabel: r.p.label, dead, missing: dead ? 0 : (a.pixels.length ? 0 : 1) + (a.funding ? 0 : 1) });
+      // ยังไม่ตายแต่ไม่ใช่ "ใช้ได้" (ค้างชำระ/รอตรวจความเสี่ยง/รอชำระ/ผ่อนผัน) = ต้องแก้ แม้มีบัตร+Pixel ครบ
+      // เดิมได้ไอคอนเขียวและไม่ถูกนับในช่องไหนเลย — บัญชีค้างชำระดูเหมือนพร้อมใช้
+      const statusIssue = !dead && a.status !== 1;
+      rows.push({ ...a, pid: r.p.id, plabel: r.p.label, dead, statusIssue, missing: dead ? 0 : (a.pixels.length ? 0 : 1) + (a.funding ? 0 : 1) + (statusIssue ? 1 : 0) });
     }
   }
   rows.sort((a, b) => (a.hidden ? 1 : 0) - (b.hidden ? 1 : 0) || (a.dead ? 1 : 0) - (b.dead ? 1 : 0) || b.missing - a.missing);
@@ -2626,6 +2649,7 @@ function renderHealthPage(results) {
       : `<a class="btn-primary btn-sm" style="text-decoration:none;display:inline-block;color:#fff" target="_blank" href="https://business.facebook.com/billing_hub/payment_settings?asset_id=${a.id}">เชื่อมบัตรเลย ↗</a>`;
     const rowStyle = a.hidden ? ' style="opacity:.45"' : a.dead ? ' style="opacity:.6"' : a.missing ? ' class="row-warn"' : '';
     const icon = a.dead ? ic('skull', { color: 'var(--red,#d93025)' }) + ' '
+      : a.statusIssue ? ic('warn', { color: '#b45309' }) + ' '
       : a.missing ? ic('wrench', { color: '#b45309' }) + ' '
       : ic('checkCircle', { color: 'var(--green,#0e9268)' }) + ' ';
     return `<tr${rowStyle} data-id="${esc(String(a.id))}">
@@ -2654,7 +2678,10 @@ function renderHealthPage(results) {
   pages.sort((a, b) => (a.hidden ? 1 : 0) - (b.hidden ? 1 : 0) || (b.ok ? 1 : 0) - (a.ok ? 1 : 0));
   const nPageOk = pages.filter(g => g.ok).length;
   const nHiddenPage = pages.filter(g => g.hidden).length;
-  document.getElementById('healthPageRows').innerHTML = pages.map(g => `<tr${g.hidden ? ' style="opacity:.45"' : g.ok ? '' : ' style="opacity:.55"'}>
+  // อ่านเพจพลาดแต่บัญชีโฆษณาอ่านได้ — ตารางบัญชียังขึ้นครบ ส่วนเพจต้องบอกสาเหตุ ไม่ใช่ขึ้นว่า "ไม่พบเพจ"
+  const pageErrHtml = results.filter(r => !r.error && r.pagesError)
+    .map(r => `<tr><td colspan="3" class="tbl-msg err" style="padding:12px 20px">⚠ ${esc(r.p.label)}: โหลดเพจไม่ได้ — ${esc(r.pagesError)}</td></tr>`).join('');
+  document.getElementById('healthPageRows').innerHTML = pageErrHtml + pages.map(g => `<tr${g.hidden ? ' style="opacity:.45"' : g.ok ? '' : ' style="opacity:.55"'}>
       <td style="font-weight:600">${g.ok ? ic('checkCircle', { color: 'var(--green,#0e9268)' }) : ic('skull', { color: 'var(--red,#d93025)' })} ${esc(g.name)}<div class="res-label">${multi ? esc(g.plabel) + ' • ' : ''}${g.id}</div></td>
       <td>${g.ok
         ? '<span class="st-pill on">✓ ใช้ลงโฆษณาได้</span>'
@@ -2686,11 +2713,10 @@ async function createAllPixelsHealth(btn) {
   for (let i = 0; i < list.length; i++) {
     btn.textContent = `กำลังสร้าง ${i + 1}/${list.length}...`;
     try {
-      const r = await (await fetch('/api/create-pixel', {
+      await apiJson('/api/create-pixel', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ profile: list[i].pid, account: list[i].id, name: pixelAutoName(i) }),
-      })).json();
-      if (r.error) fails.push(`${list[i].id}: ${r.error}`);
+      });
       delete fullAccountCache[list[i].pid];
     } catch (e) { fails.push(`${list[i].id}: ${e.message}`); }
   }
@@ -2701,13 +2727,15 @@ async function createAllPixelsHealth(btn) {
 async function createPixelHealth(pid, acctId, btn) {
   const name = pixelAutoName(0); // ตั้งชื่อให้เองไม่ซ้ำ: px-ปีเดือนวัน-ชั่วโมงนาทีวินาที
   if (btn) { btn.disabled = true; btn.textContent = 'กำลังสร้าง...'; }
-  const r = await (await fetch('/api/create-pixel', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ profile: pid, account: acctId, name }),
-  })).json();
-  if (r.error) {
+  // เน็ตหลุด/ได้หน้า HTML กลับมา = ต้องคืนปุ่มและบอกสาเหตุ เดิม .json() พังแล้วปุ่มค้าง "กำลังสร้าง..." ตลอดไป
+  try {
+    await apiJson('/api/create-pixel', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile: pid, account: acctId, name }),
+    });
+  } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = '+ สร้าง Pixel เลย'; }
-    return toast('สร้าง Pixel ไม่สำเร็จ: ' + r.error);
+    return toast('สร้าง Pixel ไม่สำเร็จ: ' + e.message);
   }
   delete fullAccountCache[pid]; // ให้หน้าขึ้นแอดเห็น Pixel ใหม่ด้วย
   launchAccountsBuilt = false;

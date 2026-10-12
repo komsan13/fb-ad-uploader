@@ -40,9 +40,12 @@ function loadWorker({ fbHtml, store = {}, graph, graphCalls = [] }) {
     console,
     URL,
     URLSearchParams,
-    btoa: (s) => Buffer.from(s, 'binary').toString('base64'),
+    TextEncoder,
+    // btoa ตัวจริงตามสเปก (เหมือน Chrome) — ตัวปลอมเดิมใช้ Buffer 'binary' ซึ่งไม่เคย throw
+    // เลยมองไม่เห็นว่ารหัสผ่านภาษาไทยทำส่วนขยายค้างทั้งรอบ
+    btoa,
     // ให้ importScripts รัน extract.js ตัวจริงในคอนเท็กซ์เดียวกัน เหมือนที่ Chrome ทำ
-    importScripts: (f) => vm.runInContext(fs.readFileSync(path.join(EXT, f), 'utf8'), ctx),
+    importScripts: (...files) => files.forEach((f) => vm.runInContext(fs.readFileSync(path.join(EXT, f), 'utf8'), ctx)),
     fetch: async (url, opts) => {
       if (String(url).startsWith('https://adsmanager.facebook.com')) {
         if (fbHtml === null) throw new Error('net::ERR_FAILED');
@@ -187,6 +190,7 @@ describe('ส่วนขยาย: อ่านวงเงินในเบ�
     };
     const s = await ctx.refresh('เทส');
     assert.strictEqual(s.ok, true, s.text);
-    assert.strictEqual(seenAuth, 'Basic ' + Buffer.from('admin:ลับ', 'binary').toString('base64'));
+    // รหัสภาษาไทยต้องไปเป็น UTF-8 แบบที่เบราว์เซอร์ส่งเอง (ตัวเก่าทำ btoa throw จนส่งไม่ได้เลย)
+    assert.strictEqual(seenAuth, 'Basic ' + Buffer.from('admin:ลับ', 'utf8').toString('base64'));
   });
 });
