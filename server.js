@@ -276,7 +276,9 @@ async function fb(pathname, params, method, token, attempt = 0) {
 }
 
 // ดึงข้อมูลแบบแบ่งหน้า (ตาม paging.next ของ Graph API) กันข้อมูลถูกตัดเงียบๆ
-async function fbAll(pathname, params, token, maxPages = 25) {
+// meta (ไม่บังคับ) = ผู้เรียกที่ต้องบอกผู้ใช้ว่าข้อมูลไม่ครบ ส่ง {} มา แล้วดู meta.truncated หลังเรียก
+// (ครบ maxPages แล้ว FB ยังมีหน้าถัดไป) — ผู้เรียกเดิมที่ไม่ส่งมาทำงานเหมือนเดิมทุกอย่าง
+async function fbAll(pathname, params, token, maxPages = 25, meta) {
   let out = [];
   let after;
   for (let i = 0; i < maxPages; i++) {
@@ -285,8 +287,9 @@ async function fbAll(pathname, params, token, maxPages = 25) {
     const r = await fb(pathname, p, 'GET', token);
     out = out.concat(r.data || []);
     if (r.paging && r.paging.next && r.paging.cursors && r.paging.cursors.after) after = r.paging.cursors.after;
-    else break;
+    else { after = null; break; }
   }
+  if (meta && after) meta.truncated = true;
   return out;
 }
 
@@ -1202,31 +1205,55 @@ const ADVICE_SYSTEM = `คุณคือคนดูแลบัญชีโฆ
 - ตอบเป็นภาษาไทย กระชับ ตรงประเด็น ไม่ต้องเกริ่น
 - ทุกแคมเปญที่ได้รับต้องมีคำแนะนำครบทุกตัว`;
 
+// ค่าจาก body ของหน้าเว็บ — อ่านแบบไม่มีทางโยน error: String()/Number() กับ object ที่มี toString แปลกๆ
+// โยน TypeError ได้ (เช่น {"toString":1}) และ handler async ของ Express 4 ที่โยนนอก try = unhandled rejection
+// = ทั้งโปรเซสตาย autopilot ตายไปด้วย (วัดแล้ว: {"campaigns":[null]} ทำเซิร์ฟเวอร์ exit 1)
+const bodyStr = (v) => (typeof v === 'string' ? v : typeof v === 'number' && Number.isFinite(v) ? String(v) : '');
+const bodyNum = (v) => {
+  const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;
+  return Number.isFinite(n) ? n : null;
+};
+
 app.post('/api/ai-advice', async (req, res) => {
-  const cfg = loadConfig();
-  const apiKey = cfg.anthropicKey || process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return res.status(400).json({ error: 'ยังไม่ได้ใส่ Anthropic API key (ไปที่เมนู "บัญชี FB" → ส่วน AI)' });
-
-  const campaigns = Array.isArray(req.body.campaigns) ? req.body.campaigns : [];
-  if (!campaigns.length) return res.status(400).json({ error: 'ไม่มีแคมเปญให้วิเคราะห์' });
-
-  // ส่งเฉพาะฟิลด์ที่ใช้ตัดสินจริง — ไม่เทข้อมูลทั้งก้อนเข้าไปเปลืองโทเคน
-  const slim = campaigns.slice(0, 120).map((c) => ({
-    id: String(c.id),
-    name: String(c.name || '').slice(0, 120),
-    บัญชี: c.accountName || undefined,
-    สถานะ: c.effective_status || c.status,
-    งบต่อวัน: c.dailyBudget || 0,
-    ใช้จ่าย: Math.round(Number(c.spend) || 0),
-    ผลลัพธ์: c.results || 0,
-    ชื่อผลลัพธ์: c.resultLabel || undefined,
-    ต้นทุนต่อผลลัพธ์: c.costPerResult != null ? Math.round(c.costPerResult) : null,
-    แอดโดนปฏิเสธ: c.adsDisapproved || 0,
-    แอดรอรีวิว: c.adsPending || 0,
-    แอดที่ยิงอยู่: c.adsActive || 0,
-  }));
-
+  // ทั้ง handler อยู่ใน try — อะไรหลุดออกไปก็ตาม ตอบ error ให้คำขอนี้ ไม่ใช่ล้มทั้งเซิร์ฟเวอร์
   try {
+    const cfg = loadConfig();
+    const apiKey = cfg.anthropicKey || process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) return res.status(400).json({ error: 'ยังไม่ได้ใส่ Anthropic API key (ไปที่เมนู "บัญชี FB" → ส่วน AI)' });
+
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    // เอาเฉพาะแถวที่เป็น object จริง — null/ตัวเลข/สตริงในอาร์เรย์เคยทำ c.id โยนนอก try
+    const campaigns = (Array.isArray(body.campaigns) ? body.campaigns : [])
+      .filter((c) => c && typeof c === 'object' && !Array.isArray(c));
+    if (!campaigns.length) return res.status(400).json({ error: 'ไม่มีแคมเปญให้วิเคราะห์' });
+
+    // สกุลเงินต่อแถว — หน้าแคมเปญเลือกหลายบัญชีได้ (THB/USD/VND ปนกัน) เดิมส่งสกุลของแถวแรกตัวเดียว
+    // แล้ว AI เอา 76,800 ดองไปเทียบกับ 630 บาทเหมือนเป็นหน่วยเดียวกัน (body.currency = หน้าเว็บรุ่นเก่า)
+    const fallbackCur = bodyStr(body.currency) || 'THB';
+    // ส่งเฉพาะฟิลด์ที่ใช้ตัดสินจริง — ไม่เทข้อมูลทั้งก้อนเข้าไปเปลืองโทเคน
+    const slim = campaigns.slice(0, 120).map((c) => {
+      const cpr = bodyNum(c.costPerResult);
+      return {
+        id: bodyStr(c.id),
+        name: bodyStr(c.name).slice(0, 120),
+        บัญชี: bodyStr(c.accountName).slice(0, 120) || undefined,
+        สกุลเงิน: bodyStr(c.currency) || fallbackCur,
+        สถานะ: bodyStr(c.effective_status) || bodyStr(c.status),
+        งบต่อวัน: bodyNum(c.dailyBudget) || 0,
+        ใช้จ่าย: Math.round(bodyNum(c.spend) || 0),
+        ผลลัพธ์: bodyNum(c.results) || 0,
+        ชื่อผลลัพธ์: bodyStr(c.resultLabel) || undefined,
+        ต้นทุนต่อผลลัพธ์: cpr != null ? Math.round(cpr) : null,
+        แอดโดนปฏิเสธ: bodyNum(c.adsDisapproved) || 0,
+        แอดรอรีวิว: bodyNum(c.adsPending) || 0,
+        แอดที่ยิงอยู่: bodyNum(c.adsActive) || 0,
+      };
+    });
+    const curs = [...new Set(slim.map((c) => c.สกุลเงิน))];
+    const curNote = curs.length === 1
+      ? `สกุลเงิน ${curs[0]}`
+      : `หลายสกุลเงิน (${curs.join(', ')}) — ดูฟิลด์ สกุลเงิน ของแต่ละแคมเปญ ห้ามเทียบหรือเฉลี่ยตัวเลขเงินข้ามสกุลกันตรงๆ`;
+
     const client = aiClient(apiKey);
     const msg = await client.messages.create({
       model: 'claude-opus-4-8',
@@ -1236,7 +1263,7 @@ app.post('/api/ai-advice', async (req, res) => {
       system: ADVICE_SYSTEM,
       messages: [{
         role: 'user',
-        content: `ข้อมูลแคมเปญช่วง "${req.body.datePreset || 'ไม่ระบุช่วง'}" สกุลเงิน ${req.body.currency || 'THB'}\n\n${JSON.stringify(slim, null, 1)}`,
+        content: `ข้อมูลแคมเปญช่วง "${bodyStr(body.datePreset) || 'ไม่ระบุช่วง'}" ${curNote}\n\n${JSON.stringify(slim, null, 1)}`,
       }],
     });
 
@@ -1275,13 +1302,16 @@ app.post('/api/ai-advice', async (req, res) => {
       usage: { input: msg.usage.input_tokens, output: msg.usage.output_tokens },
     });
   } catch (e) {
+    // ตัว catch เองก็ห้ามโยน (ไม่งั้นกลับไปเป็น unhandled rejection) — e อาจไม่ใช่ Error / ตอบไปแล้ว
+    if (res.headersSent) return;
     // ข้อความจาก SDK เป็น JSON ดิบ ผู้ใช้อ่านไม่รู้เรื่อง — ดึงเฉพาะข้อความจริงแล้วแปลเคสที่เจอบ่อย
-    const apiMsg = (e && e.error && e.error.error && e.error.error.message) || e.message || '';
-    const m = e.status === 401 ? 'API key ไม่ถูกต้อง — เช็คที่เมนู "บัญชี FB" → ส่วน AI'
+    const apiMsg = String((e && e.error && e.error.error && e.error.error.message) || (e && e.message) || '');
+    const status = e && e.status;
+    const m = status === 401 ? 'API key ไม่ถูกต้อง — เช็คที่เมนู "บัญชี FB" → ส่วน AI'
       : /credit balance is too low/i.test(apiMsg)
         ? 'เครดิต Anthropic หมด — เข้า console.anthropic.com → Plans & Billing → Add credits (ขั้นต่ำ $5) แล้วลองใหม่'
-      : e.status === 429 ? 'เรียกถี่เกินไป/เกินโควตา — รอสักครู่แล้วลองใหม่'
-      : e.status === 400 ? `คำขอไม่ถูกต้อง: ${apiMsg}`
+      : status === 429 ? 'เรียกถี่เกินไป/เกินโควตา — รอสักครู่แล้วลองใหม่'
+      : status === 400 ? `คำขอไม่ถูกต้อง: ${apiMsg}`
       : `เรียก AI ไม่สำเร็จ: ${apiMsg}`;
     res.status(502).json({ error: m });
   }
@@ -1675,6 +1705,32 @@ function pickResult(spec, actions) {
   return null;
 }
 
+// หน้าแดชบอร์ด/แคมเปญเป็นการ "ดูอย่างเดียว" — ระหว่าง Meta สั่งพัก (hard) ห้ามยิง FB:
+// วัดแล้ว (repro 12 ต.ค. 2026) เปิดแดชบอร์ดตอนพักอยู่ = ยิง FB 7 ครั้ง และ call ที่โดนกั้นซ้ำ
+// ต่อเวลาพัก 30 นาทีใหม่ทุกรอบ autopilot เลยหยุดยาวไม่รู้จบเพราะคนเปิดหน้าดู
+// ปุ่มเปิด/ปิด/ลบแคมเปญไม่ผ่านตัวนี้ — การหยุดแอดที่กำลังใช้เงินต้องกดได้เสมอ
+function viewCoolErr() {
+  if (!fbHardCooling()) return null;
+  const until = new Date(fbCoolUntil).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' });
+  const e = new Error(`FB สั่งพักการเรียก API อยู่ถึง ${until} — ระหว่างนี้ไม่ดึงข้อมูลเพื่อไม่ให้ช่วงพักยืดออก ลองใหม่หลังเวลานั้น`);
+  e.cooling = true;
+  return e;
+}
+// ยิง FB หนึ่งขั้นของหน้าดูข้อมูล: เช็คช่วงพักก่อนทุกขั้น (คำตอบขั้นก่อนอาจเพิ่งสั่งพักมาทาง header)
+// และติดชื่อขั้นไว้กับ error ให้รู้ว่าส่วนไหนพัง — เดิมแต่ละขั้นห่อ try แล้วกลืน error เงียบๆ
+// insights พลาด (เช่นโดนจำกัดความถี่) หน้าเว็บจึงโชว์ใช้จ่าย ฿0 แบบไม่มีอะไรเตือน แล้วแคชไว้ 5 นาทีเหมือนของจริง
+async function viewStep(what, run) {
+  const cool = viewCoolErr();
+  if (cool) throw cool;
+  try { return await run(); }
+  catch (e) {
+    const err = new Error(`${what} ไม่สำเร็จ: ${e.message}`);
+    err.cooling = !!viewCoolErr();
+    throw err;
+  }
+}
+const viewFail = (res, e) => res.status(e.cooling ? 503 : 400).json({ error: e.message, ...(e.cooling ? { cooling: true } : {}) });
+
 // รายการแคมเปญพร้อมสถิติ (Insights) แบบ Ads Manager
 app.get('/api/campaigns', async (req, res) => {
   const cfg = loadConfig();
@@ -1687,51 +1743,66 @@ app.get('/api/campaigns', async (req, res) => {
   const token = prof.accessToken;
   const datePreset = pickDatePreset(req.query.date);
   try {
-    const acctInfo = await fb(acct, { fields: 'currency' }, 'GET', token);
+    const acctInfo = await viewStep('อ่านข้อมูลบัญชี', () => fb(acct, { fields: 'currency' }, 'GET', token));
     const cf = curFactor(acctInfo.currency);   // งบจาก FB เป็นหน่วยย่อยของสกุลนั้น บางสกุลไม่มีหน่วยย่อย
-    const campData = await fbAll(`${acct}/campaigns`, {
+    // ดึงได้ไม่ครบ (บัญชีใหญ่เกิน fbAll 25 หน้า) ต้องบอกหน้าเว็บ — ไม่งั้นแถว/ตัวเลขหายเงียบๆ
+    const listMeta = {};
+    const campData = await viewStep('ดึงรายชื่อแคมเปญ', () => fbAll(`${acct}/campaigns`, {
       fields: 'name,objective,status,effective_status,daily_budget,lifetime_budget,created_time,stop_time',
       limit: 100,
-    }, token);
+    }, token, 25, listMeta));
     const camps = { data: campData };
 
-    // insights ต่อแคมเปญ (ห่อ try เผื่อไม่มีข้อมูล/สิทธิ์)
-    let insights = [];
-    try {
-      insights = await fbAll(`${acct}/insights`, {
-        level: 'campaign',
-        fields: 'campaign_id,spend,impressions,reach,actions',
-        date_preset: datePreset,
-        limit: 200,
-      }, token);
-    } catch { /* ไม่มีข้อมูล */ }
+    // insights ต่อแคมเปญ — พลาดต้องเป็น error ของบัญชีนี้ ห้ามกลืนแล้วตอบใช้จ่าย 0
+    // (FB ตอบ data ว่างเองเมื่อไม่มีข้อมูล ไม่ได้โยน error — ที่โยนคือโดนกั้น/สะดุดจริง)
+    const insights = await viewStep('ดึงสถิติแคมเปญ (ใช้จ่าย/ผลลัพธ์)', () => fbAll(`${acct}/insights`, {
+      level: 'campaign',
+      fields: 'campaign_id,spend,impressions,reach,actions',
+      date_preset: datePreset,
+      limit: 200,
+    }, token, 25, listMeta));
     const insMap = Object.fromEntries(insights.map((r) => [r.campaign_id, r]));
 
+    // ยอดรวมทั้งบัญชีต้องมาจาก insights ระดับบัญชี ไม่ใช่ผลบวกของแถวแคมเปญ — เอกสาร Meta
+    // "Manage Your Ad Object's Status" (https://developers.facebook.com/docs/marketing-api/best-practices/manage-your-ad-object-status)
+    // ตารางเทียบสถานะ: แคมเปญ ARCHIVED/DELETED "Query as edges without filter" = No (ไม่โผล่ใน /campaigns)
+    // และ "Stats included in the result list of /<PARENT>/insights?level=<OBJECT_LEVEL>" = No
+    // แต่ "Stats aggregated in /<PARENT_OBJECT_ID>/insights" = Yes — เงินที่แคมเปญที่ลบไปแล้วใช้ในช่วงนั้น
+    // จึงหายจากผลบวกรายแถว แต่ยังอยู่ในยอดระดับบัญชี (แถวรายแคมเปญคงเดิม ยอดรวมใช้ตัวนี้)
+    const acctIns = await viewStep('ดึงยอดรวมของบัญชี', () => fbAll(`${acct}/insights`, {
+      fields: 'spend,impressions,reach',
+      date_preset: datePreset,
+    }, token));
+    const totals = acctIns.reduce((t, r) => ({
+      spend: t.spend + (Number(r.spend) || 0),
+      impressions: t.impressions + (Number(r.impressions) || 0),
+      reach: t.reach + (Number(r.reach) || 0),
+    }), { spend: 0, impressions: 0, reach: 0 });
+
     // งบรวมจาก ad set (กรณีตั้งงบระดับ ad set ไม่ใช่ระดับแคมเปญ) + เหตุการณ์คอนเวอร์ชั่นของแคมเปญ
+    // นับงบเฉพาะชุดที่ตั้งเปิดไว้ (status ACTIVE) — edge นี้คืนชุดที่ PAUSED มาด้วย (สถานะ "live" ตามเอกสาร
+    // ข้างบน) เดิมบวกงบของชุดที่หยุดไว้เข้า "งบ/วัน" ด้วย ตัวเลขเลยสูงเกินเงินที่ใช้ได้จริง
     const adsetBudget = {};
     const campaignEvent = {};
-    try {
-      const as = await fbAll(`${acct}/adsets`, { fields: 'campaign_id,daily_budget,promoted_object', limit: 200 }, token);
-      for (const s of as) {
-        if (s.daily_budget) adsetBudget[s.campaign_id] = (adsetBudget[s.campaign_id] || 0) + Number(s.daily_budget);
-        const ev = s.promoted_object && s.promoted_object.custom_event_type;
-        if (ev && !campaignEvent[s.campaign_id]) campaignEvent[s.campaign_id] = ev;
-      }
-    } catch { /* ข้าม */ }
+    const as = await viewStep('ดึงชุดโฆษณา', () => fbAll(`${acct}/adsets`, { fields: 'campaign_id,status,daily_budget,promoted_object', limit: 200 }, token, 25, listMeta));
+    for (const s of as) {
+      if (s.daily_budget && s.status === 'ACTIVE') adsetBudget[s.campaign_id] = (adsetBudget[s.campaign_id] || 0) + Number(s.daily_budget);
+      const ev = s.promoted_object && s.promoted_object.custom_event_type;
+      if (ev && !campaignEvent[s.campaign_id]) campaignEvent[s.campaign_id] = ev;
+    }
 
     // สถานะระดับ "แอด" — การโดนปฏิเสธ (DISAPPROVED) เกิดที่ระดับนี้ ไม่โผล่ในสถานะแคมเปญ
+    // พลาดแล้วกลืนเงียบ = ป้าย "โดนปฏิเสธ" หายทั้งบัญชี ทั้งที่แอดยังโดนอยู่ → ต้องเป็น error เหมือนกัน
     const adStatus = {};
-    try {
-      const ads = await fbAll(`${acct}/ads`, { fields: 'campaign_id,effective_status', limit: 200 }, token);
-      for (const a of ads) {
-        const st = adStatus[a.campaign_id] || (adStatus[a.campaign_id] = { disapproved: 0, pending: 0, issues: 0, active: 0, total: 0 });
-        st.total++;
-        if (a.effective_status === 'DISAPPROVED') st.disapproved++;
-        else if (a.effective_status === 'PENDING_REVIEW' || a.effective_status === 'IN_PROCESS' || a.effective_status === 'PREAPPROVED') st.pending++;
-        else if (a.effective_status === 'WITH_ISSUES') st.issues++;
-        else if (a.effective_status === 'ACTIVE') st.active++;
-      }
-    } catch { /* ข้าม */ }
+    const ads = await viewStep('ดึงสถานะแอด', () => fbAll(`${acct}/ads`, { fields: 'campaign_id,effective_status', limit: 200 }, token, 25, listMeta));
+    for (const a of ads) {
+      const st = adStatus[a.campaign_id] || (adStatus[a.campaign_id] = { disapproved: 0, pending: 0, issues: 0, active: 0, total: 0 });
+      st.total++;
+      if (a.effective_status === 'DISAPPROVED') st.disapproved++;
+      else if (a.effective_status === 'PENDING_REVIEW' || a.effective_status === 'IN_PROCESS' || a.effective_status === 'PREAPPROVED') st.pending++;
+      else if (a.effective_status === 'WITH_ISSUES') st.issues++;
+      else if (a.effective_status === 'ACTIVE') st.active++;
+    }
 
     const rows = (camps.data || []).map((c) => {
       const ins = insMap[c.id] || {};
@@ -1758,9 +1829,12 @@ app.get('/api/campaigns', async (req, res) => {
         adsTotal: (adStatus[c.id] || {}).total || 0,
       };
     });
-    res.json({ campaigns: rows, account: acct.replace('act_', ''), currency: acctInfo.currency || '', datePreset });
+    res.json({
+      campaigns: rows, account: acct.replace('act_', ''), currency: acctInfo.currency || '', datePreset, totals,
+      ...(listMeta.truncated ? { truncated: true } : {}),
+    });
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    viewFail(res, e);
   }
 });
 
@@ -1775,17 +1849,15 @@ app.get('/api/campaign-detail', async (req, res) => {
   const datePreset = pickDatePreset(req.query.date);
   try {
     // ขอ account_currency มาด้วย เพื่อแปลงงบจากหน่วยย่อยได้ถูกกับทุกสกุล
-    const camp = await fb(id, { fields: 'name,objective,account{currency}' }, 'GET', token);
+    const camp = await viewStep('อ่านแคมเปญ', () => fb(id, { fields: 'name,objective,account{currency}' }, 'GET', token));
     const cf = curFactor((camp.account || {}).currency);
-    const adsets = await fbAll(`${id}/adsets`, { fields: 'name,status,effective_status,daily_budget,promoted_object', limit: 100 }, token);
-    const ads = await fbAll(`${id}/ads`, { fields: 'name,status,effective_status,adset_id,creative{thumbnail_url}', limit: 200 }, token);
-    let ins = [];
-    try {
-      ins = await fbAll(`${id}/insights`, {
-        level: 'ad', fields: 'ad_id,spend,impressions,reach,actions',
-        date_preset: datePreset, limit: 500,
-      }, token);
-    } catch { /* ไม่มีข้อมูล */ }
+    const adsets = await viewStep('ดึงชุดโฆษณา', () => fbAll(`${id}/adsets`, { fields: 'name,status,effective_status,daily_budget,promoted_object', limit: 100 }, token));
+    const ads = await viewStep('ดึงโฆษณา', () => fbAll(`${id}/ads`, { fields: 'name,status,effective_status,adset_id,creative{thumbnail_url}', limit: 200 }, token));
+    // เหมือนหน้ารายการ: insights พลาดต้องบอก ไม่ใช่โชว์ใช้จ่าย 0 ทุกแถว
+    const ins = await viewStep('ดึงสถิติโฆษณา (ใช้จ่าย/ผลลัพธ์)', () => fbAll(`${id}/insights`, {
+      level: 'ad', fields: 'ad_id,spend,impressions,reach,actions',
+      date_preset: datePreset, limit: 500,
+    }, token));
     const campEvent = (adsets.find((s) => s.promoted_object && s.promoted_object.custom_event_type) || { promoted_object: {} }).promoted_object.custom_event_type;
     const ra = resultSpec(camp.objective, campEvent);
     const insByAd = Object.fromEntries(ins.map((r) => [r.ad_id, r]));
@@ -1813,7 +1885,7 @@ app.get('/api/campaign-detail', async (req, res) => {
     });
     res.json({ name: camp.name, objective: camp.objective, resultLabel: ra ? ra.label : null, adsets: asRows, ads: adRows, datePreset });
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    viewFail(res, e);
   }
 });
 
@@ -1823,9 +1895,11 @@ app.post('/api/campaign-status', async (req, res) => {
   const prof = getProfile(cfg, req.body.profile);
   if (!prof || !prof.accessToken) return res.status(400).json({ error: 'ไม่พบบัญชี หรือยังไม่ได้เชื่อมต่อ' });
   if (!['ACTIVE', 'PAUSED'].includes(req.body.status)) return res.status(400).json({ error: 'สถานะไม่ถูกต้อง' });
-  if (!/^\d+$/.test(String(req.body.id || ''))) return res.status(400).json({ error: 'id ไม่ถูกต้อง' });
+  // bodyStr ไม่ใช่ String(): id เป็น object ({"toString":1}) แล้ว String() โยนนอก try = เซิร์ฟเวอร์ตายทั้งตัว (วัดแล้ว exit 1)
+  const id = bodyStr(req.body.id);
+  if (!/^\d+$/.test(id)) return res.status(400).json({ error: 'id ไม่ถูกต้อง' });
   try {
-    await fb(req.body.id, { status: req.body.status }, 'POST', prof.accessToken);
+    await fb(id, { status: req.body.status }, 'POST', prof.accessToken);
     res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -1837,9 +1911,10 @@ app.post('/api/campaign-delete', async (req, res) => {
   const cfg = loadConfig();
   const prof = getProfile(cfg, req.body.profile);
   if (!prof || !prof.accessToken) return res.status(400).json({ error: 'ไม่พบบัญชี หรือยังไม่ได้เชื่อมต่อ' });
-  if (!/^\d+$/.test(String(req.body.id || ''))) return res.status(400).json({ error: 'campaign id ไม่ถูกต้อง' });
+  const id = bodyStr(req.body.id);   // เหตุผลเดียวกับ /api/campaign-status
+  if (!/^\d+$/.test(id)) return res.status(400).json({ error: 'campaign id ไม่ถูกต้อง' });
   try {
-    await fb(req.body.id, { status: 'DELETED' }, 'POST', prof.accessToken);
+    await fb(id, { status: 'DELETED' }, 'POST', prof.accessToken);
     res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ error: e.message });

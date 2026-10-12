@@ -863,7 +863,7 @@
         <div class="tile">
           <div class="t-label"><span class="t-ic g"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg></span>ผลลัพธ์รวม</div>
           <div class="t-value" id="dResults">—</div>
-          <div class="t-sub">ตามวัตถุประสงค์ของแต่ละแคมเปญ</div>
+          <div class="t-sub" id="dResultsSub">ตามวัตถุประสงค์ของแต่ละแคมเปญ</div>
         </div>
         <div class="tile">
           <div class="t-label"><span class="t-ic b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/></svg></span>ต้นทุน/ผลลัพธ์เฉลี่ย</div>
@@ -898,7 +898,7 @@
       </div>
 
       <div class="card">
-        <h2 style="margin-bottom:12px"><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-5v12L3 13v-2z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg></span>แคมเปญที่ใช้จ่ายสูงสุด <span class="h-desc">— 10 อันดับตามช่วงเวลาที่เลือก</span></h2>
+        <h2 style="margin-bottom:12px"><span class="sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-5v12L3 13v-2z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg></span>แคมเปญที่ใช้จ่ายสูงสุด <span class="h-desc" id="dashTopSub">— 10 อันดับตามช่วงเวลาที่เลือก</span></h2>
         <div class="tbl-wrap">
           <table>
             <thead><tr>
@@ -945,7 +945,7 @@
             </div>
           </div>
           <button class="btn-light" onclick="loadCampaigns(true)" style="display:inline-flex;align-items:center;gap:7px"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>รีเฟรชข้อมูล</button>
-          <button class="btn-light" onclick="aiAdvise(this)" title="ให้ Claude อ่านตัวเลขที่โชว์อยู่ แล้วบอกว่าตัวไหนควรขยาย/หยุด" style="display:inline-flex;align-items:center;gap:7px"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg>ให้ AI วิเคราะห์</button>
+          <button class="btn-light" id="aiBtn" onclick="aiAdvise(this)" title="ให้ Claude อ่านตัวเลขที่โชว์อยู่ แล้วบอกว่าตัวไหนควรขยาย/หยุด" style="display:inline-flex;align-items:center;gap:7px"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg>ให้ AI วิเคราะห์</button>
           <button class="btn-primary" onclick="openUploadModal()" style="margin-left:0;display:inline-flex;align-items:center;gap:7px"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M3 15v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4"/></svg>ขึ้นแอด</button>
         </div>
       </div>
@@ -966,7 +966,7 @@
         <div class="tile">
           <div class="t-label"><span class="t-ic g"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.1V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg></span>ผลลัพธ์รวม</div>
           <div class="t-value" id="kResults">—</div>
-          <div class="t-sub">ตามวัตถุประสงค์ของแต่ละแคมเปญ</div>
+          <div class="t-sub" id="kResultsSub">ตามวัตถุประสงค์ของแต่ละแคมเปญ</div>
         </div>
         <div class="tile">
           <div class="t-label"><span class="t-ic b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></span>การเข้าถึง</div>
@@ -2359,7 +2359,9 @@ setInterval(tickClock, 1000);
       if (a.hasAttribute('data-lp-text')) a.textContent = env.lpUrl;
     });
   } catch {}
-  loadWorkspaces();
+  // ต้องรู้โปรไฟล์ของหน้านี้ (wsPage) ก่อนดึงแคช — แคชติดป้ายโปรไฟล์ไว้ (ดู restoreCaches)
+  // พังก็ไปต่อ (เดิมไม่ได้รอ) — ไม่งั้น init ตายกลางทางเหลือหน้าขาว
+  try { await loadWorkspaces(); } catch { /* ข้าม */ }
   restoreCaches(); // ดึงข้อมูลที่จำไว้จากรอบก่อน (sessionStorage) — F5 แล้วหน้าโชว์ทันที
   const route = location.hash.replace(/^#/, '');
   // ไม่มีบัญชี = บังคับหน้าตั้งค่าเสมอ (hash ค้างจาก session เก่าห้ามชนะ), มีบัญชีค่อยเคารพ hash
@@ -2415,6 +2417,34 @@ function spendByCurText(items) {
     (c === 'THB' ? '฿' : c + ' ') + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
   return parts.length ? parts.join(' + ') : '฿0.00';
 }
+// "ผลลัพธ์" ของแต่ละแคมเปญคนละชนิดกันได้ (คลิกลิงก์ / การซื้อ / ลูกค้าเป้าหมาย) — บวกข้ามชนิดเป็นเลขเดียวไม่ได้
+// เดิม "ผลลัพธ์รวม" เอาคลิก 100 + ซื้อ 3 = 103 แล้วเอาไปหารเป็นต้นทุนต่อผลลัพธ์ ตัวเลขไม่มีความหมายอะไรเลย
+// คืน { n, label, spend } เมื่อมีชนิดเดียว (หรือยังไม่มีผลลัพธ์), { mixed: [ชื่อชนิด...] } เมื่อปนกัน
+// spend = ใช้จ่ายของแคมเปญชนิดเดียวกันนั้นเท่านั้น ไว้หารเป็นต้นทุน/ผลลัพธ์ — ถ้าหารด้วยใช้จ่ายทุกแถว แคมเปญขาย
+// ที่ยังไม่มียอดซื้อ (0 ไม่ถูกนับเป็นชนิด) ถูกเอาเงินมาหารกับจำนวนคลิก: คลิก 100 (฿1,000) + ขาย ฿5,000 = "฿60/คลิก"
+function resultsAgg(camps) {
+  const by = {};
+  for (const c of camps) if (c.results > 0) { const k = c.resultLabel || 'ผลลัพธ์'; by[k] = (by[k] || 0) + c.results; }
+  const keys = Object.keys(by);
+  if (keys.length > 1) return { mixed: keys, n: null, label: null, spend: 0 };
+  const label = keys[0] || null;
+  const spend = label ? camps.reduce((s, c) => s + ((c.resultLabel || 'ผลลัพธ์') === label ? (c.spend || 0) : 0), 0) : 0;
+  return { n: label ? by[label] : 0, label, spend };
+}
+// ยอดเทียบเป็นบาท ไว้ "จัดอันดับ" ข้ามสกุล — เดิมเรียงด้วยตัวเลขดิบ บัญชี VND (76,800 ดอง ≈ 100 บาท)
+// เลยขึ้นอันดับเหนือบัญชีบาทที่ใช้จริงหลายพัน • เรตชุดเดียวกับหน้าขึ้นแอด (fxRates: 1 บาท = กี่หน่วย)
+// ยังไม่มีเรต = null (ผู้เรียกเรียงไว้ท้ายและบอกบนจอ ไม่เดาเรตเอง)
+function thbEq(cur, n) {
+  if (!cur || cur === 'THB') return n;
+  const r = fxRates[cur];
+  return typeof r === 'number' && r > 0 ? n / r : null;
+}
+// เรียงยอดใช้จ่ายมาก → น้อยแบบเทียบบาท — ตัวที่ยังไม่มีเรตอยู่ท้าย (เรียงกันเองด้วยตัวเลขดิบ)
+function bySpendThbDesc(x, y) {
+  const a = thbEq(x.currency, x.spend), b = thbEq(y.currency, y.spend);
+  if (a == null || b == null) return (a == null) - (b == null) || y.spend - x.spend;
+  return b - a;
+}
 
 // ---------- หน้าแดชบอร์ด ----------
 // นโยบายโหลดทุกหน้า: มีของเก่า = โชว์ทันทีไม่มีจอหมุน แล้วถ้าเก่าเกิน TTL ค่อยดึงใหม่เงียบๆ เบื้องหลังมาแทน
@@ -2434,21 +2464,28 @@ async function logout() {
   location.replace('/');
 }
 
+// แคชใน sessionStorage ติดป้ายโปรไฟล์ (wsPage) ไว้ด้วย — เดิมคีย์แค่ช่วงวันที่ สลับโปรไฟล์แล้ว
+// แดชบอร์ดของโปรไฟล์เก่าโผล่ในโปรไฟล์ใหม่ได้นานถึง 5 นาที (วัดแล้ว 2 ทาง: แท็บอื่นสลับ cookie แล้วกด F5 /
+// คำขอที่วิ่งค้างจบหลัง wsReload ล้าง storage แล้วเขียนของเก่ากลับลงไปก่อนหน้าใหม่โหลดเสร็จ)
+// ฝั่งอ่านจึงรับเฉพาะแคชที่ป้ายตรงกับโปรไฟล์ของหน้านี้ — ของที่เขียนช้าหลังสลับมีป้ายเก่า ถูกทิ้งเอง
 function saveCaches() {
-  try { sessionStorage.setItem('fbadCache', JSON.stringify({ dash: dashCache, camp: campCache, health: healthCache })); } catch { /* เต็ม/ปิดใช้ก็ข้าม */ }
+  try { sessionStorage.setItem('fbadCache', JSON.stringify({ ws: wsPage, dash: dashCache, camp: campCache, health: healthCache })); } catch { /* เต็ม/ปิดใช้ก็ข้าม */ }
 }
 function restoreCaches() {
   try {
     const s = JSON.parse(sessionStorage.getItem('fbadCache') || 'null');
-    if (!s) return;
+    if (!s || s.ws !== wsPage) return;   // แคชรุ่นเก่าไม่มีป้าย (undefined) = ไม่รู้ว่าของใคร ทิ้ง
     Object.assign(dashCache, s.dash || {});
     Object.assign(campCache, s.camp || {});
     Object.assign(healthCache, s.health || {});
   } catch { /* พังก็เริ่มเปล่า */ }
 }
+// ล้างแคชแล้ว คำขอที่ "เริ่มก่อนล้าง" ห้ามเขียนผลเก่ากลับลงแคช (นับรอบไว้เทียบตอนคำขอจบ)
+// เดิม: ลบแคมเปญ → ล้างแคช → คำขอเบื้องหลังรอบก่อนที่ยังวิ่งอยู่จบทีหลัง เอาแคมเปญที่ลบไปแล้วกลับมาใส่
+let dashGen = 0, campGen = 0;
 function bustCaches(o) { // ล้าง cache ตามชนิด แล้วบันทึกสถานะใหม่ลง sessionStorage ทันที
-  if (!o || o.dash) Object.keys(dashCache).forEach(k => delete dashCache[k]);
-  if (!o || o.camp) Object.keys(campCache).forEach(k => delete campCache[k]);
+  if (!o || o.dash) { Object.keys(dashCache).forEach(k => delete dashCache[k]); dashGen++; }
+  if (!o || o.camp) { Object.keys(campCache).forEach(k => delete campCache[k]); campGen++; }
   if (!o || o.health) Object.keys(healthCache).forEach(k => delete healthCache[k]);
   saveCaches();
 }
@@ -2458,6 +2495,7 @@ function setDashDate(v, btn) {
   loadDashboard();
 }
 let dashHiddenN = 0;   // บัญชีที่ถูกซ่อนจากหน้าสุขภาพ — โชว์เป็นหมายเหตุ ไม่ปล่อยให้เงียบหาย
+let dashSeq = 0;       // นับคำขอโหลดแดชบอร์ด — ผลของคำขอที่ไม่ใช่ตัวล่าสุดถูกทิ้ง
 async function loadDashboard(force) {
   const tokenProfiles = profiles.filter(p => p.hasToken);
   const acctRows = document.getElementById('dashAcctRows');
@@ -2472,19 +2510,28 @@ async function loadDashboard(force) {
     if (Date.now() - hit.ts < DASH_CACHE_MS) return; // ยังสด ไม่ต้องดึงใหม่
     // เก่าแล้ว → ดึงใหม่เบื้องหลัง (ไม่แตะจอจนกว่าจะได้ผล)
   } else {
+    dashShown = null;   // จอไม่ได้โชว์ผลชุดเก่าแล้ว — เรตที่โหลดเสร็จทีหลังห้ามวาดชุดเก่าทับสปินเนอร์ของช่วงใหม่
     acctRows.innerHTML = '<tr><td colspan="8" class="tbl-msg"><span class="spin"></span>กำลังโหลดข้อมูลทุกบัญชี...</td></tr>';
     topRows.innerHTML = '<tr><td colspan="6" class="tbl-msg"><span class="spin"></span>กำลังโหลด...</td></tr>';
   }
 
+  // คำขอใหม่กว่าเริ่มแล้ว (กดรีเฟรชซ้ำ/เปลี่ยนช่วง) = ผลของคำขอนี้ทิ้งทั้งจอและแคช — ไม่งั้นตัวที่จบช้ากว่าทับของใหม่
+  const seq = ++dashSeq, gen = dashGen;
   // รายชื่อบัญชีโฆษณาของทุก profile — ตัวดึงกลางตัวเดียวกับตาราง/หน้าต่างแก้ไข/หน้าแคมเปญ
   // (คำขอที่วิ่งอยู่ใช้ร่วมกัน ไม่ยิง FB ซ้อน และ error ถูกเก็บให้ตารางบัญชีโชว์ ไม่ค้าง "กำลังโหลด...")
   await Promise.all(tokenProfiles.map(p => (accountCache[p.id] ? null : fetchProfAccounts(p.id))));
   // จำนวนที่ถูกซ่อนจากหน้าสุขภาพ — ต้องบอกไว้ว่ามีของถูกซ่อน ไม่ใช่ปล่อยให้ดูเหมือนบัญชีหาย
   dashHiddenN = tokenProfiles.reduce((n, p) => n + ((accountCache[p.id] || {}).hiddenAccounts || 0), 0);
   const targets = [];
+  const profErrs = [];
   for (const p of tokenProfiles) {
     const d = accountCache[p.id];
-    if (!d) continue;
+    if (!d) {
+      // โหลดรายชื่อบัญชีของโปรไฟล์นี้ไม่ได้ — เดิม continue เงียบๆ ทั้งโปรไฟล์หายจากแดชบอร์ด
+      // ยอดรวมขาดไปทั้งก้อนโดยไม่มีอะไรบอก แล้วยังแคชไว้ 5 นาทีเหมือนเป็นของสด → ต้องเป็นแถว error
+      profErrs.push({ pid: p.id, acct: null, name: p.label, error: 'โหลดรายชื่อบัญชีโฆษณาไม่สำเร็จ: ' + (accountErr[p.id] || 'ไม่ทราบสาเหตุ'), campaigns: [] });
+      continue;
+    }
     for (const a of d.adAccounts) {
       targets.push({ pid: p.id, acct: a.account_id, name: a.name, currency: a.currency, acctStatus: a.account_status });
     }
@@ -2492,19 +2539,23 @@ async function loadDashboard(force) {
   const date = dashDate;
   // ห้ามข้ามบัญชีที่สถานะ "ถูกปิด" — พิสูจน์กับบัญชีจริงแล้วว่า FB ยังคืนแคมเปญ
   // พร้อมยอดใช้จ่ายจริงของบัญชีพวกนี้ตามปกติ ข้ามเมื่อไหร่ = เงินจริงหายจากแดชบอร์ด
-  const results = await pooled(targets, 4, async (t) => {
+  const results = profErrs.concat(await pooled(targets, 4, async (t) => {
     try {
-      const c = await fetch(`/api/campaigns?profile=${t.pid}&account=${t.acct}&date=${date}&_=${Date.now()}`, { cache: 'no-store' }).then(r => r.json());
-      return { ...t, error: c.error || null, campaigns: c.error ? [] : c.campaigns, currency: c.currency || t.currency };
+      const c = await apiJson(`/api/campaigns?profile=${t.pid}&account=${t.acct}&date=${date}&_=${Date.now()}`, { cache: 'no-store' });
+      // totals = ยอดระดับบัญชี (รวมแคมเปญที่ลบไปแล้ว) • truncated = FB มีรายการมากกว่าที่ดึงได้
+      return { ...t, error: null, campaigns: c.campaigns, currency: c.currency || t.currency, totals: c.totals || null, truncated: !!c.truncated };
     } catch (e) {
       return { ...t, error: e.message, campaigns: [] };
     }
-  });
+  }));
+  if (seq !== dashSeq) return;
   const hasErr = results.some(r => r.error);
   // เก็บ cache เสมอ (บัญชีที่ตายอยู่ตัวเดียวไม่ควรทำให้ทั้งหน้าไม่มี cache เลย)
   // แต่ถ้ามี error ให้ ts=0 = หมดอายุตั้งแต่แรก → รอบหน้าโชว์ของเดิมทันทีแล้วยิงใหม่เบื้องหลังเสมอ ไม่ค้าง error
-  dashCache[date] = { ts: hasErr ? 0 : Date.now(), results };
-  saveCaches();
+  if (gen === dashGen) {
+    dashCache[date] = { ts: hasErr ? 0 : Date.now(), results };
+    saveCaches();
+  }
   if (dashDate !== date) return; // ผู้ใช้เปลี่ยนช่วงเวลาไประหว่างโหลด — เก็บ cache ไว้แต่ไม่ทับจอ
   if (!force && hit) {
     if (hasErr) return; // จอมีของเดิมดีๆ อยู่ — refresh เบื้องหลังพลาดก็คงของเดิม
@@ -2512,43 +2563,81 @@ async function loadDashboard(force) {
   }
   renderDashboard(results);
 }
+// เรตบาท→สกุลอื่นสำหรับจัดอันดับบนแดชบอร์ด — เก็บที่เดียวกับหน้าขึ้นแอด (fxRates/fxMinor) ไม่ดึงซ้ำกัน
+// ได้เรตแล้ววาดใหม่เฉพาะเมื่อจอยังโชว์ผลชุดเดิมอยู่ (dashShown)
+let dashShown = null;
+let dashFxReq = null;
+function dashEnsureFx(curs, results) {
+  const need = curs.filter(c => c && c !== 'THB' && fxStale(c));
+  if (!need.length || dashFxReq) return;
+  dashFxReq = apiJson('/api/fx?cur=' + encodeURIComponent(need.join(',')))
+    .then(d => need.forEach(c => {
+      const v = (d.rates || {})[c];
+      fxRates[c] = typeof v === 'number' ? v : { error: (v && v.error) || 'ไม่มีเรตของสกุลนี้', at: Date.now() };
+      if (d.minor && d.minor[c]) fxMinor[c] = d.minor[c];
+    }))
+    .catch(e => need.forEach(c => { fxRates[c] = { error: e.message, at: Date.now() }; }))
+    .finally(() => { dashFxReq = null; if (dashShown === results) renderDashboard(results); });
+}
 function renderDashboard(results) {
+  dashShown = results;
   const num = (n) => Number(n || 0).toLocaleString();
   // ไม่รู้สกุลเงิน (บัญชีโหลดไม่ครบ) ให้ถือเป็นบาท — เดิมโชว์ว่า "undefined 1,234.00"
   const money = (cur, n) => (!cur || cur === 'THB' ? '฿' : cur + ' ') + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const resCell = (r) => r.mixed
+    ? `<span style="color:var(--muted)" title="${esc(r.mixed.join(' / '))}">หลายประเภท</span>`
+    : num(r.n) + (r.label ? `<div class="res-label">${esc(r.label)}</div>` : '');
 
-  // สรุปต่อบัญชี
+  // สรุปต่อบัญชี — ใช้จ่าย/อิมเพรสชัน/การเข้าถึง เอายอดระดับบัญชี (totals) ที่รวมแคมเปญที่ลบ/เก็บถาวรไปแล้ว
+  // (แถวรายแคมเปญไม่มีพวกนั้น — ดูเหตุผลที่ server.js /api/campaigns) แคชรุ่นเก่าที่ไม่มี totals ใช้ผลบวกรายแถว
+  // ต้นทุน/ผลลัพธ์ หารด้วยใช้จ่ายรายแถวของแคมเปญชนิดผลลัพธ์เดียวกัน (res.spend) เพราะผลลัพธ์นับจากแถวชุดนั้น
+  // ไม่งั้นเงินของแคมเปญที่ลบแล้ว/ชนิดอื่นถูกเอาไปหารกับผลลัพธ์ที่ไม่ได้นับ ต้นทุนดูแพงเกินจริง
   const accts = results.map(r => {
     const agg = r.campaigns.reduce((a, c) => ({
-      spend: a.spend + c.spend, results: a.results + (c.results || 0),
+      spend: a.spend + c.spend,
       impressions: a.impressions + c.impressions, reach: a.reach + c.reach,
       active: a.active + (c.effective_status === 'ACTIVE' ? 1 : 0),
       disapproved: a.disapproved + c.adsDisapproved, issues: a.issues + c.adsIssues,
-    }), { spend: 0, results: 0, impressions: 0, reach: 0, active: 0, disapproved: 0, issues: 0 });
-    return { ...r, ...agg, nCamp: r.campaigns.length };
+    }), { spend: 0, impressions: 0, reach: 0, active: 0, disapproved: 0, issues: 0 });
+    const t = r.totals;
+    return {
+      ...r, ...agg, res: resultsAgg(r.campaigns), nCamp: r.campaigns.length,
+      ...(t ? { spend: t.spend, impressions: t.impressions, reach: t.reach } : {}),
+    };
   });
   const ok = accts.filter(a => !a.error);
   const errs = accts.filter(a => a.error);
 
   // KPI รวม (เงินแยกสกุล)
   const tot = ok.reduce((a, x) => ({
-    results: a.results + x.results, impressions: a.impressions + x.impressions,
+    impressions: a.impressions + x.impressions,
     reach: a.reach + x.reach, active: a.active + x.active, nCamp: a.nCamp + x.nCamp,
-  }), { results: 0, impressions: 0, reach: 0, active: 0, nCamp: 0 });
+  }), { impressions: 0, reach: 0, active: 0, nCamp: 0 });
+  const allCamps = [];
+  ok.forEach(a => a.campaigns.forEach(c => allCamps.push({ ...c, acctName: a.name, currency: a.currency, pid: a.pid, acct: a.acct })));
+  const totRes = resultsAgg(allCamps);
   document.getElementById('dSpend').textContent = spendByCurText(ok);
-  document.getElementById('dResults').textContent = num(tot.results);
+  document.getElementById('dResults').textContent = totRes.mixed ? 'หลายประเภท' : num(totRes.n);
+  document.getElementById('dResultsSub').textContent = totRes.mixed
+    ? `${totRes.mixed.join(' / ')} — คนละชนิด รวมเป็นเลขเดียวไม่ได้`
+    : (totRes.label || 'ตามวัตถุประสงค์ของแต่ละแคมเปญ');
   document.getElementById('dActive').textContent = num(tot.active);
   document.getElementById('dActiveSub').textContent = `จากทั้งหมด ${num(tot.nCamp)} แคมเปญ`;
-  // CPR คำนวณได้เฉพาะเมื่อทุกบัญชีเป็นสกุลเดียวกัน
+  // CPR คำนวณได้เฉพาะเมื่อทุกบัญชีเป็นสกุลเดียวกัน และผลลัพธ์เป็นชนิดเดียวกัน
   const curs = [...new Set(ok.map(a => a.currency || 'THB'))];
   const oneCur = curs.length === 1 ? curs[0] : null;
-  const spendAll = ok.reduce((s, a) => s + a.spend, 0);
-  document.getElementById('dCpr').textContent = (oneCur && tot.results > 0) ? money(oneCur, spendAll / tot.results) : '—';
-  document.getElementById('dCprSub').textContent = oneCur ? 'ใช้จ่าย ÷ ผลลัพธ์รวม' : 'หลายสกุลเงิน — ดูรายบัญชีแทน';
+  document.getElementById('dCpr').textContent = (oneCur && !totRes.mixed && totRes.n > 0) ? money(oneCur, totRes.spend / totRes.n) : '—';
+  document.getElementById('dCprSub').textContent = !oneCur ? 'หลายสกุลเงิน — ดูรายบัญชีแทน'
+    : totRes.mixed ? 'ผลลัพธ์หลายประเภท — ดูรายแคมเปญแทน' : 'ใช้จ่าย ÷ ผลลัพธ์รวม';
 
-  // ตารางรายบัญชี (เรียงตามใช้จ่ายมาก → น้อย)
+  // ตารางรายบัญชี (เรียงตามใช้จ่ายมาก → น้อย เทียบเป็นบาท)
+  dashEnsureFx(curs, results);
+  const noRate = curs.filter(c => thbEq(c, 1) == null);
+  const rankNote = curs.length > 1
+    ? (noRate.length ? ` • ยังไม่มีอัตราแลกเปลี่ยนของ ${noRate.join(', ')} — บัญชีสกุลนี้เรียงไว้ท้าย` : ' • เรียงตามยอดที่เทียบเป็นบาท')
+    : '';
   const acctRows = document.getElementById('dashAcctRows');
-  const sorted = ok.slice().sort((a, b) => b.spend - a.spend);
+  const sorted = ok.slice().sort(bySpendThbDesc);
   const errRows = errs.map(a =>
     `<tr><td colspan="8" class="tbl-msg err" style="padding:12px 20px">⚠ ${esc(a.name)}: ${esc(a.error)}</td></tr>`).join('');
   acctRows.innerHTML = errRows + (sorted.length ? sorted.map(a => {
@@ -2556,11 +2645,13 @@ function renderDashboard(results) {
     if (a.acctStatus !== 1) problems.push('<span class="st-pill issue">⚠ บัญชีมีปัญหา</span>');
     if (a.disapproved) problems.push(`<span class="st-pill rejected">✕ โดนปฏิเสธ ${a.disapproved}</span>`);
     if (a.issues) problems.push(`<span class="st-pill issue">⚠ มีปัญหา ${a.issues}</span>`);
+    // FB มีแคมเปญ/แอดมากกว่าที่ดึงได้ — ใช้จ่ายรวมยังครบ (มาจากระดับบัญชี) แต่รายการ/ผลลัพธ์/ป้ายนับไม่ครบ
+    if (a.truncated) problems.push('<span class="st-pill issue" title="บัญชีนี้มีแคมเปญ/แอดมากเกินจะดึงครบ — ใช้จ่ายรวมครบ แต่จำนวนแคมเปญ ผลลัพธ์ และป้ายสถานะนับไม่ครบ">⚠ รายการไม่ครบ</span>');
     return `<tr>
       <td><span class="chip" style="white-space:nowrap;max-width:190px;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:middle" title="${esc(a.name)}">${esc(a.name)}</span></td>
       <td style="white-space:nowrap">${a.active}/${a.nCamp} <span class="res-label">เปิดอยู่</span></td>
-      <td>${num(a.results)}</td>
-      <td class="num-cell">${a.results > 0 ? money(a.currency, a.spend / a.results) : '<span style="color:var(--muted)">—</span>'}</td>
+      <td>${resCell(a.res)}</td>
+      <td class="num-cell">${!a.res.mixed && a.res.n > 0 ? money(a.currency, a.res.spend / a.res.n) : '<span style="color:var(--muted)">—</span>'}</td>
       <td class="num-cell">${money(a.currency, a.spend)}</td>
       <td class="num-cell">${num(a.impressions)}</td>
       <td class="num-cell">${num(a.reach)}</td>
@@ -2568,12 +2659,11 @@ function renderDashboard(results) {
     </tr>`;
   }).join('') : '<tr><td colspan="8" class="tbl-msg">ไม่พบบัญชีโฆษณา</td></tr>');
   document.getElementById('dashAcctSub').textContent = `— ${ok.length} บัญชี`
-    + (dashHiddenN ? ` • ซ่อนไว้ ${dashHiddenN} (จัดการที่หน้าสุขภาพ)` : '');
+    + (dashHiddenN ? ` • ซ่อนไว้ ${dashHiddenN} (จัดการที่หน้าสุขภาพ)` : '') + rankNote;
 
-  // แคมเปญใช้จ่ายสูงสุด 10 อันดับ
-  const allCamps = [];
-  ok.forEach(a => a.campaigns.forEach(c => allCamps.push({ ...c, acctName: a.name, currency: a.currency, pid: a.pid, acct: a.acct })));
-  const top = allCamps.sort((a, b) => b.spend - a.spend).slice(0, 10);
+  // แคมเปญใช้จ่ายสูงสุด 10 อันดับ (เทียบเป็นบาทเหมือนตารางบัญชี)
+  const top = allCamps.sort(bySpendThbDesc).slice(0, 10);
+  document.getElementById('dashTopSub').textContent = '— 10 อันดับตามช่วงเวลาที่เลือก' + rankNote;
   document.getElementById('dashTopRows').innerHTML = top.length ? top.map(c => `<tr>
       <td style="font-weight:600;min-width:150px"><span class="camp-link" title="ดูชุดโฆษณา/โฆษณาข้างใน" onclick="openCampaignDetail(${jsStr(c.pid)},${jsStr(c.id)},${jsStr(c.acct)},${jsStr(c.currency)},${jsStr(c.name)})">${esc(c.name)}</span><div class="res-label">${OBJ_TH[c.objective] || c.objective}</div></td>
       <td><span class="chip" style="white-space:nowrap;max-width:170px;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:middle" title="${esc(c.acctName)}">${esc(c.acctName)}</span></td>
@@ -3045,37 +3135,60 @@ function setCampKpis(count, spend, results, reach, imp) {
 }
 const campCache = {}; // "sels|date" -> {ts, results} — กันโหลดซ้ำตอนสลับหน้าไปมา
 const CAMP_CACHE_MS = 300000;
+// ทุกครั้งที่เรียก loadCampaigns นับเลขใหม่ — คำขอที่จบทีหลังแต่ไม่ใช่ตัวล่าสุดถูกทิ้งทั้งจอและแคช
+// เดิม: refresh เบื้องหลังรอบเก่า (ยังเห็นแคมเปญที่เพิ่งลบ) จบช้ากว่ารอบที่กดหลังลบ แล้วเขียนทับ → แคมเปญที่ลบโผล่กลับมา
+let campSeq = 0;
+let campLoading = false;
+let lastCampDate = null;   // ช่วงวันที่ของแถวที่โชว์อยู่ (lastCampRows) — ให้ AI ได้ป้ายช่วงตรงกับตัวเลข
+// ระหว่างโหลด แถวบนจอยังเป็นชุดเก่า (ช่วงวันที่/บัญชีเดิม) — ปุ่ม AI ต้องรอ ไม่งั้นส่งตัวเลขเก่าไปพร้อมป้ายช่วงใหม่
+function setCampLoading(on) {
+  campLoading = on;
+  const b = document.getElementById('aiBtn');
+  if (b && !b.dataset.running) b.disabled = on;
+}
 async function loadCampaigns(force) {
+  const seq = ++campSeq, gen = campGen;
   const sels = [...document.querySelectorAll('#campProfiles input:checked')].map(i => i.value);
   const date = document.getElementById('campDate').value;
   const tbody = document.getElementById('campaignRows');
   document.getElementById('campSummary').textContent = '';
-  if (!sels.length) { tbody.innerHTML = '<tr><td colspan="13" class="tbl-msg">ติ๊กเลือกอย่างน้อย 1 บัญชีโฆษณาด้านบน</td></tr>'; setCampKpis('—', '—', '—', '—', '—'); campSelChanged(); return; }
+  if (!sels.length) {
+    tbody.innerHTML = '<tr><td colspan="13" class="tbl-msg">ติ๊กเลือกอย่างน้อย 1 บัญชีโฆษณาด้านบน</td></tr>';
+    setCampKpis('—', '—', '—', '—', '—'); campSelChanged();
+    lastCampRows = []; setCampLoading(false);   // จอว่างแล้ว — ห้าม AI วิเคราะห์แถวชุดก่อนที่ไม่ได้โชว์
+    return;
+  }
   const key = sels.join(',') + '|' + date;
   const hit = campCache[key];
   if (!force && hit) {
-    renderCampaignRows(hit.results, sels); // โชว์ของเดิมทันที
-    if (Date.now() - hit.ts < CAMP_CACHE_MS) return; // ยังสด
+    renderCampaignRows(hit.results, sels, date); // โชว์ของเดิมทันที
+    if (Date.now() - hit.ts < CAMP_CACHE_MS) { setCampLoading(false); return; } // ยังสด
     // เก่าแล้ว → ดึงใหม่เงียบๆ เบื้องหลัง
   } else {
     tbody.innerHTML = `<tr><td colspan="13" class="tbl-msg"><span class="spin"></span>กำลังโหลดข้อมูลจาก ${sels.length} บัญชีโฆษณา...</td></tr>`;
   }
+  setCampLoading(true);
 
   // โหลดทุกบัญชีโฆษณาที่ติ๊กพร้อมกัน (v = "profileId:adAccountId")
   const results = await pooled(sels, 4, async (v) => {
     const [pid, acct] = v.split(':');
     try {
-      const res = await fetch(`/api/campaigns?profile=${pid}&account=${acct}&date=${date}&_=${Date.now()}`, { cache: 'no-store' });
-      return { pid, acct, ...(await res.json()) };
+      // apiJson: ตอบไม่ใช่ JSON (401/502) = error ของบัญชีนั้น ไม่ใช่ข้อยกเว้นที่ทำให้ตารางค้าง
+      const d = await apiJson(`/api/campaigns?profile=${pid}&account=${acct}&date=${date}&_=${Date.now()}`, { cache: 'no-store' });
+      return { pid, acct, ...d };
     } catch (e) {
       return { pid, acct, error: e.message };
     }
   });
+  if (seq !== campSeq) return;   // มีคำขอใหม่กว่า (ลบ/เปิดปิด/เปลี่ยนติ๊ก) — ตัวนั้นวาดและแคชเอง
+  setCampLoading(false);
   // มี error สักบัญชี = cache ไว้แต่ให้ ts=0 (หมดอายุทันที) — ยังโชว์ของเดิมได้ไม่มีจอหมุน
   // แต่รอบหน้าจะยิงใหม่เบื้องหลังเสมอ ไม่ใช่เห็น error ค้าง และไม่ใช่ไม่มี cache เลย
   const hasErr = results.some(r => r.error);
-  campCache[key] = { ts: hasErr ? 0 : Date.now(), results };
-  saveCaches();
+  if (gen === campGen) {   // ล้างแคชไประหว่างรอ (เช่นเพิ่งลบแคมเปญ) = ผลนี้เก่ากว่าความจริงแล้ว ไม่เขียนกลับ
+    campCache[key] = { ts: hasErr ? 0 : Date.now(), results };
+    saveCaches();
+  }
   // กันผลรอบเก่ามาทับ ถ้าผู้ใช้เปลี่ยนติ๊ก "หรือช่วงเวลา" ระหว่างโหลด (เทียบ key เต็ม)
   const nowSels = [...document.querySelectorAll('#campProfiles input:checked')].map(i => i.value);
   const nowKey = nowSels.join(',') + '|' + document.getElementById('campDate').value;
@@ -3085,9 +3198,9 @@ async function loadCampaigns(force) {
     if (hasErr) return;
     if (JSON.stringify(hit.results) === JSON.stringify(results)) return;
   }
-  renderCampaignRows(results, sels);
+  renderCampaignRows(results, sels, date);
 }
-function renderCampaignRows(results, sels) {
+function renderCampaignRows(results, sels, date) {
   const tbody = document.getElementById('campaignRows');
   const errs = results.filter(r => r.error);
   const rows = [];
@@ -3097,22 +3210,32 @@ function renderCampaignRows(results, sels) {
   }
   rows.sort((a, b) => new Date(b.created_time) - new Date(a.created_time));
   lastCampRows = rows; // เก็บไว้ให้ปุ่ม "ให้ AI วิเคราะห์" ใช้ ไม่ต้องดึง FB ซ้ำ
+  lastCampDate = date;
 
   const curOf = (c) => c.currency === 'THB' ? '฿' : (c.currency ? c.currency + ' ' : '฿');
   const num = (n) => Number(n || 0).toLocaleString();
   const moneyC = (c, n) => curOf(c) + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  const tot = rows.reduce((a, c) => ({
-    impressions: a.impressions + c.impressions,
-    reach: a.reach + c.reach, results: a.results + (c.results || 0),
-  }), { impressions: 0, reach: 0, results: 0 });
-  setCampKpis(num(rows.length), spendByCurText(rows), num(tot.results), num(tot.reach), num(tot.impressions));
+  // ยอดสรุปด้านบนใช้ยอดระดับบัญชี (totals) — รวมเงินของแคมเปญที่ลบ/เก็บถาวรไปแล้วในช่วงนั้น ซึ่งไม่มีในตาราง
+  // (ดูเหตุผลที่ server.js /api/campaigns) แคชรุ่นเก่าที่ไม่มี totals ใช้ผลบวกรายแถวเหมือนเดิม
+  const sumOf = (r) => r.totals || r.campaigns.reduce((a, c) => ({
+    spend: a.spend + c.spend, impressions: a.impressions + c.impressions, reach: a.reach + c.reach,
+  }), { spend: 0, impressions: 0, reach: 0 });
+  const acctSums = results.filter(r => !r.error).map(r => ({ currency: r.currency, ...sumOf(r) }));
+  const tot = acctSums.reduce((a, s) => ({ impressions: a.impressions + s.impressions, reach: a.reach + s.reach }), { impressions: 0, reach: 0 });
+  const res = resultsAgg(rows);
+  setCampKpis(num(rows.length), spendByCurText(acctSums), res.mixed ? 'หลายประเภท' : num(res.n), num(tot.reach), num(tot.impressions));
+  document.getElementById('kResultsSub').textContent = res.mixed
+    ? `${res.mixed.join(' / ')} — คนละชนิด รวมเป็นเลขเดียวไม่ได้`
+    : (res.label || 'ตามวัตถุประสงค์ของแต่ละแคมเปญ');
   document.getElementById('campSummary').textContent =
     `— ${sels.length - errs.length}/${sels.length} บัญชีโฆษณา • ตัวเลขจาก FB API อาจช้ากว่าหน้า Ads Manager ~15-60 นาที`;
 
   const errRows = errs.map(r => {
     return `<tr><td colspan="13" class="tbl-msg err" style="padding:14px 20px">⚠ ${esc(acctLabel(r.pid, r.acct))}: ${esc(r.error)}</td></tr>`;
-  }).join('');
+  }).join('') + results.filter(r => !r.error && r.truncated).map(r =>
+    // FB มีรายการมากกว่าที่ดึงได้ (เกิน 25 หน้า) — เดิมตัดทิ้งเงียบๆ ตอนนี้บอกตรงๆ ว่าตารางไม่ครบ
+    `<tr><td colspan="13" class="tbl-msg" style="padding:12px 20px;color:#b8860b">⚠ ${esc(acctLabel(r.pid, r.acct))}: บัญชีนี้มีแคมเปญ/แอดมากเกินจะดึงครบ — ตารางแสดงไม่ครบทุกแคมเปญ (ใช้จ่ายรวมด้านบนยังครบ) ดูทั้งหมดใน Ads Manager</td></tr>`).join('');
 
   if (!rows.length) {
     tbody.innerHTML = errRows + '<tr><td colspan="13" class="tbl-msg">ยังไม่มีแคมเปญในบัญชีที่เลือก</td></tr>';
@@ -3125,7 +3248,7 @@ function renderCampaignRows(results, sels) {
     const toggleable = c.status === 'ACTIVE' || c.status === 'PAUSED';
     const checked = c.status === 'ACTIVE' ? 'checked' : '';
     const toggle = toggleable
-      ? `<label class="switch"><input type="checkbox" ${checked} onchange="toggleCampaign(${jsStr(c.id)},${jsStr(c.status)},${jsStr(c.pid)})"><span class="sl"></span></label>`
+      ? `<label class="switch"><input type="checkbox" ${checked} onchange="toggleCampaign(${jsStr(c.id)},${jsStr(c.status)},${jsStr(c.pid)},this)"><span class="sl"></span></label>`
       : '';
     const results = c.results != null
       ? `${num(c.results)}${c.resultLabel ? `<div class="res-label">${c.resultLabel}</div>` : ''}`
@@ -3174,20 +3297,31 @@ function detailStatusPill(x) {
   if (x.effective_status === 'DISAPPROVED') return '<span class="st-pill rejected">✕ โดนปฏิเสธ</span>';
   return `<span class="st-pill issue">⚠ ${EFF_TH[x.effective_status] || x.effective_status}</span>`;
 }
+let detailSeq = 0;   // นับรอบโหลด modal — ผลที่กลับมาช้าของแคมเปญก่อนหน้าห้ามวาดทับ
 async function renderCampaignDetail() {
   const { pid, id, cur } = detailCtx;
+  const seq = ++detailSeq;
   const body = document.getElementById('detailBody');
   body.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted)"><span class="spin"></span> กำลังโหลดชุดโฆษณา + โฆษณา...</div>';
   // เปิดจากแดชบอร์ด → ใช้ช่วงเวลาของแดชบอร์ด, เปิดจากหน้าแคมเปญ → ใช้ของหน้าแคมเปญ (ให้เลขตรงกับแถวที่กด)
   const date = document.getElementById('page-dashboard').classList.contains('active')
     ? dashDate : document.getElementById('campDate').value;
-  const d = await (await fetch(`/api/campaign-detail?profile=${pid}&id=${id}&date=${date}&_=${Date.now()}`, { cache: 'no-store' })).json();
-  if (d.error) { body.innerHTML = `<div style="color:var(--red)">โหลดไม่สำเร็จ: ${esc(d.error)}</div>`; return; }
+  let d;
+  try {
+    // apiJson: ตอบไม่ใช่ JSON / เน็ตหลุด = ข้อความ error แทนสปินเนอร์ที่หมุนค้างตลอดกาล
+    d = await apiJson(`/api/campaign-detail?profile=${pid}&id=${id}&date=${date}&_=${Date.now()}`, { cache: 'no-store' });
+  } catch (e) {
+    if (seq === detailSeq) body.innerHTML = `<div style="color:var(--red)">โหลดไม่สำเร็จ: ${esc(e.message)}</div>`;
+    return;
+  }
+  // ปิดแล้วเปิดแคมเปญอื่นระหว่างรอ = ผลนี้เป็นของแคมเปญเก่า — เดิมวาดทับ modal ของแคมเปญใหม่
+  // ผู้ใช้เห็นชุดโฆษณาของอีกแคมเปญ แล้วสวิตช์ในนั้นไปเปิด/ปิดของที่ไม่ได้ตั้งใจ
+  if (seq !== detailSeq) return;
   const num = (n) => Number(n || 0).toLocaleString();
   const money = (n) => (cur === 'THB' || !cur ? '฿' : cur + ' ') + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const resTxt = (r) => r != null ? `${num(r)}${d.resultLabel ? `<div class="res-label">${d.resultLabel}</div>` : ''}` : '<span style="color:var(--muted)">—</span>';
   const toggleOf = (x) => (x.status === 'ACTIVE' || x.status === 'PAUSED')
-    ? `<label class="switch"><input type="checkbox" ${x.status === 'ACTIVE' ? 'checked' : ''} onchange="toggleDetailObj(${jsStr(x.id)},${jsStr(x.status)})"><span class="sl"></span></label>` : '';
+    ? `<label class="switch"><input type="checkbox" ${x.status === 'ACTIVE' ? 'checked' : ''} onchange="toggleDetailObj(${jsStr(x.id)},${jsStr(x.status)},this)"><span class="sl"></span></label>` : '';
   const asRows = d.adsets.map(s => `<tr>
       <td>${toggleOf(s)}</td>
       <td style="font-weight:600">${esc(s.name)}<div class="res-label">${s.nAds} โฆษณา</div></td>
@@ -3225,35 +3359,60 @@ async function renderCampaignDetail() {
 async function copyAdset(id, btn) {
   if (!confirm('ก๊อปชุดโฆษณานี้ (พร้อมแอดข้างใน) เป็นตัวใหม่ในแคมเปญเดิม?\n\nตัวก๊อปจะขึ้นเป็น PAUSED — เข้าไปเปิดเองเมื่อพร้อม')) return;
   btn.disabled = true; btn.textContent = 'กำลังก๊อป...';
-  const r = await (await fetch('/api/adset-copy', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id, profile: detailCtx.pid }),
-  })).json();
-  btn.disabled = false; btn.textContent = '⧉ ก๊อปสเกล';
-  if (r.error) return toast('ก๊อปไม่สำเร็จ: ' + r.error);
+  try {
+    await apiJson('/api/adset-copy', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, profile: detailCtx.pid }),
+    });
+  } catch (e) {
+    // พังแล้วไม่รู้ว่าคำขอไปถึง FB หรือยัง (ตัวกลางตอบ 502 JSON ได้ทั้งที่เซิร์ฟเวอร์ยิง FB ไปแล้ว)
+    // → ล้างแคชแล้วโหลด modal ใหม่ให้เห็นของจริงเสมอ ก่อนผู้ใช้กดซ้ำจนได้ชุดโฆษณาซ้ำ
+    toast('ก๊อปไม่สำเร็จ: ' + e.message + ' — กำลังโหลดของจริงจาก FB ให้ดูก่อนลองใหม่', 'err');
+    bustCaches({ dash: 1, camp: 1 });
+    renderCampaignDetail();
+    return;
+  } finally {
+    btn.disabled = false; btn.textContent = '⧉ ก๊อปสเกล';
+  }
   bustCaches({ dash: 1, camp: 1 });
   renderCampaignDetail(); // โชว์ตัวก๊อปทันที
 }
-async function toggleDetailObj(id, cur) {
+async function toggleDetailObj(id, cur, el) {
   const to = cur === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
   if (to === 'ACTIVE' && !confirm('เปิดตัวนี้เลยไหม? งบจะเริ่มเดินทันที')) return renderCampaignDetail();
-  const r = await (await fetch('/api/campaign-status', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id, status: to, profile: detailCtx.pid }),
-  })).json();
-  if (r.error) toast('เปลี่ยนสถานะไม่สำเร็จ: ' + r.error);
-  else bustCaches({ dash: 1, camp: 1 }); // สถานะเปลี่ยน → เลขที่ cache ไว้ทั้งแดชบอร์ดและหน้าแคมเปญไม่จริงแล้ว
+  if (el) el.disabled = true;
+  try {
+    await apiJson('/api/campaign-status', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, status: to, profile: detailCtx.pid }),
+    });
+    toast(to === 'PAUSED' ? '✓ หยุดแล้ว' : '✓ เปิดแล้ว', 'ok');
+  } catch (e) {
+    // คำขอพัง (502/401/เน็ตหลุด) — เดิม res.json() โยนเงียบ สวิตช์ค้างตำแหน่งที่กด ไม่มีข้อความ
+    // ผู้ใช้เชื่อว่าหยุดแล้วทั้งที่ยังใช้เงินอยู่ → ดีดสวิตช์กลับทันที แล้วโหลดสถานะจริงจาก FB มาแทน
+    if (el) el.checked = cur === 'ACTIVE';
+    toast('เปลี่ยนสถานะไม่สำเร็จ: ' + e.message + ' — กำลังโหลดสถานะจริงจาก FB', 'err');
+  }
+  // สำเร็จ = เลขที่แคชไว้ไม่จริงแล้ว • พัง = ไม่รู้ว่าคำขอไปถึง FB หรือยัง แคชก็เชื่อไม่ได้เหมือนกัน
+  bustCaches({ dash: 1, camp: 1 });
   renderCampaignDetail();
 }
 
 async function deleteCampaign(id, name, pid) {
   if (!confirm(`ลบแคมเปญ "${name}" ?\n\n⚠ ลบแล้วกู้คืนไม่ได้ แอดทั้งหมดในแคมเปญจะถูกลบด้วย\n(สถิติย้อนหลังยังดูได้ใน Ads Manager)`)) return;
-  const res = await fetch('/api/campaign-delete', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id, profile: pid }),
-  });
-  const data = await res.json();
-  if (data.error) return toast('ลบไม่สำเร็จ: ' + data.error);
+  try {
+    await apiJson('/api/campaign-delete', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, profile: pid }),
+    });
+  } catch (e) {
+    // ตอบไม่ใช่ JSON (401/502) เดิมโยนเงียบ ไม่มีข้อความ — ตอนนี้บอก แล้วโหลดตารางใหม่ให้เห็นว่าลบไปหรือยัง
+    // (โหลดใหม่เสมอ: ตัวกลางตอบ 502 JSON ได้ทั้งที่คำสั่งลบไปถึง FB แล้ว)
+    toast('ลบไม่สำเร็จ: ' + e.message, 'err');
+    bustCaches({ dash: 1, camp: 1 });
+    loadCampaigns(true);
+    return;
+  }
   bustCaches({ dash: 1, camp: 1 }); // ทุกช่วงเวลา/ทุกชุดบัญชีต้องโหลดใหม่ ไม่ให้แคมเปญที่ลบแล้วหลอนกลับมา
   loadCampaigns(true);
 }
@@ -3303,15 +3462,26 @@ async function bulkDeleteCampaigns() {
   bustCaches({ dash: 1, camp: 1 });
   loadCampaigns(true);
 }
-async function toggleCampaign(id, cur, pid) {
+async function toggleCampaign(id, cur, pid, el) {
   const to = cur === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
   if (to === 'ACTIVE' && !confirm('เปิดแคมเปญนี้เลยไหม? งบจะเริ่มเดินทันที')) return loadCampaigns();
-  const res = await fetch('/api/campaign-status', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id, status: to, profile: pid }),
-  });
-  const data = await res.json();
-  if (data.error) { toast('เปลี่ยนสถานะไม่สำเร็จ: ' + data.error); return loadCampaigns(true); }
+  if (el) el.disabled = true;
+  try {
+    await apiJson('/api/campaign-status', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, status: to, profile: pid }),
+    });
+  } catch (e) {
+    // คำขอพัง (502 ตอนรีสตาร์ท / 401 หน้าใส่รหัส / เน็ตหลุด) — เดิม res.json() โยนเงียบ สวิตช์ค้างตำแหน่งที่กด
+    // ไม่มี toast ไม่โหลดใหม่ ผู้ใช้เชื่อว่าหยุดแคมเปญแล้วทั้งที่ยังใช้เงินอยู่ (วัดแล้ว: FB ไม่ได้รับคำสั่งเลย)
+    // → ดีดสวิตช์กลับทันที บอกให้รู้ แล้วโหลดสถานะจริงจาก FB มาแทนเสมอ (คำขออาจไปถึง FB แล้วก็ได้)
+    if (el) { el.checked = cur === 'ACTIVE'; el.disabled = false; }
+    toast('เปลี่ยนสถานะไม่สำเร็จ: ' + e.message + ' — กำลังโหลดสถานะจริงจาก FB', 'err');
+    bustCaches({ dash: 1, camp: 1 });   // ตัวกลางตอบ 502 JSON ได้ทั้งที่คำสั่งไปถึง FB แล้ว — แคชเชื่อไม่ได้
+    return loadCampaigns(true);
+  }
+  // ยืนยันให้เห็นทันที — ตารางที่โหลดใหม่ตามมาอาจได้ error (เช่น FB สั่งพักการดึงสถิติอยู่) ผู้ใช้จะไม่รู้ว่าหยุดสำเร็จแล้ว
+  toast(to === 'PAUSED' ? '✓ หยุดแคมเปญแล้ว' : '✓ เปิดแคมเปญแล้ว', 'ok');
   bustCaches({ dash: 1, camp: 1 });
   loadCampaigns(true);
 }
@@ -4209,30 +4379,35 @@ const AI_ACTION = {
 function closeAi() { document.getElementById('aiModal').style.display = 'none'; }
 
 async function aiAdvise(btn) {
+  // แถวบนจอยังเป็นชุดก่อนเปลี่ยนช่วง/บัญชี — ส่งไปตอนนี้ AI ได้ตัวเลขเก่ากับป้ายช่วงใหม่
+  if (campLoading) return toast('กำลังโหลดข้อมูลแคมเปญ — รอให้โหลดเสร็จก่อนค่อยให้ AI วิเคราะห์ครับ');
   if (!lastCampRows.length) return toast('ยังไม่มีข้อมูลแคมเปญบนหน้าจอ — ติ๊กบัญชีแล้วรอโหลดให้เสร็จก่อนครับ');
   const modal = document.getElementById('aiModal');
   const body = document.getElementById('aiBody');
   modal.style.display = 'flex';
   body.innerHTML = `<div class="lib-empty"><span class="spin"></span> Claude กำลังอ่านตัวเลข ${lastCampRows.length} แคมเปญ... (ปกติ 10-30 วินาที)</div>`;
   btn.disabled = true;
+  btn.dataset.running = '1';   // ระหว่างรอ AI ตารางโหลดเสร็จก็ห้ามปลดปุ่ม (setCampLoading)
 
   let d;
   try {
-    d = await (await fetch('/api/ai-advice', {
+    d = await apiJson('/api/ai-advice', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        campaigns: lastCampRows.map(c => ({ ...c, accountName: c.account })),
-        currency: (lastCampRows[0] || {}).currency || 'THB',
-        datePreset: document.getElementById('campDate').value,
+        // สกุลเงินไปกับทุกแถว (c.currency) — เดิมส่งสกุลของแถวแรกตัวเดียว เลือกหลายบัญชี THB/USD/VND
+        // แล้ว AI เทียบตัวเลขต่างสกุลเหมือนหน่วยเดียวกัน • ชื่อบัญชีจริง ไม่ใช่เลข id (เดิมส่ง c.account = id)
+        campaigns: lastCampRows.map(c => ({ ...c, accountName: acctLabel(c.pid, c.acctId) })),
+        datePreset: lastCampDate,
       }),
-    })).json();
-    if (d.error) throw new Error(d.error);
+    });
   } catch (e) {
     body.innerHTML = `<div class="lib-empty" style="color:var(--red)">วิเคราะห์ไม่สำเร็จ<br><b>${esc(e.message)}</b></div>`;
-    btn.disabled = false;
+    delete btn.dataset.running;
+    btn.disabled = campLoading;
     return;
   }
-  btn.disabled = false;
+  delete btn.dataset.running;
+  btn.disabled = campLoading;
 
   // เรียงให้เรื่องที่ต้องลงมือก่อนอยู่บนสุด
   const order = { pause: 0, scale: 1, watch: 2, keep: 3 };
@@ -5252,8 +5427,14 @@ function tblCellVal(row, i) {
   if (!c) return '';
   const txt = c.innerText.replace(/\s+/g, ' ').trim();
   // ตัวเลขเงิน/เปอร์เซ็นต์/จำนวน ต้องเรียงแบบตัวเลข ไม่ใช่แบบสตริง (ไม่งั้น ฿9 มากกว่า ฿1,000)
-  const num = txt.replace(/[฿,%\s]/g, '').replace(/,/g, '');
-  if (num !== '' && !isNaN(Number(num))) return Number(num);
+  // ค่าหลักของช่อง = ข้อความที่ไม่รวมป้ายย่อย (.res-label เช่น "คลิกลิงก์" / "ต่อวัน") — เดิมเอาทั้งช่องมาแปลง
+  // ป้ายย่อยติดมาด้วยเลยกลายเป็นข้อความ เรียง 100, 12, 9 / ฿3,333, ฿500, ฿900 แบบตัวอักษร
+  // อ่านจาก textContent ไม่ใช่ innerText: แถวที่ซ่อนอยู่ (หน้าอื่น/กรองออก) innerText ไม่มีตัวคั่นบรรทัด
+  let main = '';
+  for (const n of c.childNodes) if (!(n.classList && n.classList.contains('res-label'))) main += n.textContent;
+  // รับ "฿1,234.50" / "USD 50.00" / "12%" / "-3" — ต้องเป็นตัวเลขทั้งก้อน วันที่ "12 ต.ค. 2569" หรือ "3/10" ยังเป็นข้อความ
+  const m = main.replace(/\s+/g, ' ').trim().match(/^(?:฿ ?|[A-Z]{3} )?(-?[\d,]*\.?\d+) ?%?$/);
+  if (m) return Number(m[1].replace(/,/g, ''));
   return txt;
 }
 
@@ -5275,6 +5456,10 @@ function tblApply(t) {
     });
     const body = t.tBodies[0];
     for (const r of hit) body.appendChild(r);      // ย้ายแถวจริง ไม่ได้สร้างใหม่ ปุ่มในแถวจึงยังทำงานเดิม
+    // การย้ายแถวข้างบนคือ childList mutation ของ tbody — ตัว observer (tblEnhance) จะเรียก tblApply ซ้ำ
+    // แล้วมันก็ย้ายแถวอีก วนไม่รู้จบ = กดหัวคอลัมน์ทีเดียวแท็บค้างทั้งแท็บ (วัดแล้วใน Chrome จริง)
+    // ทิ้งบันทึกที่เกิดจากการเรียงของเราเอง — ตาราง ณ ตอนนี้ถูกจัดครบแล้ว ไม่มีอะไรต้องทำซ้ำ
+    if (st.mo) st.mo.takeRecords();
   }
 
   const pages = Math.max(1, Math.ceil(hit.length / TBL_PAGE));
@@ -5353,7 +5538,8 @@ function tblEnhance(t) {
   if (!ths[ths.length - 1].textContent.trim()) t.classList.add('tb-stick');
 
   // ตัว render เดิมเขียน tbody ใหม่ทั้งก้อน — ต้องเติมช่องติ๊ก/จัดเรียง/กรอง/ตัดหน้าให้ใหม่ทุกครั้ง
-  new MutationObserver(() => tblApply(t)).observe(t.tBodies[0], { childList: true });
+  st.mo = new MutationObserver(() => tblApply(t));
+  st.mo.observe(t.tBodies[0], { childList: true });
   tblApply(t);
 }
 
