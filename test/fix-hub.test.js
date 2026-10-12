@@ -246,7 +246,7 @@ test('บอท Telegram ตัวเดียวกันสองโปรไ�
 });
 
 // ---------- ตัวห่อ fetch/XHR ในหน้าเว็บ — รันโค้ดจริงจาก index.html ใน vm ด้วย fetch/XHR ปลอม ----------
-function loadPageWrapper({ xhr409 = false } = {}) {
+function loadPageWrapper({ xhr409 = false, answer = true } = {}) {
   const vm = require('node:vm');
   const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
   const src = html.slice(html.indexOf('// ---------- ผูกหน้าต่างนี้กับโปรไฟล์'), html.indexOf('// ---------- ไอคอน SVG'));
@@ -275,7 +275,7 @@ function loadPageWrapper({ xhr409 = false } = {}) {
     sessionStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), clear: () => store.clear() },
     XMLHttpRequest: FakeXHR, ProgressEvent: class extends Event {}, Headers, URL, Promise, Error,
     setTimeout: (f, ms) => { const tm = setTimeout(f, ms); tm.unref(); return tm; },
-    confirm: (m) => { st.confirm.push(m); return true; },
+    confirm: (m) => { st.confirm.push(m); return answer; }, alert: (m) => { st.alert = (st.alert || []).concat(m); }, toast: (m) => { st.toast = (st.toast || []).concat(m); },
     wsFetch: async () => ({ current: 'pb', list }),
     wsPost: async (u, b) => { st.post.push([u, b]); return { ok: true }; },
     wsReload: () => { st.reload++; },
@@ -305,6 +305,25 @@ test('หน้าเว็บ: ทุก fetch/XHR แนบโปรไฟล�
   assert.strictEqual(st.confirm.length, 1);
   assert.match(st.confirm[0], /TOP[\s\S]*BRAND-B/);
   assert.strictEqual(JSON.stringify(st.post), JSON.stringify([['/hub/api/select', { id: 'top' }]]), 'ตกลง = สลับกลับโปรไฟล์ของหน้านี้');
+  // ตกลง = ไม่โหลดหน้าใหม่ (รีวิวรอบสุดท้าย: โหลดใหม่ทำผลขึ้นแอดบนจอหาย แล้วผู้ใช้กดขึ้นซ้ำ = แคมเปญซ้ำ)
+  // cookie กลับมาตรงกับหน้านี้แล้ว คำขอถัดไปส่งได้ตามปกติ พร้อม header โปรไฟล์ของหน้า
+  assert.strictEqual(st.reload, 0, 'ตกลง = ห้ามโหลดหน้าใหม่ ผลที่ทำไปแล้วต้องอยู่บนจอ');
+  assert.strictEqual(p.val('wsLeaving'), false);
+  assert.strictEqual(st.toast.length, 1);
+  st.reply = () => ({ status: 200 });
+  await ctx.window.fetch('/api/autopilot');
+  assert.strictEqual(st.sent.at(-1).page, 'top');
+});
+
+test('หน้าเว็บ: 409 แล้วเลือกเปิดโปรไฟล์อื่นในหน้าต่างนี้ = โหลดใหม่ และไม่ส่งคำขอสั่งงานอีกเลยจนโหลดเสร็จ', async () => {
+  const p = loadPageWrapper({ answer: false });
+  const { ctx, st } = p;
+  await ctx.window.fetch('/api/profiles');
+  st.reply = () => ({ status: 409, headers: { 'x-fbws-mismatch': 'pb' }, body: { error: 'ไม่ตรง' } });
+  await ctx.window.fetch('/api/autopilot', { method: 'POST' });
+  await new Promise((res) => setImmediate(res));
+  assert.strictEqual(st.confirm.length, 1);
+  assert.strictEqual(st.post.length, 0, 'ยกเลิก = ไม่สลับ cookie กลับ');
   assert.strictEqual(st.reload, 1);
 
   // หลังจากนี้คำขอสั่งงานต้องไม่ถูกส่งเลย (เดิมลูปขึ้นแอดส่งบัญชีถัดไปต่อ แล้วผ่านทันทีที่ cookie กลับมาตรง)
@@ -315,7 +334,7 @@ test('หน้าเว็บ: ทุก fetch/XHR แนบโปรไฟล�
   xb.addEventListener('error', () => { errored = true; });
   xb.open('POST', '/api/launch'); xb.send();
   await new Promise((res) => setTimeout(res, 10));
-  assert.strictEqual(st.xhr.length, 1, 'XHR ต้องไม่ถูกส่ง');
+  assert.strictEqual(st.xhr.length, 0, 'XHR ต้องไม่ถูกส่ง');
   assert.ok(errored, 'ต้องแจ้ง error ให้โค้ดที่รอ XHR อยู่หยุด ไม่ค้าง');
   await ctx.window.fetch('/hub/api/workspaces');   // ตัวสลับโปรไฟล์ยังใช้ได้
   assert.strictEqual(st.confirm.length, 1, 'ถามครั้งเดียว');

@@ -42,3 +42,24 @@ test('หน้าต่างขึ้นแอด: โหลดบัญชี
   assert.strictEqual(els.launchAcctSummary.textContent, 'พร้อม 0/0 บัญชี');
   assert.strictEqual(vm.runInContext('launchAccountsBuilt', ctx), false, 'โหลดพลาด = เปิดหน้าต่างรอบหน้าต้องลองโหลดใหม่');
 });
+
+test('ให้ AI ขึ้นต่อ ช่วงโหลดบัญชีไม่ได้ (Meta สั่งพัก): กล่องยืนยันห้ามบอก "รวม 0 บาท/วัน" ต้องบอกงบต่อบัญชีและว่านับไม่ได้', async () => {
+  // รีวิวรอบสุดท้ายวัดจริง: ช่วงพัก /api/accounts ตอบ 503 → readyAccounts() ว่าง → กล่องบอก 0 บัญชี 0 บาท/วัน
+  // ทั้งที่พอพักจบ autopilot เติมทุกบัญชีที่ใช้ได้ (CLAUDE.md: ทวน minAds × บัญชี × งบ ก่อนเปิดระบบเสมอ)
+  const vals = { 'tpl-link': 'https://example.com/', campaignBudget: '500', planPerAccount: '2', ruleCpr: '100' };
+  const asked = [];
+  const ctx = vm.createContext({
+    document: { getElementById: (id) => ({ value: vals[id] || '', checked: id === 'ruleOn', textContent: '', disabled: false }) },
+    launchAccounts: [], launchAccountErrs: [{ pid: 'p1', label: 'หนึ่ง', error: 'FB สั่งพักการเรียก API อยู่ถึง 11:43' }],
+    evalReady: () => ({ ready: true, missing: [] }),
+    fetch: async () => new Response(JSON.stringify({ enabled: false, fastMins: 10, fullMins: 20 }), { status: 200 }),
+    confirm: (m) => { asked.push(m); return false; },   // ตอบ "ยกเลิก" — ดูแค่ข้อความ ไม่บันทึกอะไร
+    toast: () => {},
+  });
+  vm.runInContext([grab('readyAccounts'), grab('handToAi')].join('\n'), ctx);
+  await vm.runInContext('handToAi({ textContent: "" })', ctx);
+  assert.strictEqual(asked.length, 1);
+  assert.doesNotMatch(asked[0], /รวม 0 บาท/, 'ห้ามบอกว่างบรวม 0 บาท/วัน');
+  assert.match(asked[0], /บัญชีละ 1,000/, 'ต้องบอกงบต่อบัญชี (2 แอด × 500)');
+  assert.match(asked[0], /นับตอนนี้ไม่ได้[\s\S]*FB สั่งพัก/, 'ต้องบอกว่านับจำนวนบัญชีไม่ได้เพราะอะไร');
+});
