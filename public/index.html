@@ -1177,12 +1177,12 @@
       </div>
 
       <div class="card">
-        <h2>พิกเซล <span class="h-desc" id="lpPixelCount">— ระบบยิงเฉพาะพิกเซลของบัญชีที่พาคนมา</span>
+        <h2>พิกเซล <span class="h-desc" id="lpPixelCount">— ทุกพิกเซลในรายการยิงพร้อมกันทุกครั้งที่มีคนเข้าหน้า/กดปุ่ม</span>
           <button class="btn-light btn-sm" style="margin-left:auto" onclick="lpPrunePixels(this)">ล้างตัวที่ไม่มีเจ้าของ</button>
           <button class="btn-primary btn-sm" onclick="openLpPixelModal()">+ เพิ่มพิกเซล</button>
         </h2>
         <div class="hint" style="margin-bottom:10px">คลิกแถวเพื่อแก้ไข • Meta Pixel ใส่ Pixel ID • Google Analytics ใส่ Measurement ID (G-XXXX)<br>
-          แอดที่ระบบสร้างจะพาคนไป <code>/lp?a=&lt;บัญชี&gt;</code> ทำให้หน้าโหลดเฉพาะพิกเซลของบัญชีนั้น — คอนเวอร์ชั่นจึงไม่นับข้ามบัญชี</div>
+          หน้าโหลด<b>ทุกพิกเซล</b>ให้ทุกคนที่เข้ามา รวมถึงลิงก์ <code>/lp?a=&lt;บัญชี&gt;</code> (ไม่กรองตามบัญชี) — ทุกพิกเซลเห็นคอนเวอร์ชั่นรวมทั้งระบบ Meta จึงมีข้อมูลพอเรียนรู้ แลกกับยอดรายบัญชีที่ปนกัน • ID เดียวกันใส่ได้ครั้งเดียว</div>
         <div class="tbl-wrap">
           <table>
             <thead><tr>
@@ -1198,7 +1198,7 @@
       </div>
 
       <div class="card" style="display:flex;gap:12px;align-items:center;position:sticky;bottom:12px">
-        <button class="btn-primary" onclick="lpSave(this)">บันทึก</button>
+        <button class="btn-primary" id="lpSaveBtn" onclick="lpSave(this)" disabled>บันทึก</button>
         <a class="btn-light btn-sm" href="/lp" data-lp-link target="_blank" style="text-decoration:none">ดูหน้าจริง ↗</a>
         <span id="lpMsg" style="font-size:13.5px;font-weight:600"></span>
       </div>
@@ -3240,16 +3240,22 @@ libDz.addEventListener('drop', (e) => {
 
 function libSize(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
 
+// ตอบ error (ไฟล์คลังเสีย / โปรไฟล์กำลังบูตตอบ 503) ต้องโยนออกไป — เดิมกลายเป็น [] แล้วหน้าโชว์ว่า "ยังไม่มีวิดีโอในคลัง"
 async function fetchLib() {
-  const d = await (await fetch('/api/library')).json();
-  libItems = Array.isArray(d) ? d : [];
+  const d = await apiJson('/api/library');
+  if (!Array.isArray(d)) throw new Error('ข้อมูลคลังผิดรูปแบบ');
+  libItems = d;
 }
 
 async function loadLibrary() {
   const rows = document.getElementById('libRows');
   rows.innerHTML = '<tr><td colspan="7" class="tbl-msg">กำลังโหลด...</td></tr>';
   try { await fetchLib(); }
-  catch { rows.innerHTML = '<tr><td colspan="7" class="tbl-msg err">โหลดคลังไม่สำเร็จ — ลองรีเฟรชหน้า</td></tr>'; return; }
+  catch (e) {
+    document.getElementById('libCount').textContent = '';
+    rows.innerHTML = `<tr><td colspan="7" class="tbl-msg err">โหลดคลังไม่สำเร็จ: ${esc(e.message)} — ลองรีเฟรชหน้า</td></tr>`;
+    return;
+  }
   renderLibrary();
 }
 
@@ -3303,10 +3309,14 @@ function openLibModal(id) {
 }
 function closeLibModal() { document.getElementById('libModal').style.display = 'none'; }
 
+const LIB_MAX_BYTES = 512 * 1024 * 1024;   // ต้องตรงกับ limits ของ uploadLib ฝั่งเซิร์ฟเวอร์
 function libFilesPicked(files) {
   const vids = [...files].filter(f => f.type.startsWith('video/'));
   if (vids.length < files.length) toast('คลังนี้เก็บเฉพาะวิดีโอ — ไฟล์ที่ไม่ใช่วิดีโอถูกข้ามไป');
-  vids.forEach(uploadToLib);
+  // เกิน 512MB เซิร์ฟเวอร์ปฏิเสธอยู่ดี — บอกตั้งแต่ตอนเลือก ไม่ต้องรออัปจนเต็มหลอดแล้วค่อยรู้
+  const big = vids.filter(f => f.size > LIB_MAX_BYTES);
+  if (big.length) toast(`ไฟล์ใหญ่เกิน 512MB อัปไม่ได้ (ตัดหรือบีบไฟล์ก่อน): ${big.map(f => f.name).join(', ')}`, 'err');
+  vids.filter(f => f.size <= LIB_MAX_BYTES).forEach(uploadToLib);
 }
 
 async function uploadToLib(file) {
@@ -3334,7 +3344,8 @@ async function uploadToLib(file) {
   xhr.onload = () => {
     let d = null;
     try { d = JSON.parse(xhr.responseText); } catch { /* ตอบไม่เป็น JSON */ }
-    if (!d || !d.id) return fail(d && d.error);
+    // ตัวกลาง (proxy) ตอบ 413/502 เป็น HTML ได้ — อย่างน้อยให้เห็นรหัสสถานะ ไม่ใช่ "ไม่สำเร็จ" เปล่าๆ
+    if (!d || !d.id) return fail((d && d.error) || `เซิร์ฟเวอร์ตอบ ${xhr.status}`);
     row.remove();
     libItems.unshift(d);
     renderLibrary();
@@ -3589,8 +3600,7 @@ function lpUpload(targetId) {
     const old = el.value;
     el.value = 'กำลังอัปโหลด...';
     try {
-      const r = await (await fetch('/api/landing/upload', { method: 'POST', body: fd })).json();
-      if (r.error) throw new Error(r.error);
+      const r = await apiJson('/api/landing/upload', { method: 'POST', body: fd });
       el.value = r.url;
       if (targetId === 'lpAvatar') lpAvatarPreview();
       if (targetId === 'lpBgImage') lpSyncThemeVisibility();
@@ -3638,6 +3648,8 @@ function lpFixUrl(v) {
 // ปุ่ม "บันทึก" แถบล่างยังเป็นตัวเขียนขึ้นเซิร์ฟเวอร์เหมือนเดิมทั้งหน้า)
 let lpLinksData = [];
 let lpPixelsData = [];
+let lpRev = null;   // รุ่นของข้อมูลที่โหลดมา (เซิร์ฟเวอร์ใช้กันบันทึกทับ) — null = ยังโหลดไม่สำเร็จ ห้ามบันทึก
+let lpWs = '';      // โปรไฟล์ที่ข้อมูลชุดนี้มาจาก — เซิร์ฟเวอร์ปฏิเสธถ้าตอนบันทึกถูกสลับไปโปรไฟล์อื่นแล้ว
 const LP_EVENT_TH = Object.fromEntries(LP_EVENTS);
 
 function renderLpLinks() {
@@ -3661,7 +3673,7 @@ function renderLpPixels() {
       <td style="font-family:monospace">${esc(p.id) || '<span style="color:var(--muted)">—</span>'}</td>
       <td>${p.type === 'ga' ? '<span style="color:var(--muted)">ทุกบัญชี</span>'
         : p.acct ? `<span style="font-family:monospace;font-size:12px">${esc(p.acct)}</span>`
-          : '<span class="st-pill issue" title="ไม่รู้ว่าเป็นของบัญชีไหน — จะยิงเฉพาะตอนเปิด /lp แบบไม่ระบุบัญชี กด &quot;ล้างตัวที่ไม่มีเจ้าของ&quot; เพื่อจัดให้เข้าที่">ไม่ทราบ</span>'}</td>
+          : '<span class="st-pill issue" title="ไม่รู้ว่าเป็นของบัญชีไหน (ยังยิงตามปกติเหมือนตัวอื่น) — กด &quot;ล้างตัวที่ไม่มีเจ้าของ&quot; เพื่อเติมรหัสบัญชี หรือลบทิ้งถ้าไม่มีบัญชีไหนเป็นเจ้าของแล้ว">ไม่ทราบ</span>'}</td>
       <td style="text-align:right;white-space:nowrap" onclick="event.stopPropagation()">
         <button class="icon-btn btn-light" title="แก้ไข" onclick="openLpPixelModal(${i})"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
         <button class="btn-danger-light icon-btn" title="ลบพิกเซลนี้" onclick="lpPixelsData.splice(${i},1);renderLpPixels()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
@@ -3671,7 +3683,7 @@ function renderLpPixels() {
 
 // ล้างพิกเซลที่ไม่มีบัญชีไหนเป็นเจ้าของ (ของค้างจากบัญชี FB ชุดเก่า) + เติมรหัสบัญชีให้ตัวที่เหลือ
 async function lpPrunePixels(btn) {
-  if (!confirm('ล้างพิกเซลที่ไม่มีเจ้าของ?\n\nระบบจะเทียบกับบัญชีโฆษณาจริงบน Facebook แล้วลบเฉพาะตัวที่ไม่มีบัญชีไหนเป็นเจ้าของ\nตัวที่เหลือจะถูกเติมรหัสบัญชีให้ เพื่อให้แยกคอนเวอร์ชั่นรายบัญชีได้\n\n(สำรองไฟล์เดิมไว้ให้อัตโนมัติก่อนลบ)')) return;
+  if (!confirm('ล้างพิกเซลที่ไม่มีเจ้าของ?\n\nระบบจะเทียบกับบัญชีโฆษณาจริงบน Facebook แล้วลบเฉพาะตัวที่ไม่มีบัญชีไหนเป็นเจ้าของ\nตัวที่เหลือจะถูกเติมรหัสบัญชีให้ (โชว์ในคอลัมน์บัญชีเจ้าของ)\nถ้ามีโปรไฟล์ไหนอ่านจาก Facebook ไม่ได้ ระบบจะไม่ลบอะไรเลย\n\n(สำรองไฟล์เดิมไว้ให้อัตโนมัติก่อนลบ)')) return;
   btn.disabled = true;
   try {
     const d = await (await fetch('/api/landing/prune-pixels', { method: 'POST' })).json();
@@ -3731,15 +3743,38 @@ function saveLpPixelModal() {
     id: document.getElementById('lpPixelModalId').value.trim(),
   };
   if (!item.id) return toast('ใส่ ID ของพิกเซลก่อนครับ');
+  // ID ซ้ำ = หน้า init พิกเซลเดิมสองรอบ แล้วยิง PageView/Lead ซ้ำทุกครั้ง ตัวเลขเฟ้อ
+  if (lpPixelsData.some((p, i) => i !== lpPixelEditIdx && p.type === item.type && p.id === item.id)) {
+    return toast('พิกเซลนี้มีอยู่ในรายการแล้ว — ใส่ซ้ำจะนับซ้ำ');
+  }
+  // กดแก้แถวเดิมโดยไม่ได้เปลี่ยนพิกเซล ต้องเก็บบัญชีเจ้าของไว้ — เดิมกดตกลงแล้ว acct หายทุกครั้ง
+  // เปลี่ยนชนิด/ID = คนละพิกเซลแล้ว เจ้าของเดิมใช้ไม่ได้
+  const old = lpPixelEditIdx !== null ? lpPixelsData[lpPixelEditIdx] : null;
+  if (old && old.acct && old.type === item.type && old.id === item.id) item.acct = old.acct;
   if (lpPixelEditIdx !== null) lpPixelsData[lpPixelEditIdx] = item;
   else lpPixelsData.push(item);
   closeLpPixelModal();
   renderLpPixels();
 }
 
+// คืน true เมื่อโหลดสำเร็จ — ระหว่างโหลด/โหลดพัง ปุ่มบันทึกปิดไว้
+// เดิมไม่เช็ค error: ตัวกลางตอบ 503 {"error"} ตอนโปรไฟล์กำลังบูต → ฟอร์มว่างโดยไม่มีอะไรเตือน
+// → กดบันทึกแล้วพิกเซลและปุ่มทั้งหมดบนหน้าจริงถูกทับด้วยค่าว่าง (เซิร์ฟเวอร์กันอีกชั้นด้วย rev)
 async function loadLanding() {
+  lpRev = null;
+  const btn = document.getElementById('lpSaveBtn');
+  const msg = document.getElementById('lpMsg');
+  btn.disabled = true;
   let d;
-  try { d = await (await fetch('/api/landing')).json(); } catch { return; }
+  try {
+    d = await apiJson('/api/landing');
+    if (!Number.isInteger(d.rev) || !Array.isArray(d.pixels) || !Array.isArray(d.links)) throw new Error('ข้อมูลที่ได้มาไม่ครบ');
+  } catch (e) {
+    msg.style.color = 'var(--red)';
+    msg.innerHTML = `โหลดข้อมูลหน้า Landing ไม่สำเร็จ: ${esc(e.message)} — ปิดปุ่มบันทึกไว้กันฟอร์มว่างทับของจริง <a href="#" onclick="loadLanding();return false">ลองใหม่</a>`;
+    return false;
+  }
+  msg.textContent = '';
   document.getElementById('lpTitle').value = d.title || '';
   document.getElementById('lpBio').value = d.bio || '';
   document.getElementById('lpAvatar').value = d.avatar || '';
@@ -3750,6 +3785,10 @@ async function loadLanding() {
   lpPixelsData = (d.pixels || []).map(p => ({ type: p.type === 'ga' ? 'ga' : 'meta', id: p.id || '', acct: p.acct || '' }));
   renderLpLinks();
   renderLpPixels();
+  lpRev = d.rev;
+  lpWs = d.ws || '';
+  btn.disabled = false;
+  return true;
 }
 
 function lpCollect() {
@@ -3762,10 +3801,13 @@ function lpCollect() {
     bgImage: document.getElementById('lpBgImage').value.trim(),
     links: lpLinksData.map((l, i) => ({ id: 'l' + i, icon: l.icon, label: l.label, url: lpFixUrl(l.url), event: l.event })),
     pixels: lpPixelsData.map(p => ({ type: p.type, id: p.id, acct: p.acct || undefined })),
+    rev: lpRev,
+    ws: lpWs,
   };
 }
 
 async function lpSave(btn) {
+  if (lpRev == null) return toast('ยังโหลดข้อมูลหน้า Landing ไม่สำเร็จ — บันทึกไม่ได้ (กันฟอร์มว่างทับของจริง)', 'err');
   const body = lpCollect();
   // บอกเป็นรายปุ่มว่าอันไหนมีปัญหาและเพราะอะไร — เดิมเซิร์ฟเวอร์ตัดทิ้งเงียบๆ
   const bad = [];
@@ -3779,19 +3821,29 @@ async function lpSave(btn) {
 
   btn.disabled = true;
   const msg = document.getElementById('lpMsg');
+  const flash = (color, text) => {
+    msg.style.color = color; msg.textContent = text;
+    setTimeout(() => { if (msg.textContent === text) msg.textContent = ''; }, 2500);
+  };
   try {
-    const r = await (await fetch('/api/landing', {
+    await apiJson('/api/landing', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
-    })).json();
-    if (r.error) throw new Error(r.error);
-    msg.style.color = 'var(--brand-dark)'; msg.textContent = '✓ บันทึกแล้ว';
-    await loadLanding();
+    });
   } catch (e) {
-    msg.style.color = 'var(--red)'; msg.textContent = 'บันทึกไม่สำเร็จ: ' + e.message;
-  } finally {
-    btn.disabled = false;
-    setTimeout(() => { msg.textContent = ''; }, 2500);
+    btn.disabled = lpRev == null;   // ระหว่างนี้มีการโหลดใหม่ที่พังซ้อนเข้ามาได้ — ห้ามเปิดปุ่มคืนให้ฟอร์มที่ไม่มี rev
+    if (e.status !== 409) return flash('var(--red)', 'บันทึกไม่สำเร็จ: ' + e.message);
+    // คนละโปรไฟล์: โหลดฟอร์มใหม่ในหน้านี้ไม่ช่วย (ส่วนอื่นของหน้ายังเป็นโปรไฟล์เดิม) ต้องรีเฟรชทั้งหน้า
+    if (e.data && e.data.wrongProfile) { msg.style.color = 'var(--red)'; msg.textContent = e.message; return; }
+    // 409 = มีคนเขียนแทรกระหว่างที่เปิดหน้านี้ (ส่วนใหญ่คือระบบฝังพิกเซลให้บัญชีใหม่) — ห้ามทับ ต้องโหลดของล่าสุดก่อน
+    // ให้เลือกเองว่าจะโหลดเลยไหม: กดยกเลิก = ฟอร์มที่แก้ไว้ยังอยู่ให้จดไว้ก่อน
+    if (confirm(`${e.message}\n\nโหลดข้อมูลล่าสุดตอนนี้เลยไหม?\nสิ่งที่แก้ไว้ในหน้านี้และยังไม่ได้บันทึกจะหาย — กดยกเลิกถ้าจะจดไว้ก่อน แล้วค่อยกดบันทึกอีกครั้ง`)) {
+      if (await loadLanding()) flash('var(--red)', 'โหลดข้อมูลล่าสุดแล้ว — แก้ใหม่แล้วกดบันทึกอีกครั้ง');
+    } else {
+      msg.style.color = 'var(--red)'; msg.textContent = 'ยังไม่ได้บันทึก — ข้อมูลบนเซิร์ฟเวอร์ใหม่กว่า ต้องโหลดใหม่ก่อน';
+    }
+    return;
   }
+  if (await loadLanding()) flash('var(--brand-dark)', '✓ บันทึกแล้ว');
 }
 
 // เติม scheme ให้เห็นกับตาตอนคลิกออกจากช่อง
@@ -4300,8 +4352,16 @@ let capItems = [];
 let capSortKey = 'ts', capSortDir = -1;   // เริ่มที่ใหม่สุดก่อน
 async function loadCaptions() {
   const box = document.getElementById('capRows');
-  try { const d = await (await fetch('/api/captions')).json(); capItems = Array.isArray(d) ? d : []; }
-  catch { box.innerHTML = '<tr><td colspan="6" class="tbl-msg err">โหลดคลังแคปชั่นไม่สำเร็จ</td></tr>'; return; }
+  // ตอบ error ต้องเห็นเป็น error — เดิม Array.isArray ตกเป็น [] แล้วหน้าโชว์ว่า "ยังไม่มีแคปชั่น"
+  try {
+    const d = await apiJson('/api/captions');
+    if (!Array.isArray(d)) throw new Error('ข้อมูลคลังแคปชั่นผิดรูปแบบ');
+    capItems = d;
+  } catch (e) {
+    document.getElementById('capCount').textContent = '';
+    box.innerHTML = `<tr><td colspan="6" class="tbl-msg err">โหลดคลังแคปชั่นไม่สำเร็จ: ${esc(e.message)}</td></tr>`;
+    return;
+  }
   renderCaptions();
 }
 function capSortBy(key) {

@@ -13,11 +13,13 @@ async function boot(t) {
   return srv;
 }
 const html = async (base) => (await fetch(base + '/lp')).text();
+// บันทึกต้องส่ง rev ที่อ่านมาล่าสุด (เซิร์ฟเวอร์กันบันทึกทับของที่ระบบเพิ่งฝังเพิ่ม) — ทำแบบหน้าเว็บ: อ่านก่อนแล้วค่อยบันทึก
+const save = async (base, body) => post(base, '/api/landing', { ...body, rev: (await get(base, '/api/landing')).rev });
 
 describe('หน้า Landing', () => {
   test('บันทึกแล้วหน้าจริงต้องแสดงปุ่มและยิงพิกเซลตามที่ตั้ง', async (t) => {
     const { base } = await boot(t);
-    await post(base, '/api/landing', {
+    await save(base, {
       title: 'ร้านทดสอบ', bio: 'ทักไลน์ได้เลย',
       pixels: [{ type: 'meta', id: '123456789' }, { type: 'ga', id: 'G-ABC123' }],
       links: [{ label: 'แอดไลน์', url: 'https://line.me/ti/p/~x', icon: '💬', event: 'Lead' }],
@@ -36,7 +38,7 @@ describe('หน้า Landing', () => {
 
   test('ลิงก์ที่รันสคริปต์ได้ต้องถูกปฏิเสธ ไม่หลุดไปอยู่ในหน้า', async (t) => {
     const { base } = await boot(t);
-    const r = await post(base, '/api/landing', {
+    const r = await save(base, {
       links: [
         { label: 'อันตราย', url: 'javascript:alert(1)' },
         { label: 'อันตราย2', url: 'data:text/html,<script>alert(1)</script>' },
@@ -52,7 +54,7 @@ describe('หน้า Landing', () => {
 
   test('ข้อความของผู้ใช้ต้องถูก escape ไม่กลายเป็น HTML', async (t) => {
     const { base } = await boot(t);
-    await post(base, '/api/landing', {
+    await save(base, {
       title: '<script>alert(1)</script>',
       links: [{ label: '<img src=x onerror=alert(1)>', url: 'https://ok.test/a' }],
     });
@@ -64,7 +66,7 @@ describe('หน้า Landing', () => {
 
   test('ปุ่มที่ไม่มีข้อความหรือไม่มีลิงก์ต้องไม่ถูกบันทึก', async (t) => {
     const { base } = await boot(t);
-    const r = await post(base, '/api/landing', {
+    const r = await save(base, {
       links: [{ label: '', url: 'https://ok.test/a' }, { label: 'ไม่มีลิงก์', url: '' }],
     });
     assert.strictEqual(r.landing.links.length, 0);
@@ -72,7 +74,7 @@ describe('หน้า Landing', () => {
 
   test('tel: และ mailto: ใช้ได้ เพราะเป็นลิงก์ติดต่อปกติ', async (t) => {
     const { base } = await boot(t);
-    const r = await post(base, '/api/landing', {
+    const r = await save(base, {
       links: [
         { label: 'โทร', url: 'tel:021234567' },
         { label: 'อีเมล', url: 'mailto:a@b.com' },
@@ -85,7 +87,7 @@ describe('หน้า Landing', () => {
   // หลังบ้านเติม scheme ให้ก่อนส่ง แต่เซิร์ฟเวอร์ต้องยังปฏิเสธของที่ไม่มี scheme จริงๆ อยู่
   test('เซิร์ฟเวอร์ยังต้องปฏิเสธลิงก์ที่ไม่มี scheme (หน้าเว็บเป็นคนเติมให้)', async (t) => {
     const { base } = await boot(t);
-    const r = await post(base, '/api/landing', {
+    const r = await save(base, {
       links: [{ label: 'ไลน์', url: 'line.me/ti/p/~x' }],
     });
     assert.strictEqual(r.landing.links.length, 0,
@@ -127,28 +129,28 @@ describe('หน้า Landing', () => {
 
   test('พื้นหลัง: รับเฉพาะชื่อที่มีจริง และรูปที่อัปผ่านระบบเราเท่านั้น', async (t) => {
     const { base } = await boot(t);
-    const ok = await post(base, '/api/landing', { bg: 'mint' });
+    const ok = await save(base, { bg: 'mint' });
     assert.strictEqual(ok.landing.bg, 'mint');
-    const bad = await post(base, '/api/landing', { bg: 'ไม่มีจริง', bgImage: 'https://evil.test/x.jpg' });
+    const bad = await save(base, { bg: 'ไม่มีจริง', bgImage: 'https://evil.test/x.jpg' });
     assert.strictEqual(bad.landing.bg, '', 'ชื่อพื้นหลังที่ไม่มีในระบบต้องถูกปัดทิ้ง');
     assert.strictEqual(bad.landing.bgImage, '', 'รูปจากเว็บนอกต้องไม่ถูกรับ');
   });
 
   test('เลือกพื้นหลังแล้วต้องมีผลกับหน้าจริง', async (t) => {
     const { base } = await boot(t);
-    await post(base, '/api/landing', { bg: 'night' });
+    await save(base, { bg: 'night' });
     assert.ok((await html(base)).includes('#232838'), 'CSS ของพื้นหลังที่เลือกต้องอยู่ในหน้า');
   });
 
   // เคสที่ผู้ใช้เจอจริง: เลือกพื้นหลังสว่าง แต่ theme ค้างเป็น dark เลยได้ปุ่มดำบนพื้นม่วงอ่อน
   test('พื้นหลังเป็นตัวกำหนดสีการ์ด/ตัวหนังสือ ไม่ใช่ theme ที่ค้างอยู่', async (t) => {
     const { base } = await boot(t);
-    await post(base, '/api/landing', { bg: 'lilac', theme: 'dark' });
+    await save(base, { bg: 'lilac', theme: 'dark' });
     const light = await html(base);
     assert.ok(light.includes('--card:#fdfbff'), 'พื้นสว่างต้องได้การ์ดสว่าง แม้ theme จะเป็น dark');
     assert.ok(!light.includes('--card:#1b1e26'), 'ต้องไม่ใช้การ์ดมืด');
 
-    await post(base, '/api/landing', { bg: 'night', theme: 'light' });
+    await save(base, { bg: 'night', theme: 'light' });
     const dark = await html(base);
     assert.ok(dark.includes('--card:#242a3a'), 'พื้นมืดต้องได้การ์ดมืด แม้ theme จะเป็น light');
   });
@@ -158,7 +160,7 @@ describe('หน้า Landing', () => {
     const fd = new FormData();
     fd.append('file', new Blob([Buffer.alloc(64, 3)], { type: 'image/png' }), 'b.png');
     const up = await (await fetch(base + '/api/landing/upload', { method: 'POST', body: fd })).json();
-    await post(base, '/api/landing', { bgImage: up.url, bg: 'mint', theme: 'dark' });
+    await save(base, { bgImage: up.url, bg: 'mint', theme: 'dark' });
     const page = await html(base);
     assert.ok(page.includes('--card:#1b1e26'), 'มีรูปพื้นหลัง + theme dark ต้องได้ชุดสีมืด');
     assert.ok(page.includes(up.url), 'รูปต้องถูกใช้เป็นพื้นหลัง');
@@ -169,10 +171,10 @@ describe('หน้า Landing', () => {
   test('บันทึกหน้า Landing ต้องไม่ตัดพิกเซลของบัญชีทิ้ง', async (t) => {
     const { base } = await boot(t);
     const many = Array.from({ length: 40 }, (_, i) => ({ type: 'meta', id: String(100000 + i) }));
-    const saved = await post(base, '/api/landing', { pixels: many });
+    const saved = await save(base, { pixels: many });
     assert.strictEqual(saved.landing.pixels.length, 40, 'พิกเซลเกิน 30 ต้องไม่ถูกตัดทิ้ง');
     // แก้แค่ชื่อร้าน (หน้าเว็บส่งค่าเดิมกลับมาทั้งก้อน) พิกเซลต้องอยู่ครบเหมือนเดิม
-    const again = await post(base, '/api/landing', { title: 'แก้แค่ชื่อ', pixels: many });
+    const again = await save(base, { title: 'แก้แค่ชื่อ', pixels: many });
     assert.strictEqual(again.landing.pixels.length, 40, 'บันทึกซ้ำต้องไม่ทำให้พิกเซลหาย');
     const page = await html(base);
     assert.ok(page.includes("fbq('init','100039')"), 'พิกเซลตัวท้ายต้องยังอยู่บนหน้าจริง');
@@ -180,8 +182,8 @@ describe('หน้า Landing', () => {
 
   test('ค่าที่บันทึกต้องอยู่รอดข้ามการอ่านใหม่', async (t) => {
     const { base } = await boot(t);
-    await post(base, '/api/landing', { title: 'ก่อนแก้', links: [{ label: 'ก', url: 'https://ok.test/a' }] });
-    await post(base, '/api/landing', { title: 'หลังแก้' });
+    await save(base, { title: 'ก่อนแก้', links: [{ label: 'ก', url: 'https://ok.test/a' }] });
+    await save(base, { title: 'หลังแก้' });
     const d = await get(base, '/api/landing');
     assert.strictEqual(d.title, 'หลังแก้');
     assert.strictEqual(d.links.length, 1, 'แก้เฉพาะชื่อ ปุ่มเดิมต้องไม่หาย');
@@ -233,7 +235,7 @@ describe('หน้า Landing', () => {
   // เทสนี้ล็อกไว้ว่าห้ามกลับไปกรองอีกโดยไม่ได้ตั้งใจ
   test('หน้า LP ต้องยิงทุกพิกเซลเสมอ ไม่ว่าจะมี ?a= หรือไม่', async (t) => {
     const { base } = await boot(t);
-    await post(base, '/api/landing', {
+    await save(base, {
       pixels: [
         { type: 'meta', id: '111111', acct: '900' },
         { type: 'meta', id: '222222', acct: '901' },
@@ -259,9 +261,9 @@ describe('หน้า Landing', () => {
 
   test('บันทึกจากหน้าเว็บต้องไม่ทำให้บัญชีเจ้าของพิกเซลหาย', async (t) => {
     const { base } = await boot(t);
-    await post(base, '/api/landing', { pixels: [{ type: 'meta', id: '111111', acct: '900' }] });
+    await save(base, { pixels: [{ type: 'meta', id: '111111', acct: '900' }] });
     const saved = await get(base, '/api/landing');
-    await post(base, '/api/landing', { title: 'แก้แค่ชื่อ', pixels: saved.pixels });
+    await save(base, { title: 'แก้แค่ชื่อ', pixels: saved.pixels });
     const after = await get(base, '/api/landing');
     assert.strictEqual(after.pixels[0].acct, '900', 'acct ต้องรอดข้ามการบันทึก');
   });

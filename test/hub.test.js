@@ -93,7 +93,8 @@ test('หน้า Landing สาธารณะของโปรไฟล์�
   form.append('file', new Blob([png], { type: 'image/png' }), 'a.png');
   const up = await (await fetch(h.base + '/api/landing/upload', { method: 'POST', body: form, headers: { cookie: h.getCookie() } })).json();
   assert.match(up.url, /^\/lp-asset\/[0-9a-f-]{36}\.png$/);
-  await h.call('POST', '/api/landing', { title: 'หน้าของแบรนด์ลูก', avatar: up.url });
+  const { rev, ws } = (await h.call('GET', '/api/landing')).json;   // บันทึกต้องส่ง rev + โปรไฟล์ ที่อ่านมาล่าสุด
+  await h.call('POST', '/api/landing', { title: 'หน้าของแบรนด์ลูก', avatar: up.url, rev, ws });
 
   // คนกดแอดไม่มี cookie — เข้าทางลิงก์ /w/<id>/lp
   const page = await (await fetch(`${h.base}/w/${id}/lp`)).text();
