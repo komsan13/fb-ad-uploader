@@ -319,16 +319,23 @@ async function fbPages(token) {
 }
 
 // อัปโหลดวิดีโอ (multipart) → คืน video_id
+// file = { path } (ไฟล์บนดิสก์) หรือ { buffer } (ผู้เรียกที่ถือไฟล์ในหน่วยความจำอยู่แล้ว) + mimetype/originalname
 async function uploadVideo(acct, file, token, attempt = 0) {
   const form = new FormData();
   form.append('access_token', token);
   // ชื่อไฟล์ที่ส่งขึ้น FB สุ่มใหม่ทุกครั้ง (ตามที่ผู้ใช้ต้องการ) — คงนามสกุลเดิมไว้ให้ FB เดา container ถูก
   const ext = ((file.originalname || '').match(/\.[a-z0-9]{2,4}$/i) || ['.mp4'])[0];
   const sendName = crypto.randomBytes(8).toString('hex') + ext;
-  form.append('source', new Blob([file.buffer], { type: file.mimetype || 'video/mp4' }), sendName);
+  // ไฟล์บนดิสก์ = สตรีมจากไฟล์ตรงๆ (openAsBlob อ่านทีละช่วงตอนส่ง) — เดิม readFileSync ทั้งก้อนแล้วก๊อปเข้า Blob อีกชั้น
+  // ขึ้นขนาน 4 ตัว × วิดีโอ 150MB วัดได้ RSS 57MB → 2,159MB (VPS เสี่ยง OOM กลางรอบขึ้นแอด)
+  const type = file.mimetype || 'video/mp4';
+  form.append('source', file.path ? await fs.openAsBlob(file.path, { type }) : new Blob([file.buffer], { type }), sendName);
   let json;
   try {
-    const res = await fetch(`${VIDEO_API}/${acct}/advideos`, { method: 'POST', body: form });
+    // window:null + redirect:'error' = fetch ไม่ต้องโคลน request ไว้เผื่อตาม redirect — การโคลนแตกสตรีมของ body เป็นสองสาย
+    // สายที่ไม่มีใครอ่านจะกองทั้งไฟล์ไว้ในหน่วยความจำ (วัดจริง: 4×300MB สตรีมจากดิสก์ยังขึ้นไป 1,274MB → ใส่สองค่านี้เหลือ 81MB)
+    // Graph API ไม่ redirect คำขออัปโหลด ถ้าเกิดขึ้นจริงจะตกไปทางลองใหม่/แจ้ง error ด้านล่าง ไม่เงียบ
+    const res = await fetch(`${VIDEO_API}/${acct}/advideos`, { method: 'POST', body: form, window: null, redirect: 'error' });
     fbNoteUsage(res);   // อัปวิดีโอคือ call หนักสุด — อ่านโควตาจาก header ด้วย ไม่งั้นพลาดสัญญาณตัวที่เสี่ยงสุด
     const text = await res.text();
     try { json = JSON.parse(text); } catch { throw new Error(`FB ตอบกลับผิดปกติ (HTTP ${res.status})`); }
@@ -2136,8 +2143,23 @@ app.get('/api/interests', async (req, res) => {
   }
 });
 
+// ---------- กันขึ้นแอดซ้ำเมื่อการเชื่อมต่อหลุด ----------
+// สายหลุดกลางรอบ = แอดที่กำลังขึ้นอยู่วิ่งต่อจนเสร็จบน FB แต่หน้าเว็บไม่เคยได้ผล แล้วผู้ใช้กดขึ้นใหม่
+// = แคมเปญซ้ำพร้อมงบเต็ม (วัดกับ FB ปลอม: ตั้งใจ 4 แคมเปญ ได้ ACTIVE 7 งบ 2,100 แทน 1,200 บาท/วัน)
+// หน้าเว็บจึงส่ง launchKey ประจำการ์ดมาด้วย — จำผลไว้ตาม key (โปรไฟล์ + บัญชี + การ์ด):
+// กำลังขึ้นอยู่ = รอผลตัวนั้น, ขึ้นแล้ว/ค้างบน FB = ตอบผลเดิม ไม่สร้างใหม่, พังแบบไม่ทิ้งอะไรไว้ = ขึ้นใหม่ได้
+// จำในหน่วยความจำ 24 ชม. รีสตาร์ทแล้วหาย — การ์ดที่หน้าเว็บ "ไม่รู้ผล" จึงส่ง resume มา ให้เราไม่เดาว่ายังไม่เคยขึ้น
+const LAUNCH_KEY_TTL_MS = 24 * 3600 * 1000;
+const launchKeys = new Map();   // key -> { at, wait: Promise (ระหว่างขึ้น) | null, result: บรรทัด result ที่ส่งไปแล้ว }
+
 // ---------- ขึ้นแอดทั้งชุด — ตอบเป็น NDJSON stream ----------
 app.post('/api/launch', upload.any(), async (req, res) => {
+  // ผู้ใช้ปิดแท็บ/สายหลุด = หยุดสร้างแอดที่เหลือ — ต้องผูกเป็นอย่างแรก ก่อน await ใดๆ
+  // เดิมผูกหลังอ่านสกุลเงิน/เรต: หลุดระหว่างนั้น event ยิงไปแล้วไม่มีใครฟัง → ขึ้นครบทุกแอดโดยไม่มีคนดู (วัดได้ 8 แคมเปญ)
+  // ห้ามใช้ req.on('close') — ใน Node ใหม่ event นี้ยิงตอนรับ request ครบด้วย (ไม่ใช่แค่ตอนหลุด)
+  // ทำให้ aborted=true ทันทีทุกครั้ง → สร้างแคมเปญแล้วข้ามการสร้างแอดทั้งหมด
+  let aborted = !!res.destroyed;   // หลุดไปแล้วตั้งแต่ก่อนเข้ามาถึงตรงนี้ (event close ยิงผ่านไปแล้ว)
+  res.on('close', () => { if (!res.writableEnded) aborted = true; });
   const cfg = loadConfig();
   // header กัน proxy/Traefik สะสม response — ให้ส่งทีละบรรทัดแบบเรียลไทม์
   res.setHeader('Content-Type', 'application/x-ndjson');
@@ -2159,6 +2181,11 @@ app.post('/api/launch', upload.any(), async (req, res) => {
     send({ type: 'fatal', error: `บัญชี "${prof.label}" ตั้งค่าไม่ครบ (token / บัญชีโฆษณา / เพจ)` });
     return res.end();
   }
+  // บัญชีที่ผู้ใช้กดซ่อนไว้ = ระบบไม่แตะ (autopilot ก็ไม่แตะ) — หน้าเว็บที่ยังถือรายชื่อเก่าส่งมาได้ ต้องกันที่นี่ด้วย
+  if (((cfg.hidden || {}).accounts || {})[acctId]) {
+    send({ type: 'fatal', error: `บัญชีโฆษณา ${acctId} ถูกซ่อนไว้ (หน้า "สุขภาพบัญชี") — ยังไม่ได้ขึ้นแอด ถ้าจะใช้บัญชีนี้ให้กดเลิกซ่อนก่อน` });
+    return res.end();
+  }
   // เช็ครูปร่าง payload ก่อนแตะ field ข้างใน — เดิมอ่าน data.campaign.objective ตรงๆ
   // payload เพี้ยนจึงโยน TypeError นอก try → ตอบ 500 กลางสตรีม แทน {type:'fatal'} ที่หน้าเว็บอ่านได้
   if (!data.campaign || !Array.isArray(data.ads) || !data.ads.length) {
@@ -2168,6 +2195,16 @@ app.post('/api/launch', upload.any(), async (req, res) => {
   const objInfo = OBJECTIVES[data.campaign.objective];
   if (!objInfo) { send({ type: 'fatal', error: `วัตถุประสงค์ไม่รองรับ: ${data.campaign.objective}` }); return res.end(); }
   if (objInfo.needsPixel && !data.pixelId) { send({ type: 'fatal', error: 'บัญชีนี้ยังไม่มี Pixel (สร้างในเมนูบัญชี FB ก่อน)' }); return res.end(); }
+  // งบต่อแอดต้องมากกว่า 0 — เดิมหน้าเว็บเติม 300 ให้เองเงียบๆ เมื่อช่องว่าง/0 (เงินจริงที่ผู้ใช้ไม่ได้ตั้ง และแถบล่างโชว์ 0)
+  if (!(Number(data.campaignBudget) > 0)) {
+    send({ type: 'fatal', error: 'ยังไม่ได้ใส่ "งบ/วัน ต่อแอด" (ต้องมากกว่า 0) — ยังไม่ได้ขึ้นแอด' });
+    return res.end();
+  }
+  // เปิดกฎหยุดอัตโนมัติแต่ไม่มีตัวเลข CPA = กฎไม่ถูกสร้างเงียบๆ ทั้งที่หน้ายืนยันบอกว่ากฎเปิดอยู่ — ห้ามขึ้นโดยไม่มีตัวคุม
+  if (data.autoRule && !(Number(data.autoRule.cpr) > 0)) {
+    send({ type: 'fatal', error: 'เปิด "กฎหยุดอัตโนมัติ" ไว้แต่ไม่ได้ใส่ตัวเลข "หยุดเมื่อต้นทุน/ผลลัพธ์เกิน" — ใส่ตัวเลขหรือปิดกฎก่อน ยังไม่ได้ขึ้นแอด' });
+    return res.end();
+  }
   // แอดชี้มาหน้า Landing ของเราแต่พิกเซลยังไม่ถูกฝังบนหน้า = คนกดจริงแต่คอนเวอร์ชั่นเป็นศูนย์ตลอด
   // แล้วกฎหยุดอัตโนมัติ/ตัวขยายงบก็ตัดสินจากตัวเลขผิด — เช็คแล้วฝังให้เองก่อนขึ้น
   // (ตรรกะเดียวกับตอน autopilot เติมแอด ที่ทำอยู่แล้วใน apRefill)
@@ -2209,17 +2246,13 @@ app.post('/api/launch', upload.any(), async (req, res) => {
   }
   const files = Object.fromEntries((req.files || []).map((f) => [f.fieldname, f]));
   const imageHashCache = {};
-  let aborted = false;
-  // ผู้ใช้ปิดแท็บ/ยกเลิก = หยุดสร้างแอดที่เหลือ
-  // ห้ามใช้ req.on('close') — ใน Node ใหม่ event นี้ยิงตอนรับ request ครบด้วย (ไม่ใช่แค่ตอนหลุด)
-  // ทำให้ aborted=true ทันทีทุกครั้ง → สร้างแคมเปญแล้วข้ามการสร้างแอดทั้งหมด
-  res.on('close', () => { if (!res.writableEnded) aborted = true; });
 
   // รูปเดิมอัปโหลดครั้งเดียว — เก็บเป็น promise กันอัปโหลดซ้ำตอนวิ่งขนานกัน
   function getImageHash(file) {
-    const md5 = crypto.createHash('md5').update(file.buffer).digest('hex');
+    const buf = file.buffer || fs.readFileSync(file.path);   // รูปจากดิสก์ (เล็ก) อ่านทั้งก้อนได้
+    const md5 = crypto.createHash('md5').update(buf).digest('hex');
     if (!imageHashCache[md5]) {
-      imageHashCache[md5] = fb(`${acct}/adimages`, { bytes: file.buffer.toString('base64') }, 'POST', token)
+      imageHashCache[md5] = fb(`${acct}/adimages`, { bytes: buf.toString('base64') }, 'POST', token)
         .then((r) => Object.values(r.images)[0].hash)
         .catch((e) => { delete imageHashCache[md5]; throw e; });
     }
@@ -2242,11 +2275,52 @@ app.post('/api/launch', upload.any(), async (req, res) => {
     return (await fb(`${acct}/campaigns`, campaignParams, 'POST', token)).id;
   };
   const madeCampaigns = [];
+  const replayedCampaigns = [];   // ขึ้นไปแล้วจากรอบที่สายหลุด — ใส่ลิงก์ให้ แต่กฎหยุดอัตโนมัติของรอบนั้นครอบไว้แล้ว
+  for (const [k, v] of launchKeys) if (!v.wait && Date.now() - v.at > LAUNCH_KEY_TTL_MS) launchKeys.delete(k);
+
+  // ผลของแอดหนึ่งตัว: ส่งให้หน้าเว็บ + จำไว้ตาม launchKey แล้วปลุกรอบอื่นที่รอผลของ key นี้อยู่
+  const report = (i, lk, result) => {
+    if (lk) {
+      const slot = launchKeys.get(lk);
+      launchKeys.set(lk, { at: Date.now(), wait: null, result });
+      if (slot && slot.release) slot.release();
+    }
+    send({ ...result, index: i });
+  };
 
   try {
     let verifyDone = false;
 
-    const processAd = async (i) => {
+    // จอง launchKey ก่อนขึ้น — ดูคำอธิบายที่ launchKeys
+    const runAd = async (i) => {
+      const ad = data.ads[i];
+      const lk = ad && ad.launchKey ? `${prof.id}|${acctId}|${String(ad.launchKey).slice(0, 100)}` : null;
+      if (!lk) return processAd(i, null);   // หน้าเว็บรุ่นเก่าไม่ส่ง key = ทำงานแบบเดิม
+      for (;;) {
+        const slot = launchKeys.get(lk);
+        if (slot && slot.wait) {
+          send({ type: 'status', index: i, msg: 'แอดนี้กำลังขึ้นอยู่จากรอบก่อนที่สายหลุด — รอผลของรอบนั้น...' });
+          await slot.wait;
+          continue;   // อ่านใหม่: รอบนั้นอาจพังแบบไม่ทิ้งอะไรไว้ ซึ่งเราต้องขึ้นเอง
+        }
+        if (slot && (slot.result.ok || slot.result.needsCheck)) {
+          // ขึ้นไปแล้ว หรือมีแคมเปญค้างบน FB = ตอบผลเดิม ห้ามสร้างซ้ำ
+          if (slot.result.ok) replayedCampaigns.push(slot.result.campaignId);
+          return send({ ...slot.result, index: i, replayed: true });
+        }
+        if (!slot && ad.resume) {
+          // หน้าเว็บเห็นว่าแอดนี้เริ่มขึ้นไปแล้วตอนสายหลุด แต่เราไม่มีบันทึก (รีสตาร์ท/เกิน 24 ชม.) — เดาว่ายังไม่ขึ้นไม่ได้
+          return send({ type: 'result', index: i, ok: false, needsCheck: true,
+            error: 'เซิร์ฟเวอร์ไม่มีบันทึกของแอดนี้ (อาจรีสตาร์ทไปแล้ว) จึงไม่รู้ว่ารอบที่สายหลุดขึ้นสำเร็จหรือยัง — เช็คใน Ads Manager ก่อน ถ้ายังไม่มีจริงค่อยกด "เช็คแล้ว — ขึ้นใหม่ในบัญชีนี้" ในการ์ด' });
+        }
+        break;   // ยังไม่เคยขึ้น หรือรอบก่อนพังแบบไม่ทิ้งอะไรไว้บน FB = ขึ้นได้
+      }
+      let release;
+      launchKeys.set(lk, { at: Date.now(), wait: new Promise((r) => { release = r; }), release, result: null });
+      return processAd(i, lk);
+    };
+
+    const processAd = async (i, lk) => {
       const ad = data.ads[i];
       let campaignId = null;
       try {
@@ -2254,7 +2328,8 @@ app.post('/api/launch', upload.any(), async (req, res) => {
         let file = files[ad.imageField];
         if (!file && ad.mediaId) {
           const m = resolveMedia(ad.mediaId);
-          try { if (m) file = { buffer: fs.readFileSync(m.path), mimetype: m.mimetype, originalname: m.originalname }; }
+          // ส่งแค่ path — uploadVideo สตรีมจากดิสก์เอง (เดิมอ่านทั้งก้อนเข้า RAM ทีละ 4 ตัว)
+          try { if (m && fs.statSync(m.path).isFile()) file = { path: m.path, mimetype: m.mimetype, originalname: m.originalname }; }
           catch { /* ไฟล์หาย */ }
           if (!file) throw new Error('ไม่พบไฟล์วิดีโอบนเซิร์ฟเวอร์ (ถูกลบออกจากคลัง หรือ server เพิ่งรีสตาร์ทระหว่างอัป) — เลือกวิดีโอใส่การ์ดนี้ใหม่แล้วกดขึ้นอีกครั้ง');
         }
@@ -2290,6 +2365,9 @@ app.post('/api/launch', upload.any(), async (req, res) => {
           targeting.flexible_spec = [{ interests: ad.interests.map((x) => ({ id: x.id, name: x.name })) }];
         }
 
+        // สายหลุดระหว่างเตรียมสื่อ (อัปวิดีโอนานหลายนาที) = ไม่มีคนดูแล้ว ห้ามเริ่มใช้เงิน
+        // ยังไม่ได้สร้างอะไรที่มีงบ — กดขึ้นใหม่ได้ (วิดีโอที่อัปไปแล้วแค่ลอยอยู่ในคลัง FB)
+        if (aborted) throw new Error('ยกเลิกแล้ว — การเชื่อมต่อหลุดก่อนสร้างแคมเปญ');
         send({ type: 'status', index: i, msg: 'สร้างแคมเปญ...' });
         campaignId = await newCampaign(ad);
         send({ type: 'status', index: i, msg: 'สร้างชุดโฆษณา...' });
@@ -2404,11 +2482,20 @@ app.post('/api/launch', upload.any(), async (req, res) => {
         if (ad.mediaId) markVideoUsed(ad.mediaId, acctId);
 
         madeCampaigns.push(campaignId);
-        send({ type: 'result', index: i, ok: true, adId: adRes.id, adsetId: adset.id, campaignId });
+        report(i, lk, { type: 'result', ok: true, adId: adRes.id, adsetId: adset.id, campaignId });
       } catch (e) {
         // แอดพังหลังสร้างแคมเปญแล้ว = ลบแคมเปญเปล่าที่มีงบทิ้ง (ของเราเองเมื่อครู่ ยังไม่มีแอด)
-        if (campaignId) { try { await fb(campaignId, { status: 'DELETED' }, 'POST', token); } catch { /* ข้าม */ } }
-        send({ type: 'result', index: i, ok: false, error: e.message });
+        if (campaignId) {
+          try { await fb(campaignId, { status: 'DELETED' }, 'POST', token); }
+          catch (de) {
+            // ลบไม่ได้ = FB อาจยังถือแคมเปญเปิดพร้อมงบอยู่ (แอดอาจถูกสร้างไปแล้วแม้ FB ตอบ error — เจอจริงในเทส)
+            // เดิมกลืนเงียบแล้วบอก "กดขึ้นอีกครั้ง" = ได้แคมเปญที่สองซ้อน ต้องให้คนไปเช็ค/ปิดเองใน Ads Manager
+            madeCampaigns.push(campaignId);   // ให้กฎหยุดอัตโนมัติของรอบนี้ครอบตัวนี้ด้วย + ลิงก์ Ads Manager ชี้ถึง
+            return report(i, lk, { type: 'result', ok: false, needsCheck: true, campaignId,
+              error: `${e.message} — และลบแคมเปญ ${campaignId} ที่สร้างค้างไว้ไม่สำเร็จ (${de.message}) แคมเปญนี้อาจยังเปิดยิงอยู่: เข้า Ads Manager ไปปิด/ลบเองก่อน แล้วค่อยกด "เช็คแล้ว — ขึ้นใหม่ในบัญชีนี้" ในการ์ด (ห้ามกดขึ้นซ้ำก่อนเช็ค)` });
+          }
+        }
+        report(i, lk, { type: 'result', ok: false, error: e.message });
       }
     };
 
@@ -2418,7 +2505,7 @@ app.post('/api/launch', upload.any(), async (req, res) => {
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, data.ads.length) }, async () => {
       while (cursor < data.ads.length && !aborted) {
         const i = cursor++;
-        await processAd(i);
+        await runAd(i);
       }
     }));
 
@@ -2448,7 +2535,7 @@ app.post('/api/launch', upload.any(), async (req, res) => {
       }
     }
 
-    send({ type: 'done', campaignIds: madeCampaigns, account: acct.replace('act_', '') });
+    send({ type: 'done', campaignIds: [...madeCampaigns, ...replayedCampaigns], account: acct.replace('act_', '') });
   } catch (e) {
     send({ type: 'fatal', error: e.message });
   }
@@ -4842,7 +4929,7 @@ if (require.main === module) {
   // ไม่งั้นบน Windows โปรเซสลูกค้างถือพอร์ต + ระบบอัตโนมัติวิ่งต่อเงียบๆ แล้วพอตัวกลางเปิดใหม่ก็ได้สองชุดซ้อนกัน
   if (process.send) process.on('disconnect', () => process.exit(0));
   startBackgroundJobs();
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     // โปรไฟล์ลูกของ hub.js ฟังพอร์ตภายใน — ห้ามบอกให้คนเปิดพอร์ตนี้ตรงๆ (ข้ามตัวกลาง = ข้ามการเลือกโปรไฟล์)
     if (process.send) return console.log(`พร้อมทำงาน (โปรไฟล์ ${process.env.WS_ID || '?'})`);
     console.log('');
@@ -4850,6 +4937,10 @@ if (require.main === module) {
     console.log(`  เปิดเบราว์เซอร์ที่ ->  http://localhost:${PORT}`);
     console.log('');
   });
+  // อัปวิดีโอใหญ่ (/api/media, /api/library, /api/launch) บนเน็ตช้าใช้เกิน 5 นาทีได้ — ค่าตั้งต้นของ Node
+  // (requestTimeout 300 วิ) ตัดทิ้งด้วย 408 กลางทาง (วัดจริง: อัปที่ ~1MB/วิ โดนตัดที่วินาทีที่ 300)
+  // ปิดเพดานนี้เหมือน hub.js • headersTimeout คงค่าตั้งต้น 60 วิ (header ยังต้องมาครบเร็ว กันคนเปิดสายค้างไว้เปล่าๆ)
+  server.requestTimeout = 0;
 } else {
   module.exports = { app, curFactor, apPrune, apMark, apRecent, apFence, resultSpec, pickResult, loadAp, saveAp, apLimits, apParseLimit, AP_LIMIT_SPEC, apSnapshot, saveApMerged, tgChunks, apEase, apProven, apSeen, apBadCreative, apRankVideos, apRankCaptions, apRotation, apScoreCreatives, apCapKey };
 }
