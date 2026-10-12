@@ -24,6 +24,11 @@ const TRASH_DIR = path.join(DATA_ROOT, 'ws-trash');
 const COOKIE = 'fbws';
 const TOP = 'top';
 const ID_RE = /^[a-z0-9][a-z0-9-]{0,40}$/;
+// หน้าเว็บแนบโปรไฟล์ของหน้าต่างตัวเองมากับทุกคำขอ (ดู wrapper ต้น <script> ใน index.html)
+// ไม่ตรงกับ cookie = หน้าต่างนี้ค้างโปรไฟล์เก่า → ตอบ 409 + header x-fbws-mismatch แทนการส่งต่อ
+const PAGE_HDR = 'x-fbws-page';
+// หนึ่งโปรไฟล์ = หนึ่งโปรเซส Node + timer ระบบอัตโนมัติของตัวเอง — ไม่มีเพดาน = สร้างวนจนเครื่องเต็มได้
+const MAX_WS = 20;
 
 // ---------- รายชื่อโปรไฟล์ ----------
 function loadReg() {
@@ -42,6 +47,14 @@ function saveReg(r) {
   const tmp = REG_PATH + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(r, null, 2));
   fs.renameSync(tmp, REG_PATH);
+}
+// การแก้รายชื่อโปรไฟล์ทำทีละคำขอ แล้วอ่านรายชื่อสดภายในคิวเสมอ — เดิมลบสองโปรไฟล์พร้อมกัน ตัวหนึ่งโหลดรายชื่อไว้
+// แล้วรอโปรเซสลูกปิด (หลายวิ) ก่อนเขียนรายชื่อเก่าทับ โปรไฟล์ที่ย้ายไปถังขยะแล้วฟื้นกลับมาในรายชื่อ ตอบ 503 ไปตลอด
+let regQueue = Promise.resolve();
+function withRegLock(fn) {
+  const run = regQueue.then(fn);
+  regQueue = run.catch(() => {});
+  return run;
 }
 const wsDir = (id) => (id === TOP ? DATA_ROOT : path.join(WS_DIR, id));
 const wsConfig = (id) => (id === TOP ? ROOT_CONFIG : path.join(wsDir(id), 'config.json'));
@@ -67,11 +80,21 @@ function pipeLog(stream, id, out) {
 }
 async function startKid(id) {
   const prev = kids.get(id);
-  const k = { proc: null, port: await freePort(), ready: false, stopping: false, backoff: prev ? prev.backoff : 2000 };
+  const port = await freePort();
+  // รีสตาร์ทอัตโนมัติชนกับคำสั่งลบ (ลบเสร็จระหว่างรอพอร์ต) — ห้ามสร้างโฟลเดอร์/โปรเซสของโปรไฟล์ที่ถูกลบไปแล้ว
+  if (kids.get(id) !== prev) return { ready: false };
+  const k = { proc: null, port, ready: false, stopping: false, backoff: prev ? prev.backoff : 2000 };
   kids.set(id, k);
   fs.mkdirSync(wsDir(id), { recursive: true });
   k.proc = spawn(process.execPath, [path.join(__dirname, 'server.js')], {
-    env: { ...process.env, PORT: String(k.port), CONFIG_PATH: wsConfig(id), LP_PREFIX: lpPrefix(id), WS_ID: id },
+    env: {
+      ...process.env, PORT: String(k.port), CONFIG_PATH: wsConfig(id), LP_PREFIX: lpPrefix(id), WS_ID: id,
+      // ไม่ตั้ง PUBLIC_URL (npm start ในเครื่อง) ลูกจะเดาจากพอร์ตภายในที่สุ่มมา — redirect URI ของ FB ผิดพอร์ต
+      // URL ที่คนเปิดจริงคือพอร์ตของตัวกลาง
+      PUBLIC_URL: process.env.PUBLIC_URL || `http://localhost:${PORT}`,
+      // ให้ลูกหา config ของโปรไฟล์อื่นได้ (ใช้กันบอท Telegram ตัวเดียวกันถูกใช้หลายโปรไฟล์)
+      HUB_ROOT_CONFIG: ROOT_CONFIG,
+    },
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'],   // ช่อง IPC = สายชีวิต: ตัวกลางตาย ลูกปิดตัวเองตาม (ดูท้าย server.js)
   });
   pipeLog(k.proc.stdout, id, console.log);
@@ -142,33 +165,48 @@ async function hubApi(req, res, url) {
 
   if (req.method === 'GET' && url === '/hub/api/workspaces') return sendJson(res, 200, view());
 
+  // คำสั่งแก้โปรไฟล์รับเฉพาะ JSON — <form> จากเว็บอื่นส่ง text/plain มาได้โดยไม่ต้องขออนุญาต (ไม่มี preflight)
+  // และเบราว์เซอร์แนบรหัส basic auth ที่จำไว้ให้เอง = เว็บอื่นสั่งสร้าง/ลบ/สลับโปรไฟล์แทนเราได้ (วัดจริง: สร้างได้)
+  // application/json ข้ามเว็บต้องผ่าน CORS preflight ซึ่งเราไม่ตอบ เบราว์เซอร์จึงไม่ยอมส่ง
+  if (req.method === 'POST' && !/^application\/json\s*(;|$)/i.test(String(req.headers['content-type'] || ''))) {
+    return sendJson(res, 415, { error: 'คำสั่งนี้รับเฉพาะ JSON (content-type: application/json)' });
+  }
+
   if (req.method === 'POST' && url === '/hub/api/workspaces') {
     const name = String((await readJson(req)).name || '').trim().slice(0, 40);
     if (!name) return sendJson(res, 400, { error: 'ตั้งชื่อโปรไฟล์ก่อน' });
-    if (reg.list.some((w) => w.name.toLowerCase() === name.toLowerCase())) return sendJson(res, 400, { error: `มีโปรไฟล์ชื่อ "${name}" อยู่แล้ว` });
-    let id;
-    do { id = 'p' + crypto.randomBytes(3).toString('hex'); } while (reg.list.some((w) => w.id === id) || fs.existsSync(wsDir(id)));
-    reg.list.push({ id, name });
-    saveReg(reg);
-    const k = await startKid(id);
-    if (!k.ready) return sendJson(res, 500, { error: 'สร้างโปรไฟล์แล้วแต่เริ่มทำงานไม่สำเร็จ — ดู log ของเซิร์ฟเวอร์' });
-    return sendJson(res, 200, { ok: true, id, name });
+    // ถือคิวจนโปรไฟล์ใหม่บูตเสร็จ — ลบโปรไฟล์ที่ยังบูตไม่เสร็จ = โปรเซสลูกเกิดทีหลังแล้วค้างวิ่งนอกรายชื่อ
+    return withRegLock(async () => {
+      const r = loadReg();
+      if (r.list.length >= MAX_WS) return sendJson(res, 400, { error: `มีโปรไฟล์ครบ ${MAX_WS} แล้ว — ลบโปรไฟล์ที่ไม่ใช้ก่อน` });
+      if (r.list.some((w) => w.name.toLowerCase() === name.toLowerCase())) return sendJson(res, 400, { error: `มีโปรไฟล์ชื่อ "${name}" อยู่แล้ว` });
+      let id;
+      do { id = 'p' + crypto.randomBytes(3).toString('hex'); } while (r.list.some((w) => w.id === id) || fs.existsSync(wsDir(id)));
+      r.list.push({ id, name });
+      saveReg(r);
+      const k = await startKid(id);
+      if (!k.ready) return sendJson(res, 500, { error: 'สร้างโปรไฟล์แล้วแต่เริ่มทำงานไม่สำเร็จ — ดู log ของเซิร์ฟเวอร์' });
+      return sendJson(res, 200, { ok: true, id, name });
+    });
   }
 
   if (req.method === 'POST' && url === '/hub/api/workspaces/delete') {
     const id = String((await readJson(req)).id || '');
     if (id === TOP) return sendJson(res, 400, { error: 'ลบโปรไฟล์ TOP ไม่ได้ — เป็นโปรไฟล์หลักที่เก็บข้อมูลเดิมทั้งหมด' });
-    if (!reg.list.some((w) => w.id === id)) return sendJson(res, 404, { error: 'ไม่พบโปรไฟล์นี้' });
-    await stopKid(id);   // หยุดระบบอัตโนมัติของโปรไฟล์นี้ก่อน ค่อยย้ายข้อมูล
-    // ไม่ลบทิ้งจริง — ในนั้นมี token, คลังคลิป, บันทึกการทำงาน ย้ายไปถังขยะ กู้คืนด้วยมือได้
-    if (fs.existsSync(wsDir(id))) {
-      fs.mkdirSync(TRASH_DIR, { recursive: true });
-      fs.renameSync(wsDir(id), path.join(TRASH_DIR, `${id}-${new Date().toISOString().replace(/[:.]/g, '-')}`));
-    }
-    reg.list = reg.list.filter((w) => w.id !== id);
-    saveReg(reg);
-    // ลบตัวที่เลือกอยู่ = กลับไป TOP
-    return sendJson(res, 200, { ok: true }, cur === id ? { 'set-cookie': wsCookie(TOP) } : {});
+    return withRegLock(async () => {
+      const r = loadReg();
+      if (!r.list.some((w) => w.id === id)) return sendJson(res, 404, { error: 'ไม่พบโปรไฟล์นี้' });
+      await stopKid(id);   // หยุดระบบอัตโนมัติของโปรไฟล์นี้ก่อน ค่อยย้ายข้อมูล
+      // ไม่ลบทิ้งจริง — ในนั้นมี token, คลังคลิป, บันทึกการทำงาน ย้ายไปถังขยะ กู้คืนด้วยมือได้
+      if (fs.existsSync(wsDir(id))) {
+        fs.mkdirSync(TRASH_DIR, { recursive: true });
+        fs.renameSync(wsDir(id), path.join(TRASH_DIR, `${id}-${new Date().toISOString().replace(/[:.]/g, '-')}`));
+      }
+      r.list = r.list.filter((w) => w.id !== id);
+      saveReg(r);
+      // ลบตัวที่เลือกอยู่ = กลับไป TOP
+      return sendJson(res, 200, { ok: true }, cur === id ? { 'set-cookie': wsCookie(TOP) } : {});
+    });
   }
 
   if (req.method === 'POST' && url === '/hub/api/select') {
@@ -183,10 +221,23 @@ function proxy(req, res, id, url) {
   try { proxyTo(req, res, id, url); }
   catch (e) { if (!res.headersSent) sendJson(res, 502, { error: 'ส่งต่อคำขอไม่สำเร็จ: ' + e.message }); }
 }
+// คนกดแอดเข้าหน้า Landing ตอนโปรไฟล์กำลังบูต (deploy/รีสตาร์ท) เดิมเห็น JSON ดิบ {"error":...} บนจอมือถือ
+// คำขอหน้าเว็บ (/lp หรือเบราว์เซอร์ขอ HTML) ได้หน้าเล็กๆ ภาษาไทยที่รีเฟรชเองแทน • /api ยังได้ JSON (หน้าแอดมินอ่านข้อความ error)
+const isPageReq = (req, url) => (req.method === 'GET' || req.method === 'HEAD') && !url.startsWith('/api/')
+  && (/^\/lp\/?(\?|$)/.test(url) || /text\/html/.test(String(req.headers.accept || '')));
+const LOADING_HTML = '<!doctype html><html lang="th"><head><meta charset="utf-8">'
+  + '<meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="3">'
+  + '<title>กำลังโหลด</title></head><body style="font-family:sans-serif;text-align:center;padding:64px 16px;color:#444">'
+  + '<p style="font-size:18px">กำลังโหลด กรุณารีเฟรช</p><p style="color:#999;font-size:14px">หน้านี้จะลองใหม่เองในไม่กี่วินาที</p></body></html>';
+function sendUnavailable(req, res, url, code, error) {
+  if (!isPageReq(req, url)) return sendJson(res, code, { error }, { 'retry-after': '3' });
+  res.writeHead(code, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'retry-after': '3' });
+  res.end(req.method === 'HEAD' ? undefined : LOADING_HTML);
+}
 function proxyTo(req, res, id, url) {
   const k = kids.get(id);
   if (!k || !k.ready) {
-    return sendJson(res, 503, { error: 'โปรไฟล์นี้กำลังเริ่มทำงาน — ลองใหม่ในอีกสักครู่' }, { 'retry-after': '3' });
+    return sendUnavailable(req, res, url, 503, 'โปรไฟล์นี้กำลังเริ่มทำงาน — ลองใหม่ในอีกสักครู่');
   }
   const preq = http.request({
     host: '127.0.0.1', port: k.port, method: req.method, path: url,
@@ -196,7 +247,7 @@ function proxyTo(req, res, id, url) {
     pres.pipe(res);   // ส่งต่อแบบสตรีม — รองรับ SSE (log สด) และ NDJSON ตอนขึ้นแอด
   });
   preq.on('error', () => {
-    if (!res.headersSent) sendJson(res, 502, { error: 'ต่อโปรไฟล์นี้ไม่ได้ชั่วคราว — ลองใหม่อีกครั้ง' });
+    if (!res.headersSent) sendUnavailable(req, res, url, 502, 'ต่อโปรไฟล์นี้ไม่ได้ชั่วคราว — ลองใหม่อีกครั้ง');
     else res.destroy();
   });
   // ผู้ใช้ปิดแท็บ/ยกเลิก = ตัดสายไปที่โปรไฟล์ด้วย (server.js ใช้สัญญาณนี้หยุดขึ้นแอดที่เหลือ)
@@ -219,7 +270,19 @@ const server = http.createServer((req, res) => {
     if (!reg.list.some((w) => w.id === m[1])) return sendJson(res, 404, { error: 'ไม่พบโปรไฟล์นี้' });
     return proxy(req, res, m[1], m[2] || '/');
   }
-  return proxy(req, res, currentWs(req, reg), url);
+  const cur = currentWs(req, reg);
+  // หน้าต่างที่เปิดค้างไว้ส่งโปรไฟล์ของตัวเองมา (x-fbws-page) แต่ cookie ถูกหน้าต่างอื่นสลับไปแล้ว
+  // เดิมส่งต่อตาม cookie อย่างเดียว: จอ TOP กด "หยุดฉุกเฉิน" → ไปหยุด BRAND-B แทน TOP ยิงเงินต่อ จอบอกว่าหยุดแล้ว
+  // ไม่ส่งต่อให้โปรไฟล์ไหนเลย ตอบ 409 ให้หน้าเว็บบอกผู้ใช้แล้วโหลดใหม่ • ไม่มี header (โหลดหน้าแรก, ส่วนขยาย Chrome) = ตาม cookie เหมือนเดิม
+  const page = req.headers[PAGE_HDR];
+  if (page && page !== cur) {
+    const nm = (id) => (reg.list.find((w) => w.id === id) || { name: String(id).slice(0, 41) }).name;
+    return sendJson(res, 409, {
+      error: `หน้าต่างนี้เปิดโปรไฟล์ "${nm(page)}" ค้างไว้ แต่ตอนนี้เลือกโปรไฟล์ "${nm(cur)}" อยู่ (สลับจากหน้าต่างอื่น) — คำสั่งนี้ยังไม่ถูกทำ`,
+      wsMismatch: true, current: cur,
+    }, { 'x-fbws-mismatch': cur });
+  }
+  return proxy(req, res, cur, url);
 });
 // ห้ามให้ request แปลกๆ ตัวเดียวทำตัวกลางล้ม — ตัวกลางล้ม = ทุกโปรไฟล์ล้มตาม
 server.on('clientError', (err, socket) => { try { socket.end('HTTP/1.1 400 Bad Request\r\n\r\n'); } catch { /* ข้าม */ } });

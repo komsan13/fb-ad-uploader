@@ -69,7 +69,12 @@ function saveConfig(cfg) {
       const day = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10); // วันตามเวลาไทย
       const bak = path.join(BACKUP_DIR, `config-${day}.json`);
       if (!fs.existsSync(bak)) {
-        fs.copyFileSync(CONFIG_PATH, bak);
+        // สำเนาต้องผ่านเกราะ amToken ด้วย — เดิม copy ไฟล์ดิบ: loadConfig ล้าง token ของ Ads Manager ออกจากไฟล์หลัก
+        // แต่ก่อนเขียนทับ ตัวนี้สำรองไฟล์ที่ยังมี token ไว้ก่อน มันจึงค้างอยู่บนดิสก์เซิร์ฟเวอร์อีก 14 วัน
+        // ไฟล์อ่านไม่ออก = ไม่สำรอง (backup ที่ parse ไม่ได้ loadConfig ก็กู้จากมันไม่ได้อยู่แล้ว)
+        const old = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+        for (const p of old.profiles || []) delete p.amToken;
+        fs.writeFileSync(bak, JSON.stringify(old, null, 2));
         const files = fs.readdirSync(BACKUP_DIR).filter((f) => f.startsWith('config-')).sort();
         while (files.length > 14) fs.unlinkSync(path.join(BACKUP_DIR, files.shift()));
       }
@@ -1311,22 +1316,35 @@ app.post('/api/profiles/active', (req, res) => {
 });
 
 // ---------- Login with Facebook (OAuth) ----------
+// state = ค่าสุ่มใช้ครั้งเดียว ผูกกับบัญชีที่กดล็อกอิน เก็บในหน่วยความจำ 10 นาที
+// เดิม state = id บัญชีตรงๆ ซึ่งเดาได้ — เว็บอื่นหลอกให้เบราว์เซอร์เราเปิด /auth/callback?code=<code ของคนอื่น>&state=p1
+// แล้ว token ของบัญชีเราถูกแทนด้วย token ของเขาเงียบๆ (login CSRF) ระบบอัตโนมัติก็ไปทำงานด้วย token นั้น
+// รีสตาร์ทระหว่างล็อกอิน = state หาย ต้องกดล็อกอินใหม่ (ปลอดภัยกว่าเก็บลงไฟล์)
+const oauthStates = new Map();   // state -> { profId, exp }
+const OAUTH_STATE_MS = 10 * 60 * 1000;
 app.get('/auth/login', (req, res) => {
   const cfg = loadConfig();
   const prof = cfg.profiles.find((p) => p.id === req.query.profile);
   if (!prof) return res.status(404).send('ไม่พบบัญชี');
   if (!prof.appId) return res.status(400).send('ยังไม่ได้ใส่ App ID ในการ์ดบัญชี');
+  const now = Date.now();
+  for (const [k, v] of oauthStates) if (v.exp < now) oauthStates.delete(k);
+  const state = crypto.randomBytes(16).toString('hex');
+  oauthStates.set(state, { profId: prof.id, exp: now + OAUTH_STATE_MS });
   const url = `https://www.facebook.com/v23.0/dialog/oauth`
     + `?client_id=${encodeURIComponent(prof.appId)}`
     + `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`
-    + `&state=${encodeURIComponent(prof.id)}`
+    + `&state=${state}`
     + `&response_type=code&scope=${encodeURIComponent(LOGIN_SCOPES)}`;
   res.redirect(url);
 });
 
 app.get('/auth/callback', async (req, res) => {
   const cfg = loadConfig();
-  const prof = cfg.profiles.find((p) => p.id === req.query.state);
+  const stKey = String(req.query.state || '');
+  const st = oauthStates.get(stKey);
+  oauthStates.delete(stKey);   // ใช้ได้ครั้งเดียว ทั้งสำเร็จและไม่สำเร็จ
+  const prof = st ? cfg.profiles.find((p) => p.id === st.profId) : null;
   const done = (ok, msg) => res.send(`<!doctype html><meta charset="utf8">`
     + `<body style="font-family:'Segoe UI',sans-serif;padding:48px;text-align:center;color:#1c1e21">`
     // msg มาจาก query string ได้ (error_description ของ FB) — ไม่ escape คือ reflected XSS
@@ -1336,7 +1354,8 @@ app.get('/auth/callback', async (req, res) => {
     + `</body>`);
 
   if (req.query.error) return done(false, req.query.error_description || req.query.error);
-  if (!prof) return done(false, 'ไม่พบบัญชี (state ไม่ตรง)');
+  if (!st || st.exp <= Date.now()) return done(false, 'ลิงก์ล็อกอินนี้หมดอายุ หรือไม่ได้เริ่มจากโปรแกรมนี้ (state ไม่ตรง) — กด "เข้าสู่ระบบด้วย Facebook" ใหม่อีกครั้ง');
+  if (!prof) return done(false, 'ไม่พบบัญชี (ถูกลบไประหว่างล็อกอิน)');
   if (!prof.appSecret) return done(false, 'ยังไม่ได้ใส่ App Secret');
   try {
     // แลก code → short-lived token
@@ -4389,7 +4408,8 @@ async function tgPollOnce() {
 function startTgPolling() {
   const loop = async () => {
     let d = 30 * 1000;
-    try { d = await tgPollOnce(); } catch { /* ใช้ค่าถอยห่าง */ }
+    // บอทซ้ำกับโปรไฟล์ที่มาก่อน = ไม่ดึงเลย ปล่อยให้โปรไฟล์นั้นรับคำสั่งตัวเดียว (ดู tgPollBlocked)
+    try { d = tgPollBlocked() ? 60 * 1000 : await tgPollOnce(); } catch { /* ใช้ค่าถอยห่าง */ }
     setTimeout(loop, d).unref();
   };
   loop();
@@ -4417,16 +4437,77 @@ function startBackgroundJobs() {
   }, 5 * 60 * 1000).unref();
 }
 
+// ---------- บอท Telegram หนึ่งตัวต่อหนึ่งโปรไฟล์ (hub.js) ----------
+// แต่ละโปรไฟล์ดึงคำสั่ง (getUpdates) ของตัวเอง — สองโปรไฟล์ใช้บอทเดียวกัน = ได้ข้อความเดียวกันทั้งคู่
+// (Telegram นับ offset ต่อบอท ไม่ใช่ต่อโปรไฟล์) แล้วทำตามพร้อมกัน: "ยืนยัน" ครั้งเดียวไปโดนทุกโปรไฟล์
+// วัดจริงด้วย hub.js + Telegram ปลอม: ทุกข้อความถูกตอบสองรอบจากสองโปรไฟล์
+// กันสองชั้น: บันทึกบอทที่โปรไฟล์อื่นใช้อยู่ไม่ได้ • ของเดิมที่ซ้ำกันอยู่แล้ว ให้ดึงคำสั่งเฉพาะโปรไฟล์แรกตามลำดับ
+// รายชื่อ (TOP ก่อน) ตัวอื่นยังส่งแจ้งเตือนได้แต่ไม่รับคำสั่ง • เทียบ token ตรงๆ ห้ามพิมพ์ค่า token ลง log
+// hub.js ส่ง HUB_ROOT_CONFIG มา (โครงโฟลเดอร์เดียวกับ hub.js) — รัน server.js เดี่ยวไม่มีโปรไฟล์อื่นให้เทียบ
+const HUB_ROOT_CONFIG = process.env.HUB_ROOT_CONFIG || '';
+function tgHubProfiles() {
+  if (!HUB_ROOT_CONFIG || !process.env.WS_ID) return [];
+  const root = path.dirname(HUB_ROOT_CONFIG);
+  let list = [];
+  try { list = JSON.parse(fs.readFileSync(path.join(root, 'workspaces.json'), 'utf8')).list || []; } catch { /* ยังไม่มีรายชื่อ */ }
+  list = list.filter((w) => w && /^[a-z0-9][a-z0-9-]{0,40}$/.test(String(w.id)));
+  if (!list.some((w) => w.id === 'top')) list.unshift({ id: 'top', name: 'TOP' });   // ลำดับเดียวกับ loadReg ของ hub.js
+  return list.map((w) => {
+    let t = {};
+    try { t = JSON.parse(fs.readFileSync(w.id === 'top' ? HUB_ROOT_CONFIG : path.join(root, 'ws', w.id, 'config.json'), 'utf8')).telegram || {}; } catch { /* ยังไม่มี config */ }
+    return { id: w.id, name: String(w.name || w.id), botToken: String(t.botToken || ''), chatId: String(t.chatId || ''), self: w.id === process.env.WS_ID };
+  });
+}
+// โปรไฟล์อื่นที่ใช้บอทนี้อยู่ (ตัวแรกที่เจอ) — ไม่มี = null
+function tgBotUsedBy(botToken) {
+  const w = botToken ? tgHubProfiles().find((x) => !x.self && x.botToken === botToken) : null;
+  return w ? { id: w.id, name: w.name } : null;
+}
+// โปรไฟล์ที่มาก่อนเรา (ตามลำดับรายชื่อ) ดึงคำสั่งของบอทนี้อยู่แล้ว = เราห้ามดึง • คืนโปรไฟล์นั้น หรือ null
+// sameChat=false = คนละแชท: ตัวที่ดึงอยู่ทิ้งข้อความจากแชทของเรา (กรองเฉพาะแชทตัวเอง) — แชทของเราไม่มีใครตอบเลย
+// ไม่ปล่อยให้ดึงทั้งคู่: Telegram มีคิวข้อความเดียวต่อบอท สองตัวดึงพร้อมกันแย่งกันยืนยัน offset ข้อความหายสลับกันไปมา
+function tgPollOwner(t) {
+  if (!t.botToken || !t.chatId) return null;
+  for (const w of tgHubProfiles()) {
+    if (w.self) return null;
+    if (w.botToken === t.botToken && w.chatId) return { id: w.id, name: w.name, sameChat: w.chatId === String(t.chatId) };
+  }
+  return null;
+}
+let tgBlockedBy = '';   // จำสถานะล่าสุด — log เฉพาะตอนเปลี่ยน ไม่ใช่ทุกรอบ
+function tgPollBlocked() {
+  const owner = tgPollOwner(loadConfig().telegram || {});
+  const key = owner ? `${owner.id}|${owner.sameChat}` : '';
+  if (key !== tgBlockedBy) {
+    tgBlockedBy = key;
+    if (owner) {
+      console.error(`[telegram] บอทของโปรไฟล์นี้ซ้ำกับโปรไฟล์ "${owner.name}" (${owner.id}) — ปิดการรับคำสั่งจากแชทของโปรไฟล์นี้ (แจ้งเตือนยังส่งได้) `
+        + (owner.sameChat ? `ให้ "${owner.name}" รับคำสั่งตัวเดียว` : 'และเป็นคนละแชท: ข้อความในแชทของโปรไฟล์นี้จะไม่มีใครตอบ — ต้องใช้บอทของตัวเอง'));
+    } else console.log('[telegram] บอทไม่ซ้ำกับโปรไฟล์อื่นแล้ว — กลับมารับคำสั่งจากแชท');
+  }
+  return !!owner;
+}
+
 // ตั้งค่า Telegram จากหน้าเว็บ
 app.get('/api/telegram', (req, res) => {
   const t = loadConfig().telegram || {};
-  res.json({ hasToken: !!t.botToken, botTokenMasked: t.botToken ? '••••••' + String(t.botToken).slice(-4) : '', chatId: t.chatId || '' });
+  res.json({
+    hasToken: !!t.botToken, botTokenMasked: t.botToken ? '••••••' + String(t.botToken).slice(-4) : '', chatId: t.chatId || '',
+    // บอทซ้ำกับโปรไฟล์อื่น: pollOwner = โปรไฟล์ที่รับคำสั่งแทนเรา (เราถูกปิดรับ) • sharedWith = โปรไฟล์อื่นที่ใช้บอทนี้ด้วย
+    pollOwner: tgPollOwner(t), sharedWith: tgBotUsedBy(t.botToken),
+  });
 });
 app.post('/api/telegram', (req, res) => {
   const cfg = loadConfig();
   const cur = cfg.telegram || {};
   let botToken = String(req.body.botToken || '').trim();
   if (!botToken || botToken.startsWith('••••')) botToken = cur.botToken || ''; // ช่องโชว์ masked = ไม่เปลี่ยน
+  // บอทใหม่ที่โปรไฟล์อื่นใช้อยู่ = ไม่บันทึก • ของเดิมที่ซ้ำกันอยู่แล้วยังแก้ Chat ID ได้ (ตัวดึงคำสั่งกันซ้ำให้แล้ว
+  // และโปรไฟล์ที่รับคำสั่งอยู่ต้องแก้ค่าของตัวเองได้)
+  const other = botToken !== (cur.botToken || '') ? tgBotUsedBy(botToken) : null;
+  if (other) {
+    return res.status(400).json({ error: `บอทนี้ใช้อยู่แล้วในโปรไฟล์ "${other.name}" — แต่ละโปรไฟล์ต้องมีบอทของตัวเอง (สร้างใหม่ที่ @BotFather) ไม่งั้นคำสั่งในแชทจะถูกทำซ้ำทุกโปรไฟล์ที่ใช้บอทนี้` });
+  }
   cfg.telegram = { botToken, chatId: String(req.body.chatId || '').trim() };
   saveConfig(cfg);
   res.json({ ok: true });

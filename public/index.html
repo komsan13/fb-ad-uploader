@@ -1360,6 +1360,7 @@
                 <button class="btn-primary" onclick="saveTelegram()">บันทึก</button>
               </span>
             </div>
+            <div class="set-note warn" id="tgShared" style="display:none"></div>
           </div>
 
           <div class="set-sec" id="setAi">
@@ -1564,6 +1565,80 @@ async function apiJson(url, opts) {
     throw e;
   }
   return d;
+}
+
+// ---------- ผูกหน้าต่างนี้กับโปรไฟล์ที่มันโหลดมา (hub.js) ----------
+// cookie โปรไฟล์ใช้ร่วมทุกแท็บ/หน้าต่าง — เปิดสองหน้าต่างข้างกันแล้วสลับไป B ในหน้าต่างหนึ่ง อีกหน้าต่างยังโชว์ TOP
+// แต่กดอะไรก็วิ่งไป B (วัดจริง: จอ TOP กด "หยุดฉุกเฉิน" → B หยุด TOP ยิงเงินต่อ จอบอกว่าหยุดแล้ว)
+// visibilitychange ช่วยไม่ได้ เพราะสองหน้าต่างข้างกันมองเห็นตลอด ไม่เคยมีจังหวะ "กลับมาที่แท็บ"
+// ทางแก้: ทุกคำขอในเว็บเดียวกัน (fetch + XMLHttpRequest ที่ใช้อัปโหลด) แนบ x-fbws-page = โปรไฟล์ของหน้านี้
+// ตัวกลางเทียบกับ cookie ไม่ตรง = ตอบ 409 + header x-fbws-mismatch ไม่ส่งต่อให้โปรไฟล์ไหนเลย แล้วหน้านี้บอกผู้ใช้+โหลดใหม่
+// ที่แนบ header ไม่ได้: EventSource (log สด), <img>/<video>, ลิงก์เปิดหน้าใหม่ — ล้วนอ่านอย่างเดียว ไม่สั่งงาน/ไม่ใช้เงิน
+// และคำขอ fetch ถัดไปของหน้านี้จะเจอ 409 แล้วพาโหลดใหม่เอง • รัน server.js เดี่ยว (ไม่มีตัวกลาง) = ไม่แนบ ทำงานเหมือนเดิม
+let wsPage = null;   // โปรไฟล์ของหน้าที่โหลดอยู่นี้ — ตัดสินครั้งเดียวตอนเปิดหน้า
+// เจอ 409 / กำลังสลับหรือโหลดหน้าใหม่ = หยุดทั้งหน้า: คำขอถัดไปทุกตัว (ยกเว้น /hub/api ที่ใช้สลับโปรไฟล์) ไม่ถูกส่งเลย
+// รีวิวเจอ: ขึ้นแอดหลายบัญชีส่งทีละบัญชี ตัวแรกได้ 409 แล้ววนต่อ พอผู้ใช้กด "กลับไปโปรไฟล์เดิม" cookie ตรงกันอีกครั้ง
+// คำขอที่ตามมาผ่านไปสร้างแคมเปญจริง ทั้งที่จอเพิ่งบอกว่า "ยังไม่ถูกทำ" • ถามผู้ใช้ครั้งเดียวพอ
+let wsLeaving = false;
+const fetch0 = window.fetch.bind(window);
+const wsReady = Promise.race([
+  fetch0('/hub/api/workspaces', { cache: 'no-store' })
+    .then(r => (r.ok ? r.json() : null)).then(d => {
+      if (!d || !d.current) return;
+      wsPage = d.current;
+      // แคชแดชบอร์ดใน sessionStorage เป็นของ "แท็บ" ไม่ใช่ของโปรไฟล์ — หน้าต่างอื่นสลับโปรไฟล์แล้วกด F5 ที่นี่
+      // เดิมได้ชื่อโปรไฟล์ใหม่แต่ตัวเลขใช้จ่าย/แคมเปญของโปรไฟล์เก่าค้างจอได้ถึง 5 นาที (วัดจริงในเบราว์เซอร์)
+      try {
+        if (sessionStorage.getItem('fbadWs') !== wsPage) { sessionStorage.clear(); sessionStorage.setItem('fbadWs', wsPage); }
+      } catch { /* ปิดใช้ก็ข้าม */ }
+    }),
+  new Promise(r => setTimeout(r, 5000)),   // ตัวกลางไม่ตอบ = ไม่รอ ทุกคำขอเดินต่อแบบไม่แนบ
+]).catch(() => {});
+const wsSameOrigin = (u) => { try { return new URL(u, location.href).origin === location.origin; } catch { return false; } };
+const wsBlocked = (u) => wsLeaving && !new URL(u, location.href).pathname.startsWith('/hub/api/');
+window.fetch = async function (input, init) {
+  const url = typeof input === 'string' || input instanceof URL ? String(input) : null;
+  if (url === null || !wsSameOrigin(url)) return fetch0(input, init);
+  await wsReady;   // คำขอแรกๆ ตอนเปิดหน้าต้องรู้โปรไฟล์ก่อน ไม่งั้นโหลดข้อมูลตาม cookie ที่อาจเพิ่งถูกสลับ
+  if (wsBlocked(url)) throw new Error('หน้าต่างนี้กำลังโหลดใหม่เพื่อสลับโปรไฟล์ — คำสั่งนี้ไม่ถูกส่ง');
+  if (wsPage) {
+    const headers = new Headers((init && init.headers) || undefined);
+    headers.set('x-fbws-page', wsPage);
+    init = { ...(init || {}), headers };
+  }
+  const res = await fetch0(input, init);
+  if (res.status === 409 && res.headers.get('x-fbws-mismatch')) wsMismatch(res.headers.get('x-fbws-mismatch'));
+  return res;
+};
+const xhrOpen0 = XMLHttpRequest.prototype.open, xhrSend0 = XMLHttpRequest.prototype.send;
+XMLHttpRequest.prototype.open = function (method, url) { this.wsUrl = String(url); return xhrOpen0.apply(this, arguments); };
+XMLHttpRequest.prototype.send = function () {
+  if (wsSameOrigin(this.wsUrl) && wsBlocked(this.wsUrl)) {
+    // ไม่ส่งเลย — ยิง error ให้โค้ดที่รออยู่ (ลูปขึ้นแอด) หยุดเอง ไม่ค้างรอตลอดไป
+    setTimeout(() => { this.dispatchEvent(new ProgressEvent('error')); this.dispatchEvent(new ProgressEvent('loadend')); });
+    return;
+  }
+  if (wsPage && wsSameOrigin(this.wsUrl)) {
+    this.setRequestHeader('x-fbws-page', wsPage);
+    // เช็คตอนได้ header (readyState 2) ซึ่งมาก่อน onload ของโค้ดที่เรียก — หยุดทั้งหน้าก่อนลูปจะส่งคำขอถัดไป
+    this.addEventListener('readystatechange', () => {
+      const cur = this.readyState === 2 && this.status === 409 && this.getResponseHeader('x-fbws-mismatch');
+      if (cur) wsMismatch(cur);
+    });
+  }
+  return xhrSend0.apply(this, arguments);
+};
+async function wsMismatch(cur) {
+  if (wsLeaving) return;
+  wsLeaving = true;
+  const d = await wsFetch();
+  const nm = (id) => (((d && d.list) || []).find(w => w.id === id) || { name: id }).name;
+  const back = confirm(`หน้าต่างนี้เปิดโปรไฟล์ "${nm(wsPage)}" ไว้ แต่หน้าต่าง/แท็บอื่นสลับไปโปรไฟล์ "${nm(cur)}" แล้ว\n\n`
+    + `คำสั่งล่าสุดจากหน้าต่างนี้ยังไม่ถูกทำ — ระบบไม่ส่งต่อให้โปรไฟล์ที่คุณไม่ได้ดูอยู่\n\n`
+    + `ตกลง = กลับไปใช้โปรไฟล์ "${nm(wsPage)}" แล้วกดคำสั่งอีกครั้ง (หน้าต่างที่เปิด "${nm(cur)}" อยู่จะต้องโหลดใหม่)\n`
+    + `ยกเลิก = เปิดโปรไฟล์ "${nm(cur)}" ในหน้าต่างนี้แทน`);
+  if (back) await wsPost('/hub/api/select', { id: wsPage });   // โปรไฟล์ถูกลบไปแล้ว = สลับไม่ได้ ก็โหลดตาม cookie
+  wsReload();
 }
 
 // ---------- ไอคอน SVG (lucide) — เลิกใช้ emoji ใน UI: ขนาด/สีคุมได้ หน้าตาเหมือนกันทุกเครื่อง ----------
@@ -1997,31 +2072,54 @@ function setFilter(q) {
 }
 async function loadTelegramUI() {
   try {
-    const t = await (await fetch('/api/telegram')).json();
+    const t = await apiJson('/api/telegram');
     const inp = document.getElementById('tgToken');
     inp.value = t.botTokenMasked || '';
     inp.dataset.masked = t.botTokenMasked || ''; // จำไว้เทียบตอนบันทึก — ไม่แก้ = ไม่ส่งทับ
     document.getElementById('tgChat').value = t.chatId || '';
+    // บอทตัวเดียวกันหลายโปรไฟล์ = รับคำสั่งจากแชทได้โปรไฟล์เดียว ต้องบอกให้รู้ว่าโปรไฟล์ไหนรับ
+    const note = document.getElementById('tgShared');
+    const own = t.pollOwner;
+    const msg = own
+      ? (own.sameChat
+        ? `บอทนี้ใช้ร่วมกับโปรไฟล์ "${own.name}" — คำสั่งที่พิมพ์ในแชทไปที่ "${own.name}" เท่านั้น โปรไฟล์นี้ปิดการรับคำสั่งไว้ (ส่งได้แค่แจ้งเตือน)`
+        : `บอทนี้ใช้ร่วมกับโปรไฟล์ "${own.name}" ซึ่งรับคำสั่งจากแชทของตัวเองอยู่ — ข้อความที่พิมพ์ในแชทของโปรไฟล์นี้จะไม่มีใครตอบเลย (ส่งได้แค่แจ้งเตือน)`)
+        + ' • อยากสั่งงานโปรไฟล์นี้ผ่านแชท ให้สร้างบอทใหม่ที่ @BotFather แล้วใส่แทน'
+      : t.sharedWith
+        ? `บอทนี้ใช้ร่วมกับโปรไฟล์ "${t.sharedWith.name}" ด้วย — คำสั่งที่พิมพ์ในแชทมาที่โปรไฟล์นี้เท่านั้น ("${t.sharedWith.name}" ไม่รับคำสั่ง)`
+        : '';
+    note.innerHTML = msg ? ic('warn', { size: 17 }) + '<div></div>' : '';
+    if (msg) note.lastChild.textContent = msg;
+    note.style.display = msg ? '' : 'none';
   } catch { /* ข้าม */ }
 }
 async function saveTelegram() {
   const inp = document.getElementById('tgToken');
   const val = inp.value.trim();
-  const r = await (await fetch('/api/telegram', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      botToken: (val && val !== inp.dataset.masked) ? val : '', // ค่าว่าง = server คงของเดิม
-      chatId: document.getElementById('tgChat').value.trim(),
-    }),
-  })).json();
-  if (r.ok) { toast('บันทึกแล้ว — กด "ส่งทดสอบ" เพื่อยืนยันว่าถึงมือถือจริง'); loadTelegramUI(); }
-  else toast('บันทึกไม่สำเร็จ');
+  try {
+    await apiJson('/api/telegram', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        botToken: (val && val !== inp.dataset.masked) ? val : '', // ค่าว่าง = server คงของเดิม
+        chatId: document.getElementById('tgChat').value.trim(),
+      }),
+    });
+    toast('บันทึกแล้ว — กด "ส่งทดสอบ" เพื่อยืนยันว่าถึงมือถือจริง');
+    loadTelegramUI();
+  } catch (e) {
+    toast('บันทึกไม่สำเร็จ: ' + e.message, 'err');
+  }
 }
 async function testTelegram(btn) {
   btn.disabled = true; btn.textContent = 'กำลังส่ง...';
-  const r = await (await fetch('/api/telegram-test', { method: 'POST' })).json();
-  btn.disabled = false; btn.textContent = 'ส่งทดสอบ';
-  toast(r.ok ? '✓ ส่งสำเร็จ! เช็คข้อความในแชท Telegram' : '✗ ' + r.error);
+  try {
+    await apiJson('/api/telegram-test', { method: 'POST' });
+    toast('✓ ส่งสำเร็จ! เช็คข้อความในแชท Telegram');
+  } catch (e) {
+    toast('✗ ' + e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = 'ส่งทดสอบ';   // ได้หน้า HTML/ต่อไม่ติด ปุ่มต้องไม่ค้าง "กำลังส่ง..."
+  }
 }
 async function connectProfile(pid, btn) {
   const card = document.querySelector(`.prof-card[data-pid="${pid}"]`);
@@ -2135,7 +2233,7 @@ async function populateProfileCard(pid, force) {
 // ทำงานเฉพาะตอนรันผ่าน hub.js — รัน server.js เดี่ยว (/hub/api ไม่มี) ปุ่มนี้ซ่อนไปเฉยๆ
 // โปรไฟล์ที่เลือกจำใน cookie ซึ่งใช้ร่วมทุกแท็บ: สลับในแท็บหนึ่ง = แท็บอื่นที่เปิดค้างไว้กำลังโชว์ของโปรไฟล์เก่า
 // แต่คำขอใหม่จะวิ่งไปโปรไฟล์ใหม่ — กลับมาที่แท็บนั้นเมื่อไหร่ต้องโหลดใหม่ ไม่งั้นข้อมูลสองโปรไฟล์ปนกันบนจอ
-let wsPage = null;   // โปรไฟล์ของหน้าที่โหลดอยู่นี้
+// (wsPage ประกาศไว้ที่ wrapper ต้นสคริปต์ — หน้าต่างที่ยังมองเห็นอยู่ตลอดกันด้วย 409 จากตัวกลางแทน)
 let wsList = [];
 async function wsFetch() {
   try {
@@ -2145,7 +2243,7 @@ async function wsFetch() {
 }
 async function loadWorkspaces() {
   const d = await wsFetch();
-  if (!d) return;
+  if (!d || wsLeaving) return;   // กำลังถาม/สลับ/โหลดใหม่อยู่ — ห้ามโหลดหน้าแทรกระหว่างรอผลสลับกลับ
   if (!wsPage) wsPage = d.current;
   if (d.current !== wsPage) return wsReload();
   wsList = d.list;
@@ -2155,6 +2253,7 @@ async function loadWorkspaces() {
   wsRenderMenu();
 }
 function wsReload() {
+  wsLeaving = true;
   try { sessionStorage.clear(); } catch { /* ข้าม */ }   // แคชของโปรไฟล์เก่าห้ามโผล่ในโปรไฟล์ใหม่
   location.href = '/';
 }
@@ -2188,8 +2287,9 @@ async function wsPost(url, body) {
 }
 async function wsSelect(id) {
   if (id === wsPage) { document.getElementById('wsMenu').hidden = true; return; }
+  wsLeaving = true;   // พอ cookie เปลี่ยน คำขอที่วิ่งค้างของหน้านี้จะได้ 409 — เป็นเรื่องปกติของการสลับเอง ไม่ต้องถาม
   const r = await wsPost('/hub/api/select', { id });
-  if (r.error) return toast('สลับโปรไฟล์ไม่สำเร็จ: ' + r.error, 'err');
+  if (r.error) { wsLeaving = false; return toast('สลับโปรไฟล์ไม่สำเร็จ: ' + r.error, 'err'); }
   wsReload();
 }
 async function wsAdd() {
@@ -2204,8 +2304,9 @@ async function wsDelete(e, id) {
   e.stopPropagation();
   const w = wsList.find(x => x.id === id) || { name: id };
   if (!confirm(`ลบโปรไฟล์ "${w.name}"?\n\nระบบอัตโนมัติของโปรไฟล์นี้จะหยุดทันที บัญชี FB คลังคลิป/แคปชั่น หน้า Landing และค่าตั้งค่าทั้งหมดของโปรไฟล์นี้จะถูกย้ายไปเก็บในถังขยะบนเซิร์ฟเวอร์ (กู้คืนได้ ไม่ได้ลบถาวร)`)) return;
+  if (id === wsPage) wsLeaving = true;   // ลบโปรไฟล์ของหน้านี้เอง = cookie กลับไป TOP แล้วหน้านี้โหลดใหม่ ไม่ต้องถาม 409
   const r = await wsPost('/hub/api/workspaces/delete', { id });
-  if (r.error) return toast('ลบไม่สำเร็จ: ' + r.error, 'err');
+  if (r.error) { wsLeaving = false; return toast('ลบไม่สำเร็จ: ' + r.error, 'err'); }
   if (id === wsPage) return wsReload();
   toast('✓ ลบโปรไฟล์ "' + w.name + '" แล้ว', 'ok');
   loadWorkspaces();
@@ -2309,7 +2410,8 @@ const DASH_CACHE_MS = 300000;
 async function logout() {
   if (!confirm('ออกจากระบบ? จะล้างข้อมูลที่แคชไว้ในเบราว์เซอร์นี้ แล้วถามรหัสใหม่')) return;
   try { sessionStorage.clear(); } catch { /* ปิดใช้ก็ข้าม */ }
-  try { await fetch('/api/logout', { cache: 'no-store' }); } catch { /* 401 คือผลที่ต้องการ ไม่ใช่ error */ }
+  // fetch0 = ไม่แนบโปรไฟล์ของหน้า — ออกจากระบบไม่ขึ้นกับโปรไฟล์ หน้าต่างที่ค้างโปรไฟล์เก่าต้องได้ 401 ไม่ใช่ 409
+  try { await fetch0('/api/logout', { cache: 'no-store' }); } catch { /* 401 คือผลที่ต้องการ ไม่ใช่ error */ }
   // บางเบราว์เซอร์ยังจำรหัสไว้จนปิดแท็บ — บอกตรงๆ ดีกว่าปล่อยให้เข้าใจว่าออกแล้วทั้งที่ยังเข้าได้
   alert('ล้างรหัสที่จำไว้แล้ว — ถ้ารีเฟรชแล้วยังไม่ถูกถามรหัส ให้ปิดแท็บนี้ทิ้ง (ข้อจำกัดของ basic auth)');
   location.replace('/');
