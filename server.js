@@ -18,6 +18,18 @@ const PUBLIC_URL = (process.env.PUBLIC_URL || `http://localhost:${PORT}`).replac
 const LP_PREFIX = /^\/w\/[a-z0-9][a-z0-9-]*$/.test(process.env.LP_PREFIX || '') ? process.env.LP_PREFIX : '';
 
 const app = express();
+// route แบบ async ที่โยน error (เช่น body แปลกๆ ทำ String(obj) พัง) — Express 4 ไม่จับให้ กลายเป็น unhandled rejection
+// แล้ว Node ดับทั้งโปรเซส ระบบอัตโนมัติดับไปด้วย (รีวิววัดจริง 12 ต.ค. 2026: /api/ai-advice, /api/adset-copy, /api/campaign-status exit 1)
+// ห่อทุก handler ให้ส่ง error เข้า next() แทน → คำขอนั้นได้ 500 คำขอเดียว เซิร์ฟเวอร์ทำงานต่อ (ตัวตอบ JSON อยู่ท้ายไฟล์)
+for (const m of ['get', 'post', 'put', 'delete']) {
+  const orig = app[m].bind(app);
+  app[m] = (route, ...handlers) => {
+    if (!handlers.length) return orig(route);   // app.get('etag') = อ่านค่าตั้ง ไม่ใช่ route
+    return orig(route, ...handlers.map((h) => (typeof h !== 'function' || h.length === 4 ? h : (req, res, next) => {
+      try { const p = h(req, res, next); if (p && typeof p.catch === 'function') p.catch(next); } catch (e) { next(e); }
+    })));
+  };
+}
 app.set('etag', false);
 app.use(express.json());
 // API ต้องได้ข้อมูลสดเสมอ — ห้าม browser/proxy cache
@@ -1584,6 +1596,8 @@ app.get('/auth/callback', async (req, res) => {
 // ---------- ข้อมูลจาก FB ----------
 // ตรวจ token + ดึงรายชื่อบัญชีโฆษณาและเพจ (ระบุ ?profile=id ได้)
 app.get('/api/accounts', async (req, res) => {
+  // ดูอย่างเดียว — ระหว่าง Meta สั่งพัก (hard) ห้ามยิง FB: call ที่โดนกั้นต่อเวลาพักใหม่ แล้ว autopilot หยุดยาวเพราะคนเปิดหน้าดู
+  { const cool = viewCoolErr(); if (cool) return res.status(503).json({ error: cool.message, cooling: true }); }
   const cfg = loadConfig();
   const prof = getProfile(cfg, req.query.profile);
   if (!prof || !prof.accessToken) return res.status(400).json({ error: 'ยังไม่ได้ใส่ Access Token' });
@@ -1923,6 +1937,8 @@ app.post('/api/campaign-delete', async (req, res) => {
 
 // เช็คสภาพบัญชีโฆษณา: มีบัตร/วิธีจ่ายเงินไหม + มี Pixel อะไรบ้าง
 app.get('/api/account-health', async (req, res) => {
+  // ดูอย่างเดียว — ระหว่าง Meta สั่งพัก (hard) ห้ามยิง FB: call ที่โดนกั้นต่อเวลาพักใหม่ แล้ว autopilot หยุดยาวเพราะคนเปิดหน้าดู
+  { const cool = viewCoolErr(); if (cool) return res.status(503).json({ error: cool.message, cooling: true }); }
   const cfg = loadConfig();
   const prof = getProfile(cfg, req.query.profile);
   if (!prof || !prof.accessToken) return res.status(400).json({ error: 'ยังไม่ได้เชื่อมต่อบัญชี' });
@@ -1998,6 +2014,8 @@ app.post('/api/am-limits', (req, res) => {
 // ภาพรวมสุขภาพ: บัญชีโฆษณา (สถานะ/Pixel/บัตร) + เพจ (เผยแพร่/สิทธิ์ลงโฆษณา) ของ profile เดียว
 // promotion_eligible = FB บอกตรงๆ ว่าเพจนี้ใช้ลงโฆษณา/บูสต์ได้ไหม (พิสูจน์กับบัญชีจริงแล้ว: เพจบิน = false)
 app.get('/api/health-overview', async (req, res) => {
+  // ดูอย่างเดียว — ระหว่าง Meta สั่งพัก (hard) ห้ามยิง FB: call ที่โดนกั้นต่อเวลาพักใหม่ แล้ว autopilot หยุดยาวเพราะคนเปิดหน้าดู
+  { const cool = viewCoolErr(); if (cool) return res.status(503).json({ error: cool.message, cooling: true }); }
   const cfg = loadConfig();
   const prof = getProfile(cfg, req.query.profile);
   if (!prof || !prof.accessToken) return res.status(400).json({ error: 'ยังไม่ได้เชื่อมต่อบัญชี' });
@@ -4805,6 +4823,16 @@ app.post('/api/telegram', (req, res) => {
 app.post('/api/telegram-test', async (req, res) => {
   const ok = await tgSend(loadConfig(), '✅ ทดสอบแจ้งเตือนจาก FB Ad Uploader สำเร็จ! ระบบจะเตือนเมื่อ: แอดโดนปฏิเสธ • บัญชีถูกปิด/ค้างชำระ • token มีปัญหา และสรุปยอดทุกเช้า 8 โมง\n\n💬 พิมพ์ถามในแชทนี้ได้เลย เช่น "วันนี้ใช้เงินไปเท่าไหร่" — AI ตอบจากข้อมูลจริง');
   res.json(ok ? { ok: true } : { error: 'ส่งไม่สำเร็จ — เช็ค Bot Token / Chat ID และต้องกด Start ในแชทบอทของคุณก่อน' });
+});
+
+// ตัวรับ error สุดท้าย — เดิมตกไปที่ตัวตั้งต้นของ Express ซึ่งตอบหน้า HTML พร้อม stack trace หน้าเว็บอ่าน JSON ไม่ได้
+// ผู้ใช้เห็นแค่ "ไม่สำเร็จ" ไม่รู้สาเหตุ (เช่นไฟล์เกินขนาดตอนขึ้นแอด, JSON ผิดรูป, route ที่โยน error)
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);   // สตรีมตอบไปแล้วครึ่งทาง (ขึ้นแอด) — ให้ Express ตัดการเชื่อมต่อเอง
+  const status = err.status || err.statusCode || (err.code === 'LIMIT_FILE_SIZE' ? 413 : 500);
+  if (status >= 500) console.error(`[${req.method} ${req.path}]`, err && err.stack ? err.stack : err);
+  res.status(status).json({ error: status === 413 ? 'ไฟล์ใหญ่เกินกำหนด — ย่อหรือตัดไฟล์ให้เล็กลงแล้วลองใหม่'
+    : status < 500 ? `คำขอไม่ถูกต้อง: ${err.message}` : `เซิร์ฟเวอร์ทำคำสั่งนี้ไม่สำเร็จ: ${err.message}` });
 });
 
 // สตาร์ทเซิร์ฟเวอร์เฉพาะตอนถูกรันตรงๆ (node server.js) — ถ้าถูก require เข้ามาให้เปิดฟังก์ชันภายในแทน
