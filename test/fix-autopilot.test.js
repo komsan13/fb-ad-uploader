@@ -237,6 +237,23 @@ suite('P0-3 ประวัติของแอดที่ยังค้า�
     assert.strictEqual((st.handled.B4 || {}).v, 'fixed', 'แอดที่เพิ่งโดนต้องถูกแก้ตามปกติ');
   });
 
+  test('ประวัติหายไปแล้ว (production): แอดที่เคยถูกแก้ (ชื่อมี "(แก้ข้อความ)") โดนปฏิเสธอีก = ตายถาวร ไม่แก้ซ้ำ', async (t) => {
+    // รีวิวรอบสุดท้ายวัดจริง: relaunch/retryOf บน production ว่าง → แอดรุ่น 2 ที่ยังยิงอยู่ถูกนับเป็นรุ่นแรก แล้วโดนแก้ซ้ำ
+    const ai = await makeFakeAi(TEXT_FIX);
+    const world = freshWorld({ ads: [rejected('Z2', 'หมวดใหม่', { name: 'แอด Z (แก้ข้อความ)' }), rejected('N1', 'หมวดใหม่')] });
+    const { base, dir } = await boot(t, {
+      world, ai,
+      config: baseConfig({ anthropicKey: 'sk-test', autopilot: { enabled: true, minAds: 0 } }),
+      state: { baselined: { [ACCT]: Date.now() - 3600e3 }, watched: { [ACCT]: Date.now() - 600e3 } },   // เฝ้าอยู่ปกติ — สองตัวนี้คือ "เพิ่งโดน"
+    });
+    await post(base, '/api/autopilot/run');
+    const st = readState(dir);
+    assert.strictEqual((st.handled.Z2 || {}).v, 'dead-after-retry', 'แอดรุ่น 2 ต้องตายถาวรตาม maxRelaunchPerAd=1');
+    assert.strictEqual((st.handled.N1 || {}).v, 'fixed', 'แอดปกติยังถูกแก้ตามเดิม');
+    const names = posts(world, `act_${ACCT}/ads`).map((c) => c.params.name);
+    assert.deepStrictEqual(names, ['แอด N1 (แก้ข้อความ)'], 'ห้ามมี "(แก้ข้อความ) (แก้ข้อความ)"');
+  });
+
   test('ประวัติของแอดที่ยังอยู่ต้องถูกต่ออายุ: สายที่ตายถาวรเมื่อ 61 วันก่อนห้ามถูกแก้ซ้ำ ส่วนแอดที่หายไปแล้วยังหมดอายุตามปกติ', async (t) => {
     const ai = await makeFakeAi(TEXT_FIX);
     const OLD = Date.now() - 61 * DAY;

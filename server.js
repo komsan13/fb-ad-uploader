@@ -3261,6 +3261,10 @@ async function aiDiagnoseRejection(apiKey, info) {
   catch { throw new Error('AI ตอบกลับผิดรูปแบบ'); }
 }
 
+// รุ่นของแอดนับจากชื่อ — ทุกครั้งที่ระบบขึ้นแอดใหม่แทนตัวที่โดนปฏิเสธ ชื่อจะได้ "(แก้ข้อความ)" หรือ "(สับคลิป)" ต่อท้าย
+const AP_RELAUNCH_TAG = /\((?:แก้ข้อความ|สับคลิป)\)/g;
+const apNameGen = (name) => (String(name || '').match(AP_RELAUNCH_TAG) || []).length;
+
 // สร้างแอดใหม่จากครีเอทีฟเดิม เปลี่ยนแค่ข้อความ
 // guard(ชื่อแอดใหม่) = ด่านสุดท้ายก่อน POST ads (แอดเปิดยิงจริง) — โยนเมื่อต้องหยุด ดูที่ autopilotTick
 async function apResubmit(acct, token, origCreative, adsetId, adName, newMessage, newHeadline, guard) {
@@ -4172,7 +4176,10 @@ async function autopilotTick(mode = 'full') {
         // นับสะสมข้ามรุ่น (แอดรุ่นที่ 2 รู้ว่าตัวเองเป็นรุ่นที่ 2) ไม่ใช่แค่ "เคยถูกแก้ไหม"
         // migration: state รุ่นก่อนมีแต่ retryOf (ไม่มีตัวนับ) — แอดที่เคยถูกแก้แล้วต้องนับเป็น 1
         // ไม่งั้นแอดที่เคย "ตายถาวร" ตามกติกาเดิมจะได้สิทธิ์ขึ้นใหม่คืนมาเงียบๆ ตอนอัปเดต
-        const relaunched = ((s.relaunch[ad.id] || {}).v) || (s.retryOf[ad.id] ? 1 : 0);
+        // ตาข่ายสุดท้าย: นับรุ่นจากชื่อแอดด้วย — apResubmit/apRelaunchNewVideo ต่อท้ายชื่อทุกครั้งที่ขึ้นใหม่
+        // ประวัติ relaunch/retryOf หายได้ (production 12 ต.ค. 2026: prune 60 วันจนว่างทั้งหมด) แล้วแอดที่แก้ไปแล้ว
+        // ยังยิงอยู่ พอโดนปฏิเสธอีกรอบจะถูกนับเป็นรุ่นแรก = แก้ซ้ำเกิน maxRelaunchPerAd (รีวิวรอบสุดท้ายวัดจริง)
+        const relaunched = Math.max(((s.relaunch[ad.id] || {}).v) || (s.retryOf[ad.id] ? 1 : 0), apNameGen(ad.name));
         if (relaunched >= apLim.maxRelaunchPerAd) {
           apMark(s.handled, ad.id, 'dead-after-retry');
           const m = `⛔ ${a.name}: "${ad.name}" ขึ้นใหม่ไปแล้ว ${relaunched}/${apLim.maxRelaunchPerAd} ครั้งยังโดนปฏิเสธอีก — หยุดถาวร ไม่ลองต่อ`;
@@ -4778,7 +4785,9 @@ function tgValidAction(cfg, a) {
 // นับบัญชีจาก FB จริงตอนเสนอ (ใช้งานได้ + ไม่ได้ซ่อน = บัญชีที่ autopilot เติมแอดให้ นับต่อโปรไฟล์แบบเดียวกับรอบตรวจ)
 // นับไม่ได้ (Meta สั่งพัก/อ่านไม่ได้) = บอกตรงๆ ว่าไม่รู้จำนวนบัญชี ไม่เดาเลข
 const tgMovesMoney = (a) => (a.type === 'autopilotEnabled' && a.on) || (a.type === 'testMode' && !a.on)
-  || (a.type === 'killSwitch' && !a.on) || a.type === 'setMinAds';
+  || (a.type === 'killSwitch' && !a.on) || a.type === 'setMinAds'
+  // รีวิวรอบสุดท้าย: เพดานขยายงบ, ปลด freeze, แก้เพดาน (เช่นเติมแอด/วัน) ก็ปล่อยเงินเพิ่มได้ — ต้องเห็นงบก่อนยืนยันเหมือนกัน
+  || a.type === 'setScaleMaxBudget' || a.type === 'unfreeze' || a.type === 'setLimit';
 async function tgSpendPlan(cfg, a) {
   const ap = cfg.autopilot || {};
   const hidden = (cfg.hidden || {}).accounts || {};
@@ -4795,7 +4804,7 @@ async function tgSpendPlan(cfg, a) {
     minAds: a.type === 'setMinAds' ? a.value : Number(ap.minAds) || 0,
     budget: Number((cfg.launchDefaults || {}).campaignBudget) || 0,
     accts: known ? accts : null,
-    scaleMax: Number(ap.scaleMaxBudget) || 0,
+    scaleMax: a.type === 'setScaleMaxBudget' ? Number(a.value) || 0 : Number(ap.scaleMaxBudget) || 0,
     // ยังไม่ใช้เงินจริงแม้ยืนยัน — บอกด้วย ไม่งั้นเจ้าของเห็นเลขแล้วตกใจผิดเรื่อง
     testMode: a.type === 'testMode' ? !!a.on : !!ap.testMode,
     enabled: a.type === 'autopilotEnabled' ? !!a.on : !!ap.enabled,
