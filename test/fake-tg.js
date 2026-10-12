@@ -3,7 +3,8 @@
 const http = require('http');
 
 function makeFakeTg() {
-  const state = { updates: [], sent: [], nextId: 1, polls: 0 };
+  // calls = method อื่นนอกจาก getUpdates/sendMessage (เช่น setMyCommands) พร้อม body
+  const state = { updates: [], sent: [], calls: [], nextId: 1, polls: 0 };
   const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', (c) => { body += c; });
@@ -20,6 +21,7 @@ function makeFakeTg() {
         try { state.sent.push(JSON.parse(body)); } catch { /* ข้าม */ }
         return send({ ok: true, result: { message_id: state.nextId } });
       }
+      try { state.calls.push({ method: u.pathname.split('/').pop(), body: JSON.parse(body || '{}') }); } catch { /* ข้าม */ }
       send({ ok: true, result: [] });
     });
   });

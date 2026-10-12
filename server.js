@@ -2570,7 +2570,8 @@ function tgChunks(text) {
   if (buf) chunks.push(buf);
   return chunks;
 }
-async function tgSend(cfg, text) {
+// html = ข้อความจัดรูปด้วย HTML ของ Telegram (ตาราง <pre>) — คนเรียกต้อง escape เองและส่งก้อนที่ไม่ถึงลิมิต
+async function tgSend(cfg, text, html = false) {
   const t = cfg.telegram || {};
   if (!t.botToken || !t.chatId) return false;
   const chunks = tgChunks(text);
@@ -2579,7 +2580,7 @@ async function tgSend(cfg, text) {
     try {
       const r = await fetch(`${TG_API}/bot${t.botToken}/sendMessage`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: t.chatId, text: chunk, disable_web_page_preview: true }),
+        body: JSON.stringify({ chat_id: t.chatId, text: chunk, disable_web_page_preview: true, ...(html ? { parse_mode: 'HTML' } : {}) }),
       });
       if (!(await r.json()).ok) allOk = false;
     } catch { allOk = false; }
@@ -4678,6 +4679,7 @@ let tgDrained = false;   // ข้อความที่ค้างระห�
 // เก็บในหน่วยความจำพอ: restart แล้วหาย = ต้องสั่งใหม่ ซึ่งปลอดภัยกว่าคำสั่งค้างเก่าโผล่มาทำงาน
 let tgPending = null;
 const TG_PENDING_MS = 10 * 60 * 1000;
+let tgMenuFor = '';   // บอท+คำสั่งที่ลงเมนูแล้ว (tgPollOnce)
 
 const TG_HELP = 'พิมพ์ได้:\n• "สรุป" หรือ "ใช้เงิน" — ยอดวันนี้\n• "เมื่อวาน" — ยอดเมื่อวาน\n• "7วัน" — ยอด 7 วันล่าสุด';
 
@@ -4693,6 +4695,150 @@ async function tgAnswer(cfg, text) {
   const { lines, totalLine, cooling } = await spendLines(cfg, preset);
   if (!lines.length) return cooling ? `💸 ${label}: ${SPEND_COOLING_NOTE}` : `💸 ${label}: ยังไม่มีการใช้จ่าย`;
   return `💸 ใช้เงิน${label}\n\n${lines.join('\n')}\n\nรวม: ${totalLine}${cooling ? `\n\n${SPEND_COOLING_NOTE}` : ''}`;
+}
+
+// ---------- คำสั่งเช็ค "/<โปรไฟล์>_check" เช่น /top_check (ผู้ใช้ขอ 12 ต.ค. 2026) — ตารางแคมเปญ ----------
+// ชื่อคำสั่งมาจากชื่อโปรไฟล์ใน workspaces.json • แต่ละโปรไฟล์ตอบเฉพาะของตัวเอง (ผู้ใช้เลือก — ไม่ข้ามไปอ่านโปรไฟล์อื่น)
+// Telegram รับชื่อคำสั่งแค่ a-z 0-9 _ ไม่เกิน 32 ตัว — รัน server.js เดี่ยว/ชื่อโปรไฟล์ไม่มีตัวอังกฤษ = /check
+function tgCheckCmd() {
+  const n = String((tgHubProfiles().find((w) => w.self) || {}).name || '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 26);
+  return n ? `${n}_check` : 'check';
+}
+// สถานะต่อแคมเปญอ่านจากแอดข้างใน — การโดนปฏิเสธ/รอตรวจเกิดที่ระดับแอด ไม่โผล่ในสถานะแคมเปญ
+const TG_CHECK_ICONS = { '🟢': 'ยิงอยู่', '⏳': 'รอตรวจ', '🔴': 'โดนปฏิเสธ', '⚠️': 'มีปัญหา', '⏸': 'ปิด/ไม่มีแอด', '🗑': 'ลบแล้ว (ใช้เงินวันนี้)' };
+function tgCheckIcon(sts) {
+  if (sts.includes('ACTIVE')) return '🟢';
+  if (sts.some((x) => x === 'PENDING_REVIEW' || x === 'IN_PROCESS' || x === 'PREAPPROVED')) return '⏳';
+  if (sts.includes('DISAPPROVED')) return '🔴';
+  if (sts.includes('WITH_ISSUES')) return '⚠️';
+  return '⏸';
+}
+// ตารางแคมเปญทุกบัญชีที่ใช้งานได้และไม่ได้ซ่อน (ชุดเดียวกับที่ autopilot ไล่) — ตัวเลขทุกตัวมาจาก FB ตรงๆ ไม่ผ่าน AI
+// ส่งเป็น <pre> ให้คอลัมน์ตรงกัน • คืนเป็นรายการข้อความ HTML ที่แต่ละก้อนปิดแท็กครบในตัว
+// (tgChunks ตัดตามบรรทัด ผ่ากลาง <pre> ได้ แล้ว Telegram ปฏิเสธทั้งก้อน)
+async function tgCheckTable(cfg) {
+  const esc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const wsName = (tgHubProfiles().find((w) => w.self) || {}).name || '';
+  const title = `📋 ${esc(wsName || 'แคมเปญ')} ณ ${new Date(Date.now() + 7 * 3600e3).toISOString().slice(11, 16)} น.`;
+  // Meta สั่งพัก = ไม่ยิง FB เลย (ยิงตอนพักต่อเวลาพักออกไปอีก — ดู tgContext)
+  if (fbHardCooling()) return [`${title}\n\n${SPEND_COOLING_NOTE}`];
+  const hidden = (cfg.hidden || {}).accounts || {};
+  const seen = new Set();          // บัญชีเดียวกันเห็นได้จากหลายล็อกอิน FB — ขึ้นแถวครั้งเดียว
+  const groups = [];
+  const spent = {}, budget = {};   // รวมแยกต่อสกุลเงิน — ต่างสกุลบวกกันตรงๆ ไม่ได้
+  let cooling = false, failed = 0, live = 0;
+  for (const prof of cfg.profiles || []) {
+    if (!prof.accessToken) continue;
+    if ((cooling = fbHardCooling())) break;
+    let accts;
+    try { accts = await fbAll('me/adaccounts', { fields: 'name,account_id,account_status,currency', limit: 100 }, prof.accessToken); }
+    catch { failed++; groups.push({ head: `${prof.label || prof.id} — ดึงรายชื่อบัญชีไม่ได้`, rows: [] }); continue; }
+    for (const a of accts) {
+      if (a.account_status !== 1 || hidden[a.account_id] || seen.has(a.account_id)) continue;
+      if ((cooling = fbHardCooling())) break;
+      seen.add(a.account_id);
+      const acct = `act_${a.account_id}`;
+      const tok = prof.accessToken;
+      const cur = String(a.currency || 'THB').toUpperCase();
+      const cf = curFactor(cur);
+      const head = cur === 'THB' ? a.name : `${a.name} (${cur})`;
+      let camps, ads, adsets, cins;
+      try {
+        [camps, ads, adsets, cins] = await Promise.all([
+          fbAll(`${acct}/campaigns`, { fields: 'id,name,objective,daily_budget', limit: 200 }, tok),
+          fbAll(`${acct}/ads`, { fields: 'campaign_id,effective_status', limit: 200 }, tok),
+          fbAll(`${acct}/adsets`, { fields: 'campaign_id,status,daily_budget,promoted_object', limit: 200 }, tok),
+          // ยอดรวมบวกจากตัวนี้ ไม่ใช้ insights ระดับบัญชี — สองระดับอัปเดตไม่พร้อมกัน (วัดจริง 12 ต.ค. 2026: sss3 5.64 vs 4.81,
+          // sss10 แถวรวม 2,128 แต่ระดับบัญชี 2,043) ยอดรวมจะไม่ตรงกับแถวในตาราง • ตัวนี้คืนแคมเปญที่ลบไปแล้วด้วย (วัดวันเดียวกัน)
+          fbAll(`${acct}/insights`, { level: 'campaign', fields: 'campaign_id,campaign_name,objective,spend,actions', date_preset: 'today', limit: 200 }, tok),
+        ]);
+      } catch {
+        // อ่านไม่ได้ต้องบอกตรงๆ — แถวหาย/โชว์ 0 คือโกหกว่าไม่ได้ใช้เงิน
+        failed++; groups.push({ head: `${head} — ดึงข้อมูลไม่ได้`, rows: [] }); continue;
+      }
+      const ins = Object.fromEntries(cins.map((r) => [r.campaign_id, r]));
+      // งบระดับชุดโฆษณา (แคมเปญที่ไม่ได้ตั้งงบที่แคมเปญ) นับเฉพาะชุดที่เปิดอยู่ + event คอนเวอร์ชั่นใช้เลือกว่า "ผล" คืออะไร
+      const asBudget = {}, asEvent = {};
+      for (const s of adsets) {
+        if (s.daily_budget && s.status === 'ACTIVE') asBudget[s.campaign_id] = (asBudget[s.campaign_id] || 0) + Number(s.daily_budget);
+        const ev = s.promoted_object && s.promoted_object.custom_event_type;
+        if (ev && !asEvent[s.campaign_id]) asEvent[s.campaign_id] = ev;
+      }
+      const adSt = {};
+      for (const x of ads) (adSt[x.campaign_id] = adSt[x.campaign_id] || []).push(x.effective_status);
+      // ชื่อตามมาตรฐาน "<โปรไฟล์> <บัญชี> <ช่อง>" — หัวกลุ่มบอกบัญชีแล้ว แถวเหลือแค่ช่อง (ชื่อแบบอื่นโชว์เต็ม)
+      const prefix = `${apNameBase(a.name)} `;
+      const short = (n) => (n.startsWith(prefix) ? n.slice(prefix.length) : n);
+      // รู้ว่า "ผล" คืออะไรแต่ไม่มี action วันนี้ = 0 ผล • ไม่รู้ (วัตถุประสงค์อื่น) = "-"
+      const results = (spec, actions) => (spec ? pickResult(spec, actions) || 0 : null);
+      const byName = (x, y) => x.name.localeCompare(y.name, undefined, { numeric: true });
+      const rows = camps.map((c) => {
+        const r = ins[c.id] || {};
+        const spend = Number(r.spend) || 0;
+        const res = results(resultSpec(c.objective, asEvent[c.id]), r.actions);
+        const icon = tgCheckIcon(adSt[c.id] || []);
+        const b = (c.daily_budget ? Number(c.daily_budget) : (asBudget[c.id] || 0)) / cf;
+        if (icon === '🟢' || icon === '⏳') { budget[cur] = (budget[cur] || 0) + b; live++; }
+        return { name: short(c.name), b, spend, res, icon, cf };
+      }).sort(byName);
+      // แคมเปญที่ลบ/เก็บไปแล้ว (/campaigns ไม่คืน) แต่วันนี้ใช้เงินไปแล้ว — insights รายแคมเปญยังคืนมา (วัดจริง 12 ต.ค. 2026:
+      // แคมเปญ DELETED ของ Gosss 2/2 ใช้ 2,349.85 บาทก่อนถูกลบ) ไม่โชว์ = ยอดรวมสูงกว่าแถวในตารางโดยไม่มีที่มา
+      // แยกเป็นบรรทัดอิสระใต้ตาราง ไม่ใช่แถว — ชื่อรุ่นเก่ายาว ("Autopilot 2026-10-12") ดันคอลัมน์จนเกินจอมือถือ
+      const listed = new Set(camps.map((c) => c.id));
+      const gone = cins.filter((r) => !listed.has(r.campaign_id) && Number(r.spend) > 0).map((r) => ({
+        name: short(String(r.campaign_name || r.campaign_id)), spend: Number(r.spend),
+        res: results(resultSpec(r.objective, asEvent[r.campaign_id]), r.actions),
+      })).sort(byName);
+      spent[cur] = (spent[cur] || 0) + cins.reduce((n, r) => n + (Number(r.spend) || 0), 0);
+      groups.push({ head: rows.length || gone.length ? head : `${head} — ยังไม่มีแคมเปญ`, rows, gone, cf });
+    }
+  }
+  if (!groups.length) return [`${title}\n\n${cooling ? SPEND_COOLING_NOTE : 'ไม่มีบัญชีโฆษณาที่ใช้งานได้'}`];
+
+  // ความกว้างที่ตาเห็น: สระบน/ล่างและวรรณยุกต์ไทยซ้อนบนตัวอักษร ไม่กินช่อง
+  const tw = (s) => String(s).replace(/[ัิ-ฺ็-๎]/g, '').length;
+  const padL = (s, w) => ' '.repeat(Math.max(0, w - tw(s))) + s;
+  const padR = (s, w) => s + ' '.repeat(Math.max(0, w - tw(s)));
+  const num = (v, cf) => (v ? Number(v).toLocaleString('en-US', { maximumFractionDigits: cf === 1 || v >= 100 ? 0 : 2 }) : '0');
+  const cut = (s) => (s.length > 16 ? `${s.slice(0, 15)}…` : s);   // ชื่อแคมเปญตั้งมือยาวๆ ห้ามดันตารางเกินจอ
+  const cells = groups.flatMap((g) => g.rows).map((r) => [
+    `  ${cut(r.name)}`, r.b ? num(r.b, r.cf) : '-', num(r.spend, r.cf), r.res == null ? '-' : String(r.res),
+    r.res > 0 ? num(r.spend / r.res, r.cf) : '-', r.icon,
+  ]);
+  const hdr = ['แคมเปญ', 'งบ/วัน', 'ใช้', 'ผล', 'ต่อผล'];
+  const w = hdr.map((h, i) => Math.max(tw(h), ...cells.map((c) => tw(c[i]))));
+  const line = (c) => [padR(c[0], w[0]), ...c.slice(1, 5).map((x, i) => padL(x, w[i + 1])), ...(c[5] ? [c[5]] : [])].join(' ').trimEnd();
+  const lines = [];
+  let k = 0;
+  for (const g of groups) {
+    lines.push(g.head);
+    for (let i = 0; i < g.rows.length; i++) lines.push(line(cells[k++]));
+    for (const x of g.gone || []) lines.push(`  🗑 ${x.name} ใช้ ${num(x.spend, g.cf)}${x.res ? ` ผล ${x.res}` : ''}`);
+  }
+
+  const used = Object.keys(TG_CHECK_ICONS).filter((ic) => (ic === '🗑' ? groups.some((g) => (g.gone || []).length) : cells.some((c) => c[5] === ic)));
+  const sum = (o) => Object.entries(o).map(([c, v]) => moneyText(v, c)).join(' + ') || '0 บาท';
+  const footer = [
+    used.map((ic) => `${ic} ${TG_CHECK_ICONS[ic]}`).join('  '),
+    `ใช้วันนี้รวม ${sum(spent)} • งบรวม ${sum(budget)}/วัน (${live} แคมเปญที่ยิงอยู่/รอตรวจ)`,
+    ...(failed ? [`⚠️ ดึงไม่ได้ ${failed} รายการ — ยอดรวมยังไม่ครบ`] : []),
+    ...(cooling ? [SPEND_COOLING_NOTE] : []),
+  ].filter(Boolean).join('\n');
+
+  // แบ่งข้อความตามบรรทัดของตาราง — แต่ละก้อนต้องมีหัวตารางและปิด </pre> ในตัว
+  const hdrLine = line(hdr);
+  const msgs = [[]];
+  for (const l of lines) {
+    const curMsg = msgs[msgs.length - 1];
+    if (curMsg.length && [hdrLine, ...curMsg, l].join('\n').length > 3000) msgs.push([]);
+    msgs[msgs.length - 1].push(l);
+  }
+  return msgs.map((ls, i) => [
+    ...(i ? [] : [title]),
+    `<pre>${esc([hdrLine, ...ls].join('\n'))}</pre>`,
+    ...(i === msgs.length - 1 ? [esc(footer)] : []),
+  ].join('\n'));
 }
 
 // ---------- ข้อมูลครบชุดสำหรับ AI — ต่อบัญชี ต่อแคมเปญ พร้อม id ที่ใช้สั่งงานได้ ----------
@@ -5017,6 +5163,18 @@ async function tgPollOnce() {
   const cfg = loadConfig();
   const t = cfg.telegram || {};
   if (!t.botToken || !t.chatId) return 60 * 1000;    // ยังไม่ตั้งค่า — เช็คใหม่ทุกนาที
+  // ลงคำสั่งเช็คในเมนู "/" ของบอท — ครั้งเดียวต่อบอท+ชื่อคำสั่ง พลาดก็พิมพ์เองได้ ไม่ลองซ้ำทุกรอบ
+  // อยู่หลังเกราะบอทซ้ำ (startTgPolling) = เฉพาะโปรไฟล์ที่รับคำสั่งของบอทนี้จริงเท่านั้นที่ลงเมนู
+  const menu = `${t.botToken}|${tgCheckCmd()}`;
+  if (tgMenuFor !== menu) {
+    tgMenuFor = menu;
+    try {
+      await fetch(`${TG_API}/bot${t.botToken}/setMyCommands`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commands: [{ command: tgCheckCmd(), description: 'ตารางแคมเปญ' }] }),
+      });
+    } catch { /* ไม่มีเมนูก็ยังพิมพ์คำสั่งได้ */ }
+  }
   let j;
   try {
     // รอบทิ้งของค้างตอนบูตต้องไม่รอ (timeout=0) — เดิมใช้ long poll 25 วิ ข้อความที่เจ้าของพิมพ์ในช่วงนั้น
@@ -5069,6 +5227,25 @@ async function tgPollOnce() {
     // ข้อความใหม่ใดๆ ล้างข้อเสนอเก่าทิ้งเสมอ — "ยืนยัน" ต้องตามข้อเสนอติดกันเท่านั้น
     // ไม่งั้นสั่ง A ไว้ คุยเรื่องอื่นไปสามข้อความ แล้วพิมพ์ยืนยัน = ได้ A ที่ลืมไปแล้ว
     tgPending = null;
+    // คำสั่งเช็คตาราง — ไม่ผ่าน AI: ตัวเลขมาจาก FB ตรงๆ ไม่มีอะไรถูกแต่ง • "@top_check" (ที่ผู้ใช้พิมพ์) ก็รับ
+    // คำสั่ง _check ของโปรไฟล์อื่น = บอกทาง ไม่ส่งเข้า AI (บอทนี้ไม่อ่านข้อมูลโปรไฟล์อื่น)
+    const cmd = ((/^[/@]?([a-z0-9_]+)(?:@\w+)?$/i.exec(text) || [])[1] || '').toLowerCase();
+    if (/(^|_)check$/.test(cmd)) {
+      const mine = tgCheckCmd();
+      if (cmd !== mine) {
+        try { await tgSend(cfg, `บอทนี้ดูได้เฉพาะโปรไฟล์ของตัวเอง — พิมพ์ /${mine}`); } catch { /* ข้าม */ }
+        continue;
+      }
+      try { await tgSend(cfg, '⏳ รับทราบครับ กำลังดึงข้อมูล รอสักครู่...'); } catch { /* ไม่ใช่เหตุให้ไม่ตอบ */ }
+      try {
+        for (const m of await tgCheckTable(cfg)) {
+          if (!(await tgSend(cfg, m, true))) await tgSend(cfg, '❌ ส่งตารางไม่สำเร็จ — ลองพิมพ์ใหม่อีกครั้งครับ');
+        }
+      } catch (e) {
+        try { await tgSend(cfg, `❌ ดึงตารางไม่สำเร็จ: ${e.message}`); } catch { /* ข้าม */ }
+      }
+      continue;
+    }
     // บอกให้รู้ว่าได้ยินแล้วก่อน — ดึงข้อมูล+เรียก AI ใช้เวลาหลายวินาที เงียบไปเฉยๆ เหมือนบอทตาย
     try { await tgSend(cfg, '⏳ รับทราบครับ กำลังดึงข้อมูล รอสักครู่...'); } catch { /* ไม่ใช่เหตุให้ไม่ตอบ */ }
     // AI เป็นตัวหลัก — ล่ม/ไม่มี key ค่อยตกไป keyword fallback อย่างน้อยยอดหลักต้องตอบได้เสมอ

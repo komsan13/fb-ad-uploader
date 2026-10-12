@@ -2,6 +2,8 @@
 // ยืนยันทั้งเส้น: ข้อความเข้า getUpdates → ดึงยอดจริงจาก FB → AI ได้ข้อมูลจริง → คำตอบกลับเข้าแชท
 const { test, describe } = require('node:test');
 const assert = require('node:assert');
+const fs = require('node:fs');
+const path = require('node:path');
 const { makeFakeFb } = require('./fake-fb');
 const { makeFakeTg, makeFakeAi } = require('./fake-tg');
 const { tmpDir, seed, startServer } = require('./helpers');
@@ -25,7 +27,7 @@ const config = (extra = {}) => ({
   ...extra,
 });
 
-async function bootTg(t, { cfg = config(), aiAnswer = 'คำตอบจาก AI', fbWorld = world() } = {}) {
+async function bootTg(t, { cfg = config(), aiAnswer = 'คำตอบจาก AI', fbWorld = world(), env = {} } = {}) {
   const fb = await makeFakeFb(fbWorld);
   const tg = await makeFakeTg();
   const ai = await makeFakeAi(aiAnswer);
@@ -35,6 +37,7 @@ async function bootTg(t, { cfg = config(), aiAnswer = 'คำตอบจาก 
     TG_API_BASE: `http://127.0.0.1:${tg.port}`,
     ANTHROPIC_BASE_URL: `http://127.0.0.1:${ai.port}`,
     ANTHROPIC_API_KEY: '',                             // คุมทาง AI ด้วย config เท่านั้น
+    ...env,
   });
   t.after(() => { srv.stop(); fb.server.close(); tg.server.close(); ai.server.close(); });
   return { srv: { ...srv, fbWorld: fb.world }, tg, ai };
@@ -361,5 +364,97 @@ describe('รูที่รีวิวเจอ — เส้นเงิน�
     const st = await (await fetch(srv.base + '/api/autopilot')).json();
     assert.strictEqual(st.limits.maxFixPerDay, 20, 'เพดานต้องเปลี่ยนจริง');
     assert.strictEqual(st.enabled, true, 'ระบบที่เปิดอยู่ต้องยังเปิด — แก้เพดานห้ามพ่วงปิดระบบ');
+  });
+});
+
+describe('คำสั่งเช็คตารางแคมเปญ "/<โปรไฟล์>_check" (ผู้ใช้ขอ 12 ต.ค. 2026)', () => {
+  // บัญชีที่ใช้ได้ 1 + บัญชีที่ผู้ใช้ซ่อนไว้ 1 • แคมเปญตามมาตรฐานชื่อ 2 ตัว (ยิงอยู่/โดนปฏิเสธ) + แคมเปญตั้งมือ งบที่ชุดโฆษณา
+  const checkWorld = (prefix) => ({
+    accounts: [
+      { name: 'บัญชีเทส', account_id: ACCT, account_status: 1, currency: 'THB' },
+      { name: 'บัญชีซ่อน', account_id: '222', account_status: 1, currency: 'THB' },
+    ],
+    campaigns: [
+      { id: 'C2', acct: ACCT, name: `${prefix}บัญชีเทส 2/2`, objective: 'OUTCOME_SALES', daily_budget: '177700' },
+      { id: 'C1', acct: ACCT, name: `${prefix}บัญชีเทส 1/2`, objective: 'OUTCOME_SALES', daily_budget: '177700' },
+      { id: 'C3', acct: ACCT, name: '<b>แคมป์มือ</b>', objective: 'OUTCOME_SALES' },
+      { id: 'C9', acct: '222', name: 'ของบัญชีซ่อน', objective: 'OUTCOME_SALES', daily_budget: '100000' },
+    ],
+    ads: [
+      { id: 'A1', acct: ACCT, campaign_id: 'C1', effective_status: 'ACTIVE' },
+      { id: 'A2', acct: ACCT, campaign_id: 'C2', effective_status: 'DISAPPROVED' },
+      { id: 'A3', acct: ACCT, campaign_id: 'C3', effective_status: 'PENDING_REVIEW' },
+    ],
+    adsets: [{ id: 'S3', acct: ACCT, campaign_id: 'C3', status: 'ACTIVE', daily_budget: '50000', promoted_object: { custom_event_type: 'SUBSCRIBE' } }],
+    // insights รายแคมเปญ • C7 = แคมเปญที่ลบไปแล้ว (/campaigns ไม่คืน) แต่วันนี้ใช้เงินไปแล้ว — ของจริงที่เจอบน Gosss 2/2
+    insights: [
+      { acct: ACCT, campaign_id: 'C1', spend: '523.4', actions: [{ action_type: 'offsite_conversion.fb_pixel_custom', value: '4' }] },
+      { acct: ACCT, campaign_id: 'C7', campaign_name: 'Autopilot 2026-10-12', objective: 'OUTCOME_SALES', spend: '350', actions: [{ action_type: 'offsite_conversion.fb_pixel_custom', value: '2' }] },
+    ],
+    pixels: [{ id: 'px1' }],
+  });
+  const cfgCheck = () => config({ anthropicKey: 'sk-test', hidden: { accounts: { 222: true } } });
+  const tables = (tg) => tg.state.sent.filter((m) => m.parse_mode === 'HTML');
+
+  test('/check ได้ตารางจาก FB ตรงๆ ไม่ผ่าน AI ไม่เขียนอะไรลง FB และไม่รวมบัญชีที่ซ่อน', async (t) => {
+    const { tg, ai, srv } = await bootTg(t, { cfg: cfgCheck(), fbWorld: checkWorld('') });
+    await until(() => tg.state.polls >= 1);
+    tg.push(CHAT, '/check');
+    await until(() => tables(tg).length >= 1, 20000, 'ต้องได้ตาราง');
+    const msg = tables(tg)[0].text;
+
+    assert.match(msg, /<pre>[\s\S]*<\/pre>/, 'ตารางต้องอยู่ใน <pre> ให้คอลัมน์ตรงกัน');
+    assert.match(msg, /^บัญชีเทส$/m, 'หัวกลุ่ม = ชื่อบัญชี');
+    // ชื่อมาตรฐานตัดส่วนบัญชีทิ้ง เหลือช่อง • งบ 177700 สตางค์ = 1,777 บาท • ผล 4 → ต่อผล 523.4/4 = 131
+    assert.match(msg, /^ +1\/2 +1,777 +523 +4 +131 🟢$/m);
+    assert.match(msg, /^ +2\/2 +1,777 +0 +0 +- 🔴$/m, 'ไม่มีข้อมูลวันนี้ = ใช้ 0 ผล 0 ไม่ใช่แถวหาย');
+    assert.ok(msg.indexOf(' 1/2 ') < msg.indexOf(' 2/2 '), 'เรียงตามช่อง ไม่ใช่ตามลำดับที่ FB ส่งมา');
+    assert.match(msg, /^ +&lt;b&gt;แคมป์มือ&lt;\/b&gt; +500 +0 +0 +- ⏳$/m, 'ชื่อที่มี < > ต้อง escape และงบที่ชุดโฆษณาต้องนับ');
+    assert.match(msg, /^ {2}🗑 Autopilot 2026-10-12 ใช้ 350 ผล 2(<\/pre>)?$/m, 'แคมเปญที่ลบแล้วแต่ใช้เงินวันนี้ต้องโผล่ ไม่งั้นยอดรวมไม่มีที่มา');
+    assert.match(msg, /🗑 ลบแล้ว/);
+    assert.ok(!/บัญชีซ่อน|ของบัญชีซ่อน/.test(msg), 'บัญชีที่ผู้ใช้ซ่อนต้องไม่ขึ้น (ชุดเดียวกับที่ autopilot ไล่)');
+    assert.match(msg, /🟢 ยิงอยู่ {2}⏳ รอตรวจ {2}🔴 โดนปฏิเสธ/, 'คำอธิบายสัญลักษณ์เฉพาะตัวที่ใช้');
+    assert.ok(!/มีปัญหา/.test(msg));
+    assert.match(msg, /ใช้วันนี้รวม 873\.4 บาท • งบรวม 2,277 บาท\/วัน \(2 แคมเปญที่ยิงอยู่\/รอตรวจ\)/,
+      'ยอดรวม = ทุกแถวรวมตัวที่ลบแล้ว (ตรงกับตาราง) • งบรวมเฉพาะตัวที่ใช้เงินได้ (ไม่นับตัวที่โดนปฏิเสธ)');
+
+    assert.strictEqual(ai.state.requests.length, 0, 'คำสั่งเช็คต้องไม่เรียก AI');
+    assert.deepStrictEqual(srv.fbWorld.calls.filter((c) => c.method !== 'GET'), [], 'เช็คอย่างเดียว ห้ามเขียน FB');
+    assert.deepStrictEqual(tg.state.calls.find((c) => c.method === 'setMyCommands').body.commands.map((c) => c.command), ['check']);
+  });
+
+  test('ใต้ hub: /top_check ของโปรไฟล์ตัวเองตอบ — /jub_check บอกทาง ไม่อ่านข้อมูลข้ามโปรไฟล์ ไม่ส่งเข้า AI', async (t) => {
+    const root = tmpDir();
+    fs.writeFileSync(path.join(root, 'workspaces.json'), JSON.stringify({ list: [{ id: 'top', name: 'TOP' }, { id: 'p62', name: 'JUB' }] }));
+    const { tg, ai } = await bootTg(t, {
+      cfg: cfgCheck(), fbWorld: checkWorld('TOP '),
+      env: { WS_ID: 'top', HUB_ROOT_CONFIG: path.join(root, 'config.json') },
+    });
+    await until(() => tg.state.polls >= 1);
+    assert.deepStrictEqual(tg.state.calls.find((c) => c.method === 'setMyCommands').body.commands.map((c) => c.command), ['top_check'],
+      'ลงเมนู "/" ด้วยชื่อคำสั่งของโปรไฟล์');
+
+    tg.push(CHAT, '/jub_check');
+    await until(() => tg.state.sent.length >= 1);
+    assert.match(tg.state.sent[0].text, /\/top_check/, 'คำสั่งของโปรไฟล์อื่นต้องบอกคำสั่งที่ถูก');
+
+    tg.push(CHAT, '@top_check');   // แบบที่ผู้ใช้พิมพ์
+    await until(() => tables(tg).length >= 1, 20000, '@top_check ต้องได้ตาราง');
+    const msg = tables(tg)[0].text;
+    assert.match(msg, /^📋 TOP ณ \d\d:\d\d น\.$/m);
+    assert.match(msg, /^ +1\/2 +1,777 +523 +4 +131 🟢$/m, 'ตัด "TOP บัญชีเทส " ทิ้ง เหลือช่อง');
+    assert.strictEqual(ai.state.requests.length, 0);
+  });
+
+  test('บัญชีที่อ่านไม่ได้ต้องบอกตรงๆ ไม่ใช่หายไปหรือโชว์ใช้ 0', async (t) => {
+    const w = checkWorld('');
+    w.route = (method, p) => (method === 'GET' && p === `act_${ACCT}/ads` ? { error: 'จำลอง FB พัง' } : null);
+    const { tg } = await bootTg(t, { cfg: cfgCheck(), fbWorld: w });
+    await until(() => tg.state.polls >= 1);
+    tg.push(CHAT, '/check');
+    await until(() => tables(tg).length >= 1, 30000, 'ต้องได้ข้อความตาราง');
+    const msg = tables(tg)[0].text;
+    assert.match(msg, /บัญชีเทส — ดึงข้อมูลไม่ได้/);
+    assert.match(msg, /ดึงไม่ได้ 1 รายการ — ยอดรวมยังไม่ครบ/);
   });
 });
