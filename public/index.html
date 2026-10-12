@@ -2629,6 +2629,11 @@ function renderDashboard(results) {
   document.getElementById('dCpr').textContent = (oneCur && !totRes.mixed && totRes.n > 0) ? money(oneCur, totRes.spend / totRes.n) : '—';
   document.getElementById('dCprSub').textContent = !oneCur ? 'หลายสกุลเงิน — ดูรายบัญชีแทน'
     : totRes.mixed ? 'ผลลัพธ์หลายประเภท — ดูรายแคมเปญแทน' : 'ใช้จ่าย ÷ ผลลัพธ์รวม';
+  // โหลดไม่ได้สักบัญชี (เช่น Meta สั่งพัก) — เดิมการ์ดสรุปโชว์ ฿0.00 / 0 แคมเปญ ข้างแถว error ดูเหมือน "ไม่ได้ใช้เงินเลย"
+  if (!ok.length && errs.length) {
+    for (const id of ['dSpend', 'dResults', 'dActive', 'dCpr']) document.getElementById(id).textContent = '—';
+    for (const id of ['dResultsSub', 'dActiveSub', 'dCprSub']) document.getElementById(id).textContent = 'โหลดข้อมูลไม่ได้ — ดูสาเหตุในตารางด้านล่าง';
+  }
 
   // ตารางรายบัญชี (เรียงตามใช้จ่ายมาก → น้อย เทียบเป็นบาท)
   dashEnsureFx(curs, results);
@@ -2854,7 +2859,9 @@ function renderHealthPage(results) {
   });
   document.getElementById('healthAcctRows').innerHTML = errHtml.join('') + (acctHtml.join('') || '<tr><td colspan="5" class="tbl-msg">ไม่พบบัญชีโฆษณา</td></tr>');
   document.getElementById('healthAcctSub').textContent = `— ทั้งหมด ${rows.length} บัญชี`
-    + (nHiddenAcct ? ` • ซ่อนไว้ ${nHiddenAcct}` : '') + (nFix ? ` • ต้องแก้ ${nFix}` : ' • ครบทุกตัว ✓');
+    + (nHiddenAcct ? ` • ซ่อนไว้ ${nHiddenAcct}` : '')
+    // โหลดบางโปรไฟล์ไม่ได้ = ห้ามบอก "ครบทุกตัว ✓" (เดิมช่วง Meta สั่งพักขึ้น "ทั้งหมด 0 บัญชี • ครบทุกตัว ✓")
+    + (nFix ? ` • ต้องแก้ ${nFix}` : errHtml.length ? ` • โหลดไม่ได้ ${errHtml.length} โปรไฟล์` : ' • ครบทุกตัว ✓');
 
   // เพจ — ใช้ได้ขึ้นก่อน เพจบินจางลง ที่ซ่อนไว้ท้ายสุด (เพจซ้ำข้าม profile โชว์ครั้งเดียว)
   const seen = new Set();
@@ -2941,8 +2948,8 @@ async function loadFullAccounts(force) {
   for (const p of profiles.filter(x => x.hasToken)) {
     if (!fullAccountCache[p.id] || force) {
       try {
-        const d = await (await fetch(`/api/accounts?full=1&profile=${p.id}&_=${Date.now()}`, { cache: 'no-store' })).json();
-        if (d.error) { out.push({ pid: p.id, label: p.label, error: d.error }); continue; }
+        // apiJson: 503 ช่วง Meta สั่งพัก / หน้า HTML จากตัวกลาง = ข้อความอ่านรู้เรื่อง ไม่ใช่ "Unexpected token"
+        const d = await apiJson(`/api/accounts?full=1&profile=${p.id}&_=${Date.now()}`, { cache: 'no-store' });
         fullAccountCache[p.id] = d;
       } catch (e) { out.push({ pid: p.id, label: p.label, error: e.message }); continue; }
     }
@@ -2981,13 +2988,18 @@ function evalReady(acc) {
 // ---------- หน้าขึ้นแอด: ขั้นตอน 4 เลือกบัญชี ----------
 let launchAccountsBuilt = false;
 let launchAccounts = [];
+let launchAccountErrs = [];   // โปรไฟล์ที่โหลดบัญชีไม่ได้ — แยกออกมาโชว์เป็นข้อความ ไม่ใช่วาดเป็น "บัญชี undefined"
 async function loadLaunchAccounts(force) {
   const el = document.getElementById('launchAccounts');
   if (!profiles.some(p => p.hasToken)) { el.innerHTML = '<span class="hint">เพิ่มบัญชีในเมนู "บัญชี FB" ก่อน</span>'; return; }
   if (launchAccountsBuilt && !force) { renderLaunchAccounts(); return; }
   el.innerHTML = '<span class="hint"><span class="spin"></span> กำลังโหลดบัญชี + ตรวจ Pixel/บัตร...</span>';
-  launchAccounts = await loadFullAccounts(force);
-  launchAccountsBuilt = true;
+  // รีวิวรอบสุดท้าย (เบราว์เซอร์จริง): รายการ error ปนเข้า launchAccounts แล้วถูกวาดเป็นกลุ่ม "undefined"
+  // บัญชี "undefined" ที่ติ๊กไม่ได้ พร้อมเหตุผลผิดๆ (ไม่มีบัตร/ไม่มีเพจ) — ข้อความจริง (เช่น Meta สั่งพัก) ไม่โผล่เลย
+  const all = await loadFullAccounts(force);
+  launchAccountErrs = all.filter(a => a.error);
+  launchAccounts = all.filter(a => !a.error);
+  launchAccountsBuilt = !launchAccountErrs.length;   // โหลดพลาด = เปิดหน้าต่างรอบหน้าลองโหลดใหม่ ไม่ค้างข้อความเดิม
   renderLaunchAccounts();
 }
 function renderLaunchAccounts() {
@@ -3042,7 +3054,9 @@ function renderLaunchAccounts() {
   // ตัวที่ scroll จริงคือ .camp-side ที่ครอบอยู่ (overflow-y:auto) ไม่ใช่ #launchAccounts เอง
   const scroller = el.closest('.camp-side') || el;
   const scroll = scroller.scrollTop;
-  el.innerHTML = html || '<span class="hint">ไม่พบบัญชีโฆษณา</span>';
+  const errHtml = launchAccountErrs.map(e =>
+    `<div class="hint" style="color:var(--red);margin-bottom:6px">${ic('warn')} โหลดบัญชีของ "${esc(e.label)}" ไม่ได้: ${esc(e.error)}</div>`).join('');
+  el.innerHTML = errHtml + (html || (errHtml ? '' : '<span class="hint">ไม่พบบัญชีโฆษณา</span>'));
   scroller.scrollTop = scroll;
   document.getElementById('launchAcctSummary').textContent = `พร้อม ${readyCount}/${launchAccounts.length} บัญชี`;
   ensureFxRates();

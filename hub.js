@@ -228,7 +228,10 @@ const isPageReq = (req, url) => (req.method === 'GET' || req.method === 'HEAD') 
 const LOADING_HTML = '<!doctype html><html lang="th"><head><meta charset="utf-8">'
   + '<meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="3">'
   + '<title>กำลังโหลด</title></head><body style="font-family:sans-serif;text-align:center;padding:64px 16px;color:#444">'
-  + '<p style="font-size:18px">กำลังโหลด กรุณารีเฟรช</p><p style="color:#999;font-size:14px">หน้านี้จะลองใหม่เองในไม่กี่วินาที</p></body></html>';
+  + '<p style="font-size:18px">กำลังโหลด กรุณารีเฟรช</p><p style="color:#999;font-size:14px">หน้านี้จะลองใหม่เองในไม่กี่วินาที</p>'
+  // meta refresh ไปที่อยู่เดิมที่มี #page (หน้าแอดมินมี # เสมอ) เบราว์เซอร์ถือเป็นการเลื่อนในหน้า ไม่โหลดใหม่ — ค้างหน้านี้
+  // จนกด F5 เอง (ทดสอบในเบราว์เซอร์จริง: /#dashboard ค้าง ส่วน / กับ /lp กลับมาเอง) → สั่ง reload ตรงๆ ด้วย JS
+  + '<script>setTimeout(function () { location.reload(); }, 3000);</script></body></html>';
 function sendUnavailable(req, res, url, code, error) {
   if (!isPageReq(req, url)) return sendJson(res, code, { error }, { 'retry-after': '3' });
   res.writeHead(code, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'retry-after': '3' });

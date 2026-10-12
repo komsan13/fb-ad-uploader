@@ -253,7 +253,10 @@ async function fb(pathname, params, method, token, attempt = 0) {
       await new Promise((r) => setTimeout(r, (attempt + 1) * 5000));
       return fb(pathname, params, method, token, attempt + 1);
     }
-    throw new Error(`เชื่อมต่อ FB ไม่สำเร็จ: ${err.message} — กดขึ้นอีกครั้งได้เลย (ตัวที่สำเร็จแล้วไม่ขึ้นซ้ำ)`);
+    // คำแนะนำเดิม "กดขึ้นอีกครั้งได้เลย" ติดไปกับทุกคำสั่ง (เช่นสวิตช์เปิด/ปิดแคมเปญ) และไม่จริงสำหรับ POST:
+    // สายหลุดหลัง FB รับไปแล้ว = ของอาจถูกสร้าง/แก้ไปแล้ว ต้องดูใน Ads Manager ก่อนกดซ้ำ
+    throw new Error(`เชื่อมต่อ FB ไม่สำเร็จ: ${err.message}${method === 'GET' ? ' — ลองใหม่อีกครั้ง'
+      : ' — FB อาจรับคำสั่งไปแล้ว เช็คใน Ads Manager ก่อนกดซ้ำ'}`);
   }
   if (json.error) {
     const e = json.error;

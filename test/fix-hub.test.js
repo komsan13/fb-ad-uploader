@@ -153,6 +153,8 @@ test('หน้า Landing ตอนโปรไฟล์ยังไม่พ�
   const body = await lp.text();
   assert.ok(body.includes('กำลังโหลด กรุณารีเฟรช'));
   assert.match(body, /http-equiv="refresh"/);
+  // หน้าแอดมินมี #page เสมอ — meta refresh ไปที่อยู่เดิม + # ไม่โหลดใหม่ (วัดในเบราว์เซอร์จริง) ต้องมี reload ด้วย JS
+  assert.match(body, /location\.reload\(\)/);
   const api = await fetch(`${h.base}/w/pboot/api/landing`, { headers: { accept: 'text/html' } });
   assert.strictEqual(api.status, 503);
   assert.match(api.headers.get('content-type'), /application\/json/);
