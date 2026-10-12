@@ -420,16 +420,57 @@ app.post('/api/media', uploadDisk.single('file'), (req, res) => {
   res.json({ id });
 });
 
+// ---------- ไฟล์รายการของคลัง (index.json ของคลังวิดีโอ / captions.json) ----------
+// "ไม่มีไฟล์" = คลังว่างจริง แต่ "ไฟล์เสีย" (เขียนค้างครึ่งทางตอนดิสก์เต็ม/โดน kill) ไม่ใช่คลังว่าง
+// เดิมคืน [] ทั้งสองแบบ แล้วการบันทึกครั้งถัดไปเขียนรายการเกือบว่างทับ = คลังหายทั้งคลังเงียบๆ
+// (วัดจริง: ตัด index.json ครึ่งไฟล์ → อัปคลิปใหม่หนึ่งตัว → เหลือในคลังตัวเดียว ไฟล์วิดีโอเดิมค้างไม่มีใครอ้างถึง)
+// เจอไฟล์เสีย = สำเนาเก็บไว้ข้างๆ (ชุดละครั้ง ตาม mtime) แล้วโยน error ให้ฝั่งที่จะเขียนหยุด
+// สำเนาไฟล์เสียเก็บไว้ข้างๆ ชุดละครั้ง (ชื่อตาม mtime — อ่านซ้ำกี่รอบก็ไม่สำเนาซ้ำ) คืนชื่อสำเนา
+function keepCorrupt(file) {
+  try {
+    const keep = `${file}.corrupt-${Math.floor(fs.statSync(file).mtimeMs)}`;
+    if (!fs.existsSync(keep)) fs.copyFileSync(file, keep);
+    return path.basename(keep);
+  } catch { return ''; }
+}
+const warnedOnce = new Set();
+function warnOnce(msg) { if (!warnedOnce.has(msg)) { warnedOnce.add(msg); console.error(msg); } }
+function listRead(file, label) {
+  let raw;
+  try { raw = fs.readFileSync(file, 'utf8'); }
+  catch (e) {
+    if (e.code === 'ENOENT') return [];
+    throw new Error(`อ่าน${label}ไม่ได้ (${e.code || e.message})`);
+  }
+  try { const a = JSON.parse(raw); if (Array.isArray(a)) return a; } catch { /* ไฟล์เสีย ดูข้างล่าง */ }
+  const keep = keepCorrupt(file);
+  throw new Error(`ไฟล์${label}เสีย (${path.basename(file)}) — ระบบไม่บันทึกทับเพื่อไม่ให้ของเดิมหาย`
+    + `${keep ? ` (สำเนาไฟล์เสียไว้ที่ ${keep})` : ''} ต้องกู้ไฟล์ก่อนถึงจะแก้คลังได้`);
+}
+// ฝั่งอ่านอย่างเดียว (autopilot / ตัวจัดแผน / หาไฟล์ตอนขึ้นแอด) เห็นไฟล์เสียเป็นคลังว่างแทนการล้ม
+// รอบตรวจของ autopilot ที่ล้มกลางคันจะไม่ได้บันทึก state = รอบหน้าไม่รู้ว่าเพิ่งสร้างแอดอะไรไป
+function listReadSoft(file, label) {
+  try { return listRead(file, label); }
+  catch (e) { warnOnce(e.message); return []; }
+}
+// tmp+rename เหมือน config/landing และเช็คไฟล์บนดิสก์ก่อนทุกครั้ง — ใครอ่านแบบ soft ได้ [] มา
+// (เช่น markVideoUsed) ก็เขียนรายการเกือบว่างทับไฟล์ที่เสียอยู่ไม่ได้
+function listWrite(file, label, items) {
+  listRead(file, label);
+  const tmp = file + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(items, null, 2));
+  fs.renameSync(tmp, file);
+}
+
 // ---------- คลังวิดีโอถาวร (อัปเก็บไว้ก่อน แล้วหยิบมาใช้ตอนขึ้นแอดกี่ครั้งก็ได้) ----------
 // อยู่ข้าง config.json = โฟลเดอร์ /data ที่ deploy.sh mount ไว้ → รอดจาก redeploy (ต่างจาก MEDIA_DIR ที่อยู่ใน tmp)
 const LIB_DIR = path.join(path.dirname(CONFIG_PATH), 'media-library');
 const LIB_INDEX = path.join(LIB_DIR, 'index.json');
 fs.mkdirSync(LIB_DIR, { recursive: true });
-function loadLib() {
-  try { const a = JSON.parse(fs.readFileSync(LIB_INDEX, 'utf8')); return Array.isArray(a) ? a : []; }
-  catch { return []; }
-}
-function saveLib(items) { fs.writeFileSync(LIB_INDEX, JSON.stringify(items, null, 2)); }
+function loadLib() { return listReadSoft(LIB_INDEX, 'คลังวิดีโอ'); }
+// เส้นที่จะเขียนกลับ/หน้าคลังใช้ตัวนี้ — ไฟล์เสียต้องเห็นเป็น error ไม่ใช่คลังว่าง
+function loadLibStrict() { return listRead(LIB_INDEX, 'คลังวิดีโอ'); }
+function saveLib(items) { listWrite(LIB_INDEX, 'คลังวิดีโอ', items); }
 const libFile = (id) => path.join(LIB_DIR, id + '.bin');
 const libThumb = (id) => path.join(LIB_DIR, id + '.jpg');
 
@@ -442,7 +483,10 @@ const uploadLib = multer({
   limits: { fileSize: 512 * 1024 * 1024 },
 });
 
-app.get('/api/library', (req, res) => res.json(loadLib()));
+// ไฟล์รายการเสีย/ดิสก์เต็ม = ตอบ JSON ที่อ่านรู้เรื่อง หน้าเว็บจะโชว์เป็น error ไม่ใช่ "คลังว่าง"
+app.get('/api/library', (req, res) => {
+  try { res.json(loadLibStrict()); } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 app.post('/api/library', uploadLib.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'ไม่ได้แนบไฟล์' });
@@ -459,30 +503,40 @@ app.post('/api/library', uploadLib.single('file'), (req, res) => {
     size: req.file.size,
     ts: Date.now(),
   };
-  const items = loadLib();
-  items.unshift(item);
-  saveLib(items);
+  try {
+    const items = loadLibStrict();
+    items.unshift(item);
+    saveLib(items);
+  } catch (e) {
+    // ลงรายการไม่ได้ = ไฟล์ที่เพิ่งอัปไม่มีใครอ้างถึง ลบทิ้งเลย ไม่งั้นค้างกินดิสก์ถาวร
+    try { fs.unlinkSync(req.file.path); } catch { /* ข้าม */ }
+    try { fs.unlinkSync(libThumb(id)); } catch { /* ข้าม */ }
+    return res.status(500).json({ error: e.message });
+  }
   res.json(item);
 });
 
 app.post('/api/library/rename', (req, res) => {
   const name = String(req.body.name || '').trim().slice(0, 120);
   if (!name) return res.status(400).json({ error: 'ชื่อว่างไม่ได้' });
-  const items = loadLib();
+  let items;
+  try { items = loadLibStrict(); } catch (e) { return res.status(500).json({ error: e.message }); }
   const item = items.find((x) => x.id === String(req.body.id));
   if (!item) return res.status(404).json({ error: 'ไม่พบวิดีโอนี้ในคลัง' });
   item.name = name;
-  saveLib(items);
+  try { saveLib(items); } catch (e) { return res.status(500).json({ error: e.message }); }
   res.json({ ok: true });
 });
 
 app.post('/api/library/delete', (req, res) => {
   const id = String(req.body.id || '');
-  const items = loadLib();
+  let items;
+  try { items = loadLibStrict(); } catch (e) { return res.status(500).json({ error: e.message }); }
   const i = items.findIndex((x) => x.id === id);
   if (i < 0) return res.status(404).json({ error: 'ไม่พบวิดีโอนี้ในคลัง' });
   items.splice(i, 1);
-  saveLib(items);
+  // ลบไฟล์หลังลงรายการสำเร็จเท่านั้น — รายการยังอ้างถึงอยู่แต่ไฟล์หาย = แอดที่เลือกคลิปนี้ขึ้นไม่ได้
+  try { saveLib(items); } catch (e) { return res.status(500).json({ error: e.message }); }
   try { fs.unlinkSync(libFile(id)); } catch { /* ไฟล์หายไปแล้ว */ }
   try { fs.unlinkSync(libThumb(id)); } catch { /* ไม่มี thumbnail */ }
   res.json({ ok: true });
@@ -496,13 +550,14 @@ app.get('/api/library/thumb/:id', (req, res) => {
 
 // ---------- คลังแคปชั่น (ผู้ใช้เตรียมข้อความไว้เอง แล้วให้ตัวจัดแผนหยิบไปใช้) ----------
 const CAPTION_PATH = path.join(path.dirname(CONFIG_PATH), 'captions.json');
-function loadCaptions() {
-  try { const a = JSON.parse(fs.readFileSync(CAPTION_PATH, 'utf8')); return Array.isArray(a) ? a : []; }
-  catch { return []; }
-}
-function saveCaptions(items) { fs.writeFileSync(CAPTION_PATH, JSON.stringify(items, null, 2)); }
+// แยกอ่าน soft/strict แบบเดียวกับคลังวิดีโอ (ดู listRead)
+function loadCaptions() { return listReadSoft(CAPTION_PATH, 'คลังแคปชั่น'); }
+function loadCaptionsStrict() { return listRead(CAPTION_PATH, 'คลังแคปชั่น'); }
+function saveCaptions(items) { listWrite(CAPTION_PATH, 'คลังแคปชั่น', items); }
 
-app.get('/api/captions', (req, res) => res.json(loadCaptions()));
+app.get('/api/captions', (req, res) => {
+  try { res.json(loadCaptionsStrict()); } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 // อัตราแลกเปลี่ยนบาท → สกุลที่ขอ (?cur=USD,VND) ให้หน้าขึ้นแอดโชว์ว่างบแต่ละบัญชีจะเป็นเท่าไหร่
 app.get('/api/fx', async (req, res) => {
@@ -524,30 +579,34 @@ app.post('/api/captions', (req, res) => {
     headline: String(req.body.headline || '').trim().slice(0, 255),
     ts: Date.now(),
   };
-  const items = loadCaptions();
-  items.unshift(item);
-  saveCaptions(items);
+  try {
+    const items = loadCaptionsStrict();
+    items.unshift(item);
+    saveCaptions(items);
+  } catch (e) { return res.status(500).json({ error: e.message }); }
   res.json(item);
 });
 
 app.post('/api/captions/update', (req, res) => {
-  const items = loadCaptions();
+  let items;
+  try { items = loadCaptionsStrict(); } catch (e) { return res.status(500).json({ error: e.message }); }
   const item = items.find((x) => x.id === String(req.body.id));
   if (!item) return res.status(404).json({ error: 'ไม่พบแคปชั่นนี้' });
   const message = String(req.body.message || '').trim();
   if (!message) return res.status(400).json({ error: 'ข้อความหลักว่างไม่ได้' });
   item.message = message.slice(0, 5000);
   item.headline = String(req.body.headline || '').trim().slice(0, 255);
-  saveCaptions(items);
+  try { saveCaptions(items); } catch (e) { return res.status(500).json({ error: e.message }); }
   res.json({ ok: true });
 });
 
 app.post('/api/captions/delete', (req, res) => {
-  const items = loadCaptions();
+  let items;
+  try { items = loadCaptionsStrict(); } catch (e) { return res.status(500).json({ error: e.message }); }
   const i = items.findIndex((x) => x.id === String(req.body.id));
   if (i < 0) return res.status(404).json({ error: 'ไม่พบแคปชั่นนี้' });
   items.splice(i, 1);
-  saveCaptions(items);
+  try { saveCaptions(items); } catch (e) { return res.status(500).json({ error: e.message }); }
   res.json({ ok: true });
 });
 
@@ -560,7 +619,8 @@ const VI_ADJS = ['đỏ', 'xanh', 'vàng', 'trắng', 'đen', 'hồng', 'tím', 
 app.post('/api/captions/auto', (req, res) => {
   const n = Number.parseInt(req.body.count, 10);
   const count = Number.isNaN(n) ? 10 : Math.min(100, Math.max(1, n));
-  const items = loadCaptions();
+  let items;
+  try { items = loadCaptionsStrict(); } catch (e) { return res.status(500).json({ error: e.message }); }
   // ไม่ซ้ำกับที่มีในคลังแล้ว — ตัวจัดแผนหยิบแคปชั่นไปใช้ทีละอัน ซ้ำกันก็ไม่ได้อะไรเพิ่ม
   // เทียบแบบ normalize: ภาษาเวียดนามพิมพ์ได้ทั้งแบบประกอบสำเร็จ (NFC) และแยกวรรณยุกต์ (NFD) + ช่องว่างซ้อน
   // เดิมเทียบดิบ แคปชั่นที่พิมพ์เองด้วยคีย์บอร์ดแบบ NFD ถูกสร้างซ้ำหน้าตาเหมือนกันเป๊ะ
@@ -577,7 +637,10 @@ app.post('/api/captions/auto', (req, res) => {
   for (let i = pool.length - 1; i > 0; i--) { const j = crypto.randomInt(i + 1); [pool[i], pool[j]] = [pool[j], pool[i]]; }
   const now = Date.now();
   const added = pool.slice(0, count).map((phrase) => ({ id: 'c' + crypto.randomUUID(), message: compose(phrase), headline: '', ts: now }));
-  if (added.length) { items.unshift(...added); saveCaptions(items); }
+  if (added.length) {
+    items.unshift(...added);
+    try { saveCaptions(items); } catch (e) { return res.status(500).json({ error: e.message }); }
+  }
   res.json({ added, left: pool.length - added.length });
 });
 
@@ -592,20 +655,60 @@ const LP_DEFAULT = {
   bgImage: '',         // หรือรูปที่อัปเอง — ถ้ามี จะทับพื้นหลังสำเร็จรูป
   pixels: [],          // [{ id, type: 'meta'|'ga' }]
   links: [],           // [{ id, label, url, icon, event }]
+  rev: 0,              // เลขรุ่นของไฟล์ — ขยับทุกครั้งที่เขียน (ดู saveLp)
 };
 // 1 พิกเซลต่อ 1 บัญชีโฆษณา ระบบรองรับบัญชีหลักร้อย เพดานจึงต้องสูงกว่านั้น
 // เพดานเดิม 30 ต่ำกว่าจำนวนพิกเซลที่ระบบฝังเอง = กดบันทึกหน้า Landing แล้วพิกเซลท้ายๆ หายเงียบ
 // บัญชีที่พิกเซลหายจะรายงานคอนเวอร์ชั่นเป็น 0 ทั้งที่คนกดจริง แล้วตัวปิดแอดขาดทุนจะเชือดผิดตัว
 const LP_MAX_PIXELS = 300;
-function loadLp() {
-  try { return { ...LP_DEFAULT, ...JSON.parse(fs.readFileSync(LP_PATH, 'utf8')) }; }
-  catch { return { ...LP_DEFAULT }; }
+// ไม่มีไฟล์ = หน้าใหม่ (ค่าตั้งต้น) แต่ไฟล์อ่าน/แปลงไม่ได้ ≠ หน้าว่าง — เดิมคืนค่าตั้งต้นเงียบๆ ทั้งสองแบบ
+// หลังบ้านจึงโหลดฟอร์มว่างที่กดบันทึกได้ และหน้า /lp ไม่มีพิกเซลสักตัวโดยไม่มีใครรู้ (รีวิว ต.ค. 2026)
+// หลังบ้าน (GET/POST/prune) ใช้ตัวนี้: ไฟล์เสีย = สำเนาเก็บไว้แล้วโยน error ไม่มีทางบันทึกทับ
+function loadLpStrict() {
+  let raw;
+  try { raw = fs.readFileSync(LP_PATH, 'utf8'); }
+  catch (e) {
+    if (e.code === 'ENOENT') return { ...LP_DEFAULT };
+    throw new Error(`อ่านไฟล์หน้า Landing ไม่ได้ (${e.code || e.message})`);
+  }
+  let v = null;
+  try { v = JSON.parse(raw); } catch { /* ไฟล์เสีย ดูข้างล่าง */ }
+  if (v && typeof v === 'object' && !Array.isArray(v)) return { ...LP_DEFAULT, ...v };
+  const keep = keepCorrupt(LP_PATH);
+  throw new Error(`ไฟล์หน้า Landing เสีย (landing.json) — หน้า /lp ตอนนี้ไม่มีพิกเซล/ปุ่ม ระบบไม่ให้บันทึกทับ`
+    + `${keep ? ` (สำเนาไฟล์เสียไว้ที่ ${keep})` : ''} ต้องกู้ไฟล์ก่อน`);
 }
+// หน้า /lp สาธารณะ + ระบบฝังพิกเซลเอง: ไฟล์เสียเห็นเป็นค่าตั้งต้น (หน้าต้องเปิดได้ autopilot ต้องไม่ล้ม)
+// ของเดิมไม่หาย — loadLpStrict สำเนาไฟล์เสียไว้ตั้งแต่ครั้งแรกที่อ่าน ก่อนใครจะเขียนทับได้ (saveLp อ่านก่อนเขียนเสมอ)
+function loadLp() {
+  try { return loadLpStrict(); } catch (e) { warnOnce(e.message); return { ...LP_DEFAULT }; }
+}
+// โปรไฟล์ที่ server ตัวนี้ดูแล (hub.js ส่งมาทาง WS_ID) — rev เป็นตัวนับแยกของแต่ละโปรไฟล์ เลขชนกันได้บ่อย
+// จึงต้องผูกกับโปรไฟล์ด้วย ดู POST /api/landing
+const LP_WS = process.env.WS_ID || '';
+// rev = เลขรุ่นของไฟล์ ขยับทุกครั้งที่ใครก็ตามเขียน (หน้าเว็บ / ระบบฝังพิกเซลเอง / prune)
+// หน้าเว็บต้องส่ง rev ที่โหลดไปกลับมาตอนบันทึก — ไม่ตรงแปลว่ามีคนเขียนแทรก ห้ามทับ (ดู POST /api/landing)
+const lpRev = (v) => (Number.isSafeInteger(v.rev) && v.rev > 0 ? v.rev : 0);
 // เขียนแบบ tmp+rename เหมือน config — ไฟล์นี้คือหน้าที่ลูกค้าเห็น เขียนค้างครึ่งทางแล้วหน้าพัง
+// อ่าน rev จากดิสก์ตรงนี้ ไม่เชื่อค่าที่ติดมากับ v — ทุกทางที่เขียนจึงขยับรุ่นเสมอ ไม่มีใครลืม
 function saveLp(v) {
+  const out = { ...v, rev: lpRev(loadLp()) + 1 };
   const tmp = LP_PATH + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(v, null, 2));
+  fs.writeFileSync(tmp, JSON.stringify(out, null, 2));
   fs.renameSync(tmp, LP_PATH);
+  return out;
+}
+// พิกเซลซ้ำ (type+id เดียวกัน) = หน้า init ซ้ำ แล้วยิง PageView/Lead ซ้ำทุกครั้งที่มีคนเข้า/กด = ตัวเลขเฟ้อ
+// เก็บตัวแรกไว้ ถ้าตัวแรกไม่มี acct แต่ตัวซ้ำมี ยืม acct มา (ข้อมูลเจ้าของไม่หายไปกับการตัดซ้ำ)
+function lpUniqPixels(list) {
+  const seen = new Map();
+  for (const p of list) {
+    const k = `${p.type}:${p.id}`;
+    const had = seen.get(k);
+    if (!had) seen.set(k, { ...p });
+    else if (!had.acct && p.acct) had.acct = p.acct;
+  }
+  return [...seen.values()];
 }
 
 const LP_EVENTS = ['', 'Lead', 'Contact', 'Subscribe', 'CompleteRegistration', 'Purchase', 'AddToCart', 'InitiateCheckout'];
@@ -658,9 +761,9 @@ function lpAutoLink(cfg) {
   return ((cfg || {}).autopilot || {}).autoLinkPixel !== false;
 }
 
-// ลิงก์ปลายทางของบัญชีหนึ่ง — เป็นหน้า Landing ของเราเมื่อไหร่ให้ติดรหัสบัญชีไปด้วย
-// หน้านั้นจะได้โหลดเฉพาะพิกเซลของบัญชีนี้ ไม่ไปนับคอนเวอร์ชั่นให้บัญชีอื่นที่อยู่หน้าเดียวกัน
 // ฝังพิกเซลลงหน้า Landing ถ้ายังไม่มี — คืนรายการ id ที่เพิ่งเพิ่มเข้าไป (เขียนไฟล์ครั้งเดียว)
+// id ซ้ำในรายการที่ส่งมา (สองบัญชีใช้พิกเซลเดียวกัน) ถูกข้ามด้วย have เหมือนตัวที่มีอยู่แล้ว
+// เขียนผ่าน saveLp = rev ขยับ → หน้าเว็บที่เปิดค้างไว้ด้วยรายการเก่าจะบันทึกทับพิกเซลนี้ไม่ได้
 function lpEnsurePixels(pixelIds, acctId) {
   const v = loadLp();
   const have = new Set(v.pixels.filter((p) => p.type === 'meta').map((p) => p.id));
@@ -669,8 +772,7 @@ function lpEnsurePixels(pixelIds, acctId) {
     const id = String(raw || '').replace(/[^A-Za-z0-9-]/g, '');
     if (!id || have.has(id)) continue;
     if (v.pixels.length >= LP_MAX_PIXELS) break;   // เต็มเพดาน — หยุดเพิ่ม ไม่ตัดของเดิมทิ้ง
-    // acct = บัญชีเจ้าของพิกเซล ใช้เรนเดอร์เฉพาะพิกเซลของบัญชีที่พาคนมา (/lp?a=<acct>)
-    // ไม่งั้นคนที่กดจากแอดบัญชีเดียว จะไปนับคอนเวอร์ชั่นให้ทุกบัญชีบนหน้าเดียวกัน
+    // acct = บัญชีเจ้าของพิกเซล ไว้โชว์ในหลังบ้านและให้ prune รู้เจ้าของ (หน้า /lp ยิงทุกพิกเซลไม่กรองตามบัญชี ดู lpRender)
     v.pixels.push(acctId ? { type: 'meta', id, acct: String(acctId) } : { type: 'meta', id });
     have.add(id);
     added.push(id);
@@ -693,6 +795,21 @@ app.post('/api/landing/upload', uploadLpImg.single('file'), (req, res) => {
   res.json({ url: `/lp-asset/${req.file.filename}` });
 });
 
+// ไฟล์เกินขนาด/ฟอร์มผิดรูปจาก multer — เดิมตกไปที่ตัวจัดการ error ตั้งต้นของ Express = หน้า HTML 500 พร้อม stack trace
+// หน้าเว็บอ่าน JSON ไม่ได้ ผู้ใช้เห็นแค่ "อัปไม่สำเร็จ" ไม่รู้ว่าเพราะไฟล์ใหญ่ (วัดจริง: อัปรูป 9MB ได้ 500 text/html)
+// ต้องอยู่หลังเส้นอัปโหลดทั้งสาม (/api/media, /api/library, /api/landing/upload) — Express ส่ง error ไปหา
+// ตัวจัดการที่ลงทะเบียน "หลัง" เส้นที่พังเท่านั้น ย้ายขึ้นไปไว้ก่อนเส้นไหน เส้นนั้นจะกลับไปได้หน้า HTML
+// ไฟล์ที่เขียนค้างครึ่งทาง multer ลบให้เองก่อนส่ง error มาถึงตรงนี้ (วัดแล้ว ไม่มีไฟล์ค้างในโฟลเดอร์)
+const UPLOAD_MAX_TEXT = { '/api/landing/upload': '8MB' };   // เส้นอื่นเป็นวิดีโอ 512MB
+app.use((err, req, res, next) => {
+  if (!(err instanceof multer.MulterError) || res.headersSent) return next(err);
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(413).json({ error: `ไฟล์ใหญ่เกิน ${UPLOAD_MAX_TEXT[req.path.replace(/\/+$/, '')] || '512MB'} — ย่อหรือตัดไฟล์ให้เล็กลงแล้วลองใหม่` });
+  }
+  if (err.code === 'LIMIT_FIELD_VALUE') return res.status(413).json({ error: 'ข้อมูลที่แนบมากับไฟล์ (เช่นรูปตัวอย่าง) ใหญ่เกินไป' });
+  res.status(400).json({ error: `ฟอร์มอัปโหลดไม่ถูกต้อง (${err.code}) — ลองเลือกไฟล์ใหม่อีกครั้ง` });
+});
+
 app.get('/lp-asset/:name', (req, res) => {
   // ยัน format ก่อนต่อ path กัน ../ หลุดออกนอกโฟลเดอร์
   if (!/^[0-9a-f-]{36}\.(jpg|png|webp|gif)$/i.test(req.params.name)) return res.status(400).end();
@@ -707,12 +824,12 @@ const lpSafeUrl = (u) => (/^(https?:\/\/|tel:|mailto:)/i.test(String(u || '').tr
 const lpEsc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-// only = บัญชีโฆษณาที่พาคนมาหน้านี้ (จาก ?a=) — โหลดเฉพาะพิกเซลของบัญชีนั้น
-// ไม่ระบุ = โหลดทุกตัวเหมือนเดิม (ลิงก์เก่า/คนเข้าเองต้องไม่พัง)
 function lpRender(v) {
   // รูปที่อัปเองเก็บเป็น /lp-asset/<ไฟล์> — หน้าสาธารณะของโปรไฟล์อื่นอยู่ใต้ /w/<id>/ ต้องเติม prefix ไม่งั้นรูปไปโหลดจากโปรไฟล์ TOP
   const pub = (u) => (String(u || '').startsWith('/lp-asset/') ? LP_PREFIX + u : u);
   v = { ...v, avatar: pub(v.avatar), bgImage: pub(v.bgImage) };
+  // og:image ต้องเป็นลิงก์เต็ม — ตัวดึงพรีวิวลิงก์ (FB/LINE) อ่านแท็กนี้จากข้างนอก ไม่ได้อยู่ในหน้าเรา
+  const ogImage = String(v.avatar || '').startsWith('/') ? PUBLIC_URL + v.avatar : v.avatar;
   // พื้นหลังเป็นตัวกำหนดชุดสีทั้งหมด — ยกเว้นตอนใช้รูปที่อัปเอง ซึ่งเราไม่รู้ว่ารูปสว่างหรือมืด
   // กรณีนั้นค่อยให้ theme ที่ผู้ใช้เลือกเป็นตัวตัดสิน
   const pal = LP_BGS[v.bg] || LP_BGS[''];
@@ -729,8 +846,9 @@ function lpRender(v) {
   // คนที่เข้ามาเห็นหน้าเดียวกันเป๊ะไม่ว่าจะแยกหรือไม่ การแยกจึงกระทบแค่การวัดกับการเรียนรู้
   // แลกกับ attribution รายบัญชีที่ปนกันมากขึ้น (ยอดรวมยังถูก) — ยอมแลกเพื่อให้ Meta เรียนรู้ได้
   // การนับซ้ำในพิกเซลเดียวกันกันด้วย trackSingle อยู่แล้ว คนละเรื่องกับการกรองนี้
-  const meta = v.pixels.filter((p) => p.type === 'meta');
-  const ga = v.pixels.filter((p) => p.type === 'ga');
+  // ตัดซ้ำตอนเรนเดอร์ด้วย — ไฟล์ที่บันทึกไว้ก่อนมีการตัดซ้ำอาจมีพิกเซล/GA ตัวเดิมสองแถว
+  const meta = lpUniqPixels(v.pixels.filter((p) => p.type === 'meta'));
+  const ga = lpUniqPixels(v.pixels.filter((p) => p.type === 'ga'));
   return `<!doctype html>
 <html lang="th"><head>
 <meta charset="utf-8">
@@ -739,7 +857,7 @@ function lpRender(v) {
 <meta name="description" content="${lpEsc(v.bio)}">
 <meta property="og:title" content="${lpEsc(v.title)}">
 <meta property="og:description" content="${lpEsc(v.bio)}">
-${v.avatar ? `<meta property="og:image" content="${lpEsc(v.avatar)}">` : ''}
+${ogImage ? `<meta property="og:image" content="${lpEsc(ogImage)}">` : ''}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;700&display=swap" rel="stylesheet">
@@ -821,15 +939,25 @@ app.get(['/lp', '/lp/'], (req, res) => {
   res.type('html').send(lpRender(loadLp()));
 });
 
-app.get('/api/landing', (req, res) => res.json(loadLp()));
+// rev ส่งตัวที่ทำความสะอาดแล้ว (ตัวเดียวกับที่ POST เทียบ) — ค่าแปลกในไฟล์ต้องไม่ทำให้บันทึกไม่ได้ตลอดไป
+app.get('/api/landing', (req, res) => {
+  let v;
+  try { v = loadLpStrict(); } catch (e) { return res.status(500).json({ error: e.message }); }
+  res.json({ ...v, rev: lpRev(v), ws: LP_WS });
+});
 
 // ล้างพิกเซลที่ไม่มีบัญชีเป็นเจ้าของ + เติมรหัสบัญชีให้ตัวที่ยังไม่มี
 // เปลี่ยนบัญชี FB แล้วพิกเซลชุดเก่าค้างบนหน้า = ยิง event ให้บัญชีที่เลิกใช้ไปแล้วทุกครั้งที่มีคนเข้า
-// และตัวที่ไม่มี acct จะเรนเดอร์แบบเจาะบัญชีไม่ได้ (ต้องมีรหัสบัญชีถึงจะแยกคอนเวอร์ชั่นได้)
 app.post('/api/landing/prune-pixels', async (req, res) => {
   const cfg = loadConfig();
+  // ลบได้เฉพาะพิกเซลที่อยู่บนหน้าตั้งแต่ก่อนเริ่มอ่าน FB — ระหว่างรอ FB ระบบอาจฝังพิกเซลใหม่เข้ามา
+  // (สร้างพิกเซล / autopilot เติมแอด / ขึ้นแอด) ตัวนั้นไม่อยู่ในรายการเจ้าของที่อ่านมา กรองตรงๆ จะลบทั้งที่เพิ่งผูก
+  let start;
+  try { start = loadLpStrict(); } catch (e) { return res.status(500).json({ error: e.message }); }
+  const before = new Set(start.pixels.filter((p) => p.type === 'meta').map((p) => String(p.id)));
   const own = new Map();          // pixelId -> acctId
   let read = false;
+  const failed = [];
   for (const prof of cfg.profiles || []) {
     if (!prof.accessToken) continue;
     try {
@@ -838,28 +966,53 @@ app.post('/api/landing/prune-pixels', async (req, res) => {
       for (const a of accts) {
         for (const x of ((a.adspixels || {}).data || [])) own.set(String(x.id), String(a.account_id));
       }
-    } catch { /* โปรไฟล์นี้อ่านไม่ได้ ข้ามไป — ตัวอื่นยังบอกเจ้าของได้ */ }
+    } catch (e) { failed.push(`${prof.label || prof.id}: ${e.message}`); }
   }
-  // อ่านจาก FB ไม่ได้สักโปรไฟล์ = ไม่รู้ว่าอะไรมีเจ้าของ ห้ามลบอะไรทั้งนั้น
+  // อ่านไม่ได้แม้แต่โปรไฟล์เดียว = ไม่รู้ว่าพิกเซลของบัญชีในโปรไฟล์นั้นมีเจ้าของไหม ห้ามลบอะไรทั้งนั้น
+  // เดิมข้ามโปรไฟล์ที่อ่านไม่ได้แล้วกรองต่อด้วยโปรไฟล์ที่เหลือ → พิกเซลทุกตัวของโปรไฟล์นั้นถูกลบ
+  // (token หมดอายุครั้งเดียว = ทุกบัญชีในโปรไฟล์นั้นเห็นคอนเวอร์ชั่นเป็นศูนย์ แบบเดียวกับที่หน้า /lp เคยเหลือ 0 พิกเซล)
+  if (failed.length) {
+    return res.status(502).json({ error: `อ่านรายการบัญชีจาก Facebook ไม่ครบทุกโปรไฟล์ — ยังไม่ลบอะไรทั้งนั้น แก้โปรไฟล์ที่อ่านไม่ได้ก่อนแล้วลองใหม่ (${failed.join(' • ')})` });
+  }
   if (!read) return res.status(400).json({ error: 'อ่านรายการบัญชีจาก Facebook ไม่ได้ — ยังไม่ลบอะไรทั้งนั้น ลองใหม่อีกครั้ง' });
 
-  const cur = loadLp();
-  try { fs.writeFileSync(LP_PATH + '.bak-prune', JSON.stringify(cur)); } catch { /* สำรองไม่ได้ก็ยังทำต่อได้ */ }
+  let cur;
+  try { cur = loadLpStrict(); } catch (e) { return res.status(500).json({ error: e.message }); }
+  // สำรองเป็นไฟล์ใหม่ทุกครั้ง (ประทับเวลา) — เดิมเขียนทับ .bak-prune ไฟล์เดียว กดรอบสองแล้วสำเนาของจริงชุดแรกหาย
+  // สำรองไม่ได้ = ไม่มีทางย้อน จึงไม่ลบ (สำเนานี้คือสิ่งเดียวที่กู้พิกเซล 27 ตัวที่ prune ลบไปเมื่อ ก.ค. 2026 ได้)
+  const bak = `${LP_PATH}.bak-prune-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+  try { fs.writeFileSync(bak, JSON.stringify(cur), { flag: 'wx' }); }
+  catch (e) { return res.status(500).json({ error: `สำรองไฟล์ก่อนลบไม่สำเร็จ (${e.code || e.message}) — ยังไม่ลบอะไรทั้งนั้น` }); }
   const removed = [];
   cur.pixels = cur.pixels
     .filter((p) => {
       if (p.type !== 'meta') return true;
-      if (own.has(String(p.id))) return true;
+      if (own.has(String(p.id)) || !before.has(String(p.id))) return true;
       removed.push(p.id);
       return false;
     })
-    .map((p) => (p.type === 'meta' ? { ...p, acct: own.get(String(p.id)) } : p));
+    .map((p) => (p.type === 'meta' && own.has(String(p.id)) ? { ...p, acct: own.get(String(p.id)) } : p));
   saveLp(cur);
-  res.json({ ok: true, removed, kept: cur.pixels.filter((p) => p.type === 'meta').length });
+  res.json({ ok: true, removed, kept: cur.pixels.filter((p) => p.type === 'meta').length, backup: path.basename(bak) });
 });
 app.post('/api/landing', (req, res) => {
   const b = req.body || {};
-  const cur = loadLp();
+  let cur;
+  try { cur = loadLpStrict(); } catch (e) { return res.status(500).json({ error: e.message }); }
+  // ข้อมูลในฟอร์มต้องมาจากโปรไฟล์เดียวกับที่กำลังจะเขียน — cookie เลือกโปรไฟล์ใช้ร่วมกันทุกหน้าต่าง
+  // หน้าต่างที่โหลดหน้า Landing ของ TOP ไว้ แล้วอีกหน้าต่างสลับไปโปรไฟล์อื่น กดบันทึก = ข้อมูล TOP ไปทับ
+  // หน้าของโปรไฟล์นั้นทั้งก้อน (พิกเซลของมันหายหมด) และ rev ของสองโปรไฟล์ตรงกันได้บ่อย จึงกันด้วย rev อย่างเดียวไม่ได้
+  if ((b.ws ?? '') !== LP_WS) {
+    return res.status(409).json({ wrongProfile: true, error: 'ข้อมูลในหน้านี้โหลดมาจากโปรไฟล์อื่น (มีการสลับโปรไฟล์ในอีกหน้าต่าง) — ยังไม่ได้บันทึก รีเฟรชหน้าแล้วตรวจว่าอยู่โปรไฟล์ที่ถูกต้อง' });
+  }
+  // บันทึกได้เฉพาะเมื่อหน้าเว็บเห็นรุ่นล่าสุด (rev ตรงกับไฟล์) — ระหว่างที่เปิดหน้า Landing ค้างไว้
+  // ระบบฝังพิกเซลเพิ่มเองได้ (หน้าสุขภาพ / autopilot เติมแอด / สร้างพิกเซล / ขึ้นแอด) เดิมกดบันทึกแล้ว
+  // รายการเก่าในหน้าเว็บทับไฟล์ = พิกเซลที่เพิ่งฝังหายเงียบ คอนเวอร์ชั่นของบัญชีนั้นเป็นศูนย์
+  // ไม่ส่ง rev มาเลยก็ไม่ให้ทับ: ฟอร์มที่โหลดไม่สำเร็จ (โปรไฟล์กำลังบูต ตัวกลางตอบ 503) ไม่มีทางได้ rev
+  // ฟอร์มว่างจึงทับพิกเซล/ปุ่มทั้งหมดไม่ได้ รวมถึงแท็บเก่าที่เปิดค้างไว้ตั้งแต่ก่อนอัปเดตระบบ
+  if (b.rev !== lpRev(cur)) {
+    return res.status(409).json({ error: 'หน้า Landing ถูกแก้จากที่อื่นระหว่างที่เปิดหน้านี้อยู่ (เช่นระบบเพิ่งฝังพิกเซลให้บัญชีใหม่) — ยังไม่ได้บันทึก ต้องโหลดข้อมูลล่าสุดก่อน' });
+  }
   const next = {
     title: String(b.title ?? cur.title).slice(0, 100),
     bio: String(b.bio ?? cur.bio).slice(0, 300),
@@ -871,15 +1024,16 @@ app.post('/api/landing', (req, res) => {
     bg: Object.prototype.hasOwnProperty.call(LP_BGS, b.bg ?? cur.bg) ? (b.bg ?? cur.bg) : '',
     // รับเฉพาะรูปที่อัปผ่านระบบเรา — ลิงก์รูปจากเว็บนอกทำให้หน้าพังเมื่อเว็บนั้นล่ม
     bgImage: /^\/lp-asset\/[0-9a-f-]{36}\.(jpg|png|webp|gif)$/i.test(String(b.bgImage ?? cur.bgImage ?? '')) ? String(b.bgImage ?? cur.bgImage) : '',
-    // acct ต้องรอดข้ามการบันทึกจากหน้าเว็บ — หายเมื่อไหร่ = เรนเดอร์แยกรายบัญชีไม่ได้ กลับไปยิงรวมทุกตัว
-    pixels: (Array.isArray(b.pixels) ? b.pixels : cur.pixels).slice(0, LP_MAX_PIXELS).map((p) => {
+    // acct ต้องรอดข้ามการบันทึกจากหน้าเว็บ — หายเมื่อไหร่ = หลังบ้านไม่รู้ว่าพิกเซลนี้เป็นของบัญชีไหน
+    // ตัดซ้ำก่อนตัดเพดาน ไม่งั้นแถวซ้ำกินที่จนพิกเซลตัวท้ายๆ หลุด
+    pixels: lpUniqPixels((Array.isArray(b.pixels) ? b.pixels : cur.pixels).map((p) => {
       const acct = String(p.acct || '').replace(/[^0-9]/g, '');
       return {
         type: p.type === 'ga' ? 'ga' : 'meta',
         id: String(p.id || '').replace(/[^A-Za-z0-9-]/g, '').slice(0, 40),
         ...(acct ? { acct } : {}),
       };
-    }).filter((p) => p.id),
+    }).filter((p) => p.id)).slice(0, LP_MAX_PIXELS),
     links: (Array.isArray(b.links) ? b.links : cur.links).slice(0, 30).map((l, i) => ({
       id: String(l.id || `l${i}`).slice(0, 20),
       label: String(l.label || '').slice(0, 60),
@@ -888,8 +1042,7 @@ app.post('/api/landing', (req, res) => {
       event: LP_EVENTS.includes(l.event) ? l.event : '',
     })).filter((l) => l.label && l.url),
   };
-  saveLp(next);
-  res.json({ ok: true, landing: next });
+  res.json({ ok: true, landing: saveLp(next) });
 });
 
 // ---------- ตัวจัดแผนขึ้นแอด: จับคู่วิดีโอ+แคปชั่นให้แต่ละบัญชี ----------
