@@ -1551,6 +1551,21 @@ function esc(s) {
 //  ชื่อแคมเปญที่มี \ หรือ ' จึงทำให้ปุ่มลบพัง/รันโค้ดแปลกได้)
 function jsStr(s) { return esc(JSON.stringify(String(s == null ? '' : s))); }
 
+// fetch แล้วอ่าน JSON แบบไม่ค้าง — ตอบไม่ใช่ JSON (หน้าใส่รหัส 401, ตัวกลางตอบ 502/503 ตอนโปรไฟล์รีสตาร์ท)
+// หรือ HTTP ไม่ ok หรือมี {error} = โยน Error ที่มีข้อความอ่านได้ (ใช้ err.status / err.data ดูต่อได้)
+// เดิมแต่ละจุดเรียก res.json() ตรงๆ — ได้หน้า HTML กลับมาเมื่อไหร่ สปินเนอร์/ปุ่มค้างถาวร ไม่มีข้อความบอก
+async function apiJson(url, opts) {
+  const res = await fetch(url, opts);
+  let d = null;
+  try { d = await res.json(); } catch { /* ไม่ใช่ JSON */ }
+  if (!res.ok || d == null || (d && !Array.isArray(d) && d.error)) {
+    const e = new Error((d && d.error) || `เซิร์ฟเวอร์ตอบ ${res.status}${res.status === 401 ? ' (ต้องใส่รหัสเข้าเว็บใหม่)' : res.status >= 502 ? ' (ระบบกำลังรีสตาร์ท ลองใหม่อีกครั้ง)' : ''}`);
+    e.status = res.status; e.data = d;
+    throw e;
+  }
+  return d;
+}
+
 // ---------- ไอคอน SVG (lucide) — เลิกใช้ emoji ใน UI: ขนาด/สีคุมได้ หน้าตาเหมือนกันทุกเครื่อง ----------
 // ใช้ได้เฉพาะจุดที่ render เป็น HTML — จุดที่เป็น text ล้วน (textContent/option/placeholder/alert)
 // ใส่ SVG ไม่ได้ ให้ใช้ glyph ธรรมดา (✓ ✗) หรือถอด icon ทิ้ง

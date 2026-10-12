@@ -23,7 +23,8 @@ app.use(express.json());
 // API ต้องได้ข้อมูลสดเสมอ — ห้าม browser/proxy cache
 app.use('/api', (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 app.use(express.static(path.join(__dirname, 'public')));
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 512 * 1024 * 1024 } });
+// defParamCharset utf8 = ชื่อไฟล์ภาษาไทยไม่เพี้ยน (ค่าตั้งต้นของ multer อ่านเป็น latin1)
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 512 * 1024 * 1024 }, defParamCharset: 'utf8' });
 
 const BACKUP_DIR = path.join(path.dirname(CONFIG_PATH), 'config-backups');
 function loadConfig() {
@@ -405,6 +406,7 @@ setInterval(() => {
 
 // วิดีโอเขียนลงดิสก์โดยตรง ไม่ผ่าน memoryStorage — ไฟล์ 512MB ไม่ต้องกอง RAM ทั้งก้อน
 const uploadDisk = multer({
+  defParamCharset: 'utf8',
   storage: multer.diskStorage({
     destination: (req, file, cb) => cb(null, MEDIA_DIR),
     filename: (req, file, cb) => cb(null, crypto.randomUUID()),
@@ -432,6 +434,7 @@ const libFile = (id) => path.join(LIB_DIR, id + '.bin');
 const libThumb = (id) => path.join(LIB_DIR, id + '.jpg');
 
 const uploadLib = multer({
+  defParamCharset: 'utf8',
   storage: multer.diskStorage({
     destination: (req, file, cb) => cb(null, LIB_DIR),
     filename: (req, file, cb) => cb(null, crypto.randomUUID() + '.bin'),
@@ -629,6 +632,7 @@ fs.mkdirSync(LP_ASSET_DIR, { recursive: true });
 const LP_IMG_EXT = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif' };
 
 const uploadLpImg = multer({
+  defParamCharset: 'utf8',
   storage: multer.diskStorage({
     destination: (req, file, cb) => cb(null, LP_ASSET_DIR),
     filename: (req, file, cb) => cb(null, crypto.randomUUID() + (LP_IMG_EXT[file.mimetype] || '.jpg')),
