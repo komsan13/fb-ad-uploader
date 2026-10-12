@@ -373,14 +373,15 @@ describe('คำสั่งเช็คตารางแคมเปญ "/<โ
   // บัญชีที่ใช้ได้ 1 + บัญชีที่ผู้ใช้ซ่อนไว้ 1 • แคมเปญตามมาตรฐานชื่อ 2 ตัว (ยิงอยู่/โดนปฏิเสธ) + แคมเปญตั้งมือ งบที่ชุดโฆษณา
   const checkWorld = (prefix) => ({
     accounts: [
-      { name: 'บัญชีเทส', account_id: ACCT, account_status: 1, currency: 'THB' },
-      { name: 'บัญชีซ่อน', account_id: '222', account_status: 1, currency: 'THB' },
+      // ชื่อบัญชีอยู่ในกล่องตาราง — ของจริงเป็นตัวอังกฤษ (sss1, Gosss 2/2)
+      { name: 'acc1', account_id: ACCT, account_status: 1, currency: 'THB' },
+      { name: 'hidden2', account_id: '222', account_status: 1, currency: 'THB' },
     ],
     campaigns: [
-      { id: 'C2', acct: ACCT, name: `${prefix}บัญชีเทส 2/2`, objective: 'OUTCOME_SALES', daily_budget: '177700' },
-      { id: 'C1', acct: ACCT, name: `${prefix}บัญชีเทส 1/2`, objective: 'OUTCOME_SALES', daily_budget: '177700' },
+      { id: 'C2', acct: ACCT, name: `${prefix}acc1 2/2`, objective: 'OUTCOME_SALES', daily_budget: '177700' },
+      { id: 'C1', acct: ACCT, name: `${prefix}acc1 1/2`, objective: 'OUTCOME_SALES', daily_budget: '177700' },
       { id: 'C3', acct: ACCT, name: 'a<b>&c', objective: 'OUTCOME_SALES' },
-      { id: 'C9', acct: '222', name: 'ของบัญชีซ่อน', objective: 'OUTCOME_SALES', daily_budget: '100000' },
+      { id: 'C9', acct: '222', name: 'hidden2 1/2', objective: 'OUTCOME_SALES', daily_budget: '100000' },
     ],
     ads: [
       { id: 'A1', acct: ACCT, campaign_id: 'C1', effective_status: 'ACTIVE' },
@@ -406,24 +407,28 @@ describe('คำสั่งเช็คตารางแคมเปญ "/<โ
     await until(() => tables(tg).length >= 1, 20000, 'ต้องได้ตาราง');
     const msg = tables(tg)[0].text;
 
-    // หน้าตาที่ผู้ใช้เลือก: กล่องตารางทีละบัญชี ชื่อบัญชี+ยอดใช้อยู่นอกกล่อง ตัวเลขปัดเต็ม
+    // หน้าตาที่ผู้ใช้กำหนด: การ์ด (กล่อง) เดียวต่อโปรไฟล์ หัวคอลัมน์ไทยอยู่เหนือกล่อง ในกล่องไม่มีตัวไทย ตัวเลขปัดเต็ม
     assert.match(msg, /^📋 <b>แคมเปญ<\/b> · \d\d:\d\d น\.$/m);
-    assert.match(msg, /^<b>บัญชีเทส<\/b> — ใช้ไป 873 บาท$/m, 'หัวกล่อง = ชื่อบัญชี + ยอดใช้วันนี้ (รวมแคมเปญที่ลบแล้ว)');
+    assert.strictEqual((msg.match(/<pre>/g) || []).length, 1, 'ทั้งโปรไฟล์ต้องเป็นการ์ดเดียว');
+    assert.match(msg, /^บัญชี \/ แอด · งบ\/วัน · ใช้ไป · ผล\n<pre>/m, 'หัวคอลัมน์ไทยอยู่เหนือกล่องพอดี');
     const pre = preOf(msg);
-    assert.ok(pre, 'ตารางต้องอยู่ใน <pre> ให้คอลัมน์ตรงกัน');
     assert.ok(!/[\u0E00-\u0E7F]/.test(pre), 'ในกล่องห้ามมีตัวไทย — Telegram วาดไทยในกล่องตัวเล็กแคบ คอลัมน์เบี้ยว (ภาพจากผู้ใช้)');
-    assert.match(pre, /^AD +BUDGET +SPENT +RESULT$/m);
+    assert.ok(pre.includes('a&lt;b&gt;&amp;c'), 'ชื่อที่มี < > & ต้อง escape');
+    const lines = pre.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').split('\n');
+    const row = (start) => lines.find((l) => l.startsWith(start)) || '';
+    // บรรทัดบัญชี = ชื่อ + ยอดใช้วันนี้ (รวมแคมเปญที่ลบแล้ว) • แถวแอดย่อหน้าใต้บัญชี
     // ชื่อมาตรฐานตัดส่วนบัญชีทิ้ง เหลือช่อง • งบ 177700 สตางค์ = 1,777 บาท • ใช้ 523.4 ปัดเป็น 523 • สถานะอยู่ท้ายแถว
-    assert.match(pre, /^1\/2 +1,777 +523 +4 {2}🟢$/m);
-    assert.match(pre, /^2\/2 +1,777 +0 +0 {2}🔴$/m, 'ไม่มีข้อมูลวันนี้ = ใช้ 0 ผล 0 ไม่ใช่แถวหาย');
-    assert.ok(pre.indexOf('1/2') < pre.indexOf('2/2'), 'เรียงตามช่อง ไม่ใช่ตามลำดับที่ FB ส่งมา');
-    assert.match(pre, /^a&lt;b&gt;&amp;c +500 +0 +0 {2}⏳$/m, 'ชื่อที่มี < > & ต้อง escape และงบที่ชุดโฆษณาต้องนับ');
-    assert.match(pre, /^deleted +- +350 +2 {2}🗑$/m, 'แคมเปญที่ลบแล้วแต่ใช้เงินวันนี้ต้องโผล่ ไม่งั้นยอดใช้ไม่มีที่มา');
-    // ทุกแถวตัดสัญลักษณ์สถานะท้ายแถวออกแล้วต้องยาวเท่ากัน = คอลัมน์ตรง
-    const widths = pre.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').split('\n')
-      .map((l) => l.replace(/ {2}(🟢|⏳|🔴|⚠️|⏸|🗑)$/u, '').length);
-    assert.strictEqual(new Set(widths).size, 1, `คอลัมน์ต้องตรง: ${widths}`);
-    assert.ok(!/บัญชีซ่อน|ของบัญชีซ่อน/.test(msg), 'บัญชีที่ผู้ใช้ซ่อนต้องไม่ขึ้น (ชุดเดียวกับที่ autopilot ไล่)');
+    assert.match(lines[0], /^acc1 +873$/);
+    assert.match(row('  1/2 '), /^ {2}1\/2 +1,777 +523 +4 {2}🟢$/);
+    assert.match(row('  2/2 '), /^ {2}2\/2 +1,777 +0 +0 {2}🔴$/, 'ไม่มีข้อมูลวันนี้ = ใช้ 0 ผล 0 ไม่ใช่แถวหาย');
+    assert.ok(lines.indexOf(row('  1/2 ')) < lines.indexOf(row('  2/2 ')), 'เรียงตามช่อง ไม่ใช่ตามลำดับที่ FB ส่งมา');
+    assert.match(row('  a<'), /^ {2}a<b>&c +500 +0 +0 {2}⏳$/, 'งบที่ชุดโฆษณาต้องนับ');
+    assert.match(row('  - '), /^ {2}- +- +350 +2 {2}🗑$/, 'แคมเปญที่ลบแล้วแต่ใช้เงินวันนี้ต้องโผล่ ไม่งั้นยอดใช้ไม่มีที่มา');
+    // คอลัมน์ตรง: แถวแอดทุกแถว (ตัดสัญลักษณ์ท้าย) ยาวเท่ากัน และยอดของบรรทัดบัญชีจบตรงคอลัมน์ "ใช้ไป"
+    const rows = lines.filter((l) => l.startsWith('  ')).map((l) => l.replace(/ {2}(🟢|⏳|🔴|⚠️|⏸|🗑)$/u, ''));
+    assert.strictEqual(new Set(rows.map((l) => l.length)).size, 1, `คอลัมน์ต้องตรง: ${rows.map((l) => l.length)}`);
+    assert.strictEqual(lines[0].length, row('  1/2 ').indexOf('523') + 3, 'ยอดบัญชีต้องอยู่คอลัมน์ "ใช้ไป"');
+    assert.ok(!/hidden2/.test(msg), 'บัญชีที่ผู้ใช้ซ่อนต้องไม่ขึ้น (ชุดเดียวกับที่ autopilot ไล่)');
     assert.match(msg, /^💰 ใช้วันนี้รวม 873 บาท$/m, 'ยอดรวม = ทุกแถวรวมตัวที่ลบแล้ว (ตรงกับตาราง)');
     assert.match(msg, /^📊 งบรวม 2,277 บาท\/วัน · ยิงอยู่ 1 · รอตรวจ 1 แคมเปญ$/m, 'งบรวมเฉพาะตัวที่ใช้เงินได้ (ไม่นับตัวที่โดนปฏิเสธ)');
     assert.match(msg, /^🟢 ยิงอยู่ {2}⏳ รอตรวจ {2}🔴 โดนปฏิเสธ {2}🗑 ลบแล้ว/m, 'คำอธิบายสัญลักษณ์เฉพาะตัวที่ใช้');
@@ -481,7 +486,7 @@ describe('คำสั่งเช็คตารางแคมเปญ "/<โ
     await until(() => tables(tg).length >= 1, 30000, `@jub_check ต้องได้ตารางของ JUB\n${log}`);
     const msg = tables(tg)[0].text;
     assert.match(msg, /^📋 <b>JUB<\/b> · \d\d:\d\d น\.$/m, 'หัวตาราง = JUB (สร้างในโปรเซสของ JUB)');
-    assert.match(preOf(msg), /^1\/2 +1,777 +523 +4 {2}🟢$/m, 'ตัด "JUB บัญชีเทส " ทิ้ง เหลือช่อง');
+    assert.match(preOf(msg), /^ {2}1\/2 +1,777 +523 +4 {2}🟢$/m, 'ตัด "JUB acc1 " ทิ้ง เหลือช่อง');
     const camps = (tok) => fb.world.calls.filter((c) => c.path === `act_${ACCT}/campaigns` && c.params.access_token === tok).length;
     assert.ok(camps('tokj') > 0, 'ข้อมูล JUB ต้องดึงด้วย token ของ JUB');
     assert.strictEqual(camps('tok'), 0, 'TOP ต้องไม่ดึงตารางเองด้วย token ของ TOP');
@@ -500,7 +505,6 @@ describe('คำสั่งเช็คตารางแคมเปญ "/<โ
     tg.push(CHAT, '/check');
     await until(() => tables(tg).length >= 1, 30000, 'ต้องได้ข้อความตาราง');
     const msg = tables(tg)[0].text;
-    assert.match(msg, /^<b>บัญชีเทส<\/b> — ดึงข้อมูลไม่ได้$/m);
-    assert.match(msg, /ดึงไม่ได้ 1 รายการ — ยอดรวมยังไม่ครบ/);
+    assert.match(msg, /^⚠️ ดึงไม่ได้: acc1 — ยอดรวมยังไม่ครบ$/m);
   });
 });

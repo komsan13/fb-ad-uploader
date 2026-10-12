@@ -4731,9 +4731,11 @@ function tgCheckIcon(sts) {
   return '⏸';
 }
 // ตารางแคมเปญทุกบัญชีที่ใช้งานได้และไม่ได้ซ่อน (ชุดเดียวกับที่ autopilot ไล่) — ตัวเลขทุกตัวมาจาก FB ตรงๆ ไม่ผ่าน AI
-// หน้าตาที่ผู้ใช้เลือก: ตารางแยกกล่องทีละบัญชี ชื่อบัญชี+ยอดใช้อยู่นอกกล่อง ตัวเลขปัดเต็ม
-// ในกล่อง <pre> ห้ามมีตัวไทย — Telegram วาดไทยในกล่องตัวเล็กและแคบกว่าช่อง คอลัมน์เบี้ยว (เห็นในภาพจากผู้ใช้ 12 ต.ค. 2026)
-// หัวคอลัมน์จึงเป็นอังกฤษ และสัญลักษณ์สถานะอยู่ท้ายแถว (อีโมจิกว้างไม่เท่าช่อง อยู่กลางแถวดันคอลัมน์ถัดไป)
+// หน้าตาที่ผู้ใช้กำหนด (12 ต.ค. 2026): การ์ด (กล่อง <pre>) เดียวต่อโปรไฟล์ ทุกบัญชีอยู่ในกล่องนั้น ตัวเลขปัดเต็ม
+// ในกล่องห้ามมีตัวไทย — Telegram วาดไทยในกล่องตัวเล็กและแคบกว่าช่อง คอลัมน์เบี้ยว (เห็นในภาพจากผู้ใช้)
+// หัวคอลัมน์ภาษาอังกฤษผู้ใช้อ่านไม่ออก — หัวคอลัมน์ไทยจึงอยู่เหนือกล่อง (TG_CHECK_COLS) ผู้ใช้ดูตัวอย่างจริงในแชทแล้ว
+// สัญลักษณ์สถานะอยู่ท้ายแถว (อีโมจิกว้างไม่เท่าช่อง อยู่กลางแถวดันคอลัมน์ถัดไป)
+const TG_CHECK_COLS = 'บัญชี / แอด · งบ/วัน · ใช้ไป · ผล';
 // คืนเป็นรายการข้อความ HTML ที่แต่ละก้อนปิดแท็กครบในตัว (tgChunks ตัดตามบรรทัด ผ่ากลาง <pre> แล้ว Telegram ปฏิเสธทั้งก้อน)
 async function tgCheckTable(cfg) {
   const esc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -4745,13 +4747,14 @@ async function tgCheckTable(cfg) {
   const seen = new Set();          // บัญชีเดียวกันเห็นได้จากหลายล็อกอิน FB — ขึ้นครั้งเดียว
   const groups = [];
   const spent = {}, budget = {};   // รวมแยกต่อสกุลเงิน — ต่างสกุลบวกกันตรงๆ ไม่ได้
-  let cooling = false, failed = 0, running = 0, review = 0;
+  const failed = [];               // บัญชี/ล็อกอินที่อ่านไม่ได้ — บอกท้ายการ์ด ห้ามหายเงียบ
+  let cooling = false, running = 0, review = 0;
   for (const prof of cfg.profiles || []) {
     if (!prof.accessToken) continue;
     if ((cooling = fbHardCooling())) break;
     let accts;
     try { accts = await fbAll('me/adaccounts', { fields: 'name,account_id,account_status,currency', limit: 100 }, prof.accessToken); }
-    catch { failed++; groups.push({ name: prof.label || prof.id, note: 'ดึงรายชื่อบัญชีไม่ได้', rows: [] }); continue; }
+    catch { failed.push(`รายชื่อบัญชีของ ${prof.label || prof.id}`); continue; }
     for (const a of accts) {
       if (a.account_status !== 1 || hidden[a.account_id] || seen.has(a.account_id)) continue;
       if ((cooling = fbHardCooling())) break;
@@ -4772,7 +4775,7 @@ async function tgCheckTable(cfg) {
         ]);
       } catch {
         // อ่านไม่ได้ต้องบอกตรงๆ — แถวหาย/โชว์ 0 คือโกหกว่าไม่ได้ใช้เงิน
-        failed++; groups.push({ name: a.name, note: 'ดึงข้อมูลไม่ได้', rows: [] }); continue;
+        failed.push(a.name); continue;
       }
       const ins = Object.fromEntries(cins.map((r) => [r.campaign_id, r]));
       // งบระดับชุดโฆษณา (แคมเปญที่ไม่ได้ตั้งงบที่แคมเปญ) นับเฉพาะชุดที่เปิดอยู่ + event คอนเวอร์ชั่นใช้เลือกว่า "ผล" คืออะไร
@@ -4806,56 +4809,62 @@ async function tgCheckTable(cfg) {
       if (gone.length) {
         const rs = gone.map((r) => results(resultSpec(r.objective, asEvent[r.campaign_id]), r.actions));
         rows.push({
-          name: 'deleted', b: 0, spend: gone.reduce((n, r) => n + Number(r.spend), 0),
+          name: '-', b: 0, spend: gone.reduce((n, r) => n + Number(r.spend), 0),
           res: rs.some((x) => x != null) ? rs.reduce((n, x) => n + (x || 0), 0) : null, icon: '🗑',
         });
       }
       const spend = cins.reduce((n, r) => n + (Number(r.spend) || 0), 0);
       spent[cur] = (spent[cur] || 0) + spend;
-      groups.push({ name: a.name, cur, spend, note: rows.length ? '' : 'ยังไม่มีแคมเปญ', rows });
+      groups.push({ name: a.name, cur, spend, rows });
     }
   }
-  if (!groups.length) return [`${title}\n\n${cooling ? SPEND_COOLING_NOTE : 'ไม่มีบัญชีโฆษณาที่ใช้งานได้'}`];
-
   // บาท/สกุลไม่มีหน่วยย่อย = จำนวนเต็ม (ผู้ใช้ขอให้ปัด) • สกุลอื่น (USD) ปัดเต็มแล้วเพี้ยนมาก คงทศนิยม 2 ตำแหน่ง
   const fmt = (v, cur) => Number(v).toLocaleString('en-US', { maximumFractionDigits: cur === 'THB' || curFactor(cur) === 1 ? 0 : 2 });
   const money = (v, cur) => `${fmt(v, cur)} ${cur === 'THB' ? 'บาท' : cur}`;
   const sum = (o) => Object.entries(o).map(([c, v]) => money(v, c)).join(' + ') || '0 บาท';
-  const cut = (s) => (s.length > 10 ? `${s.slice(0, 9)}…` : s);   // ชื่อแคมเปญตั้งมือยาวๆ ห้ามดันตารางเกินจอมือถือ
-  const cellsOf = (g) => g.rows.map((r) => [
-    cut(r.name), r.b ? fmt(r.b, g.cur) : '-', fmt(r.spend, g.cur), r.res == null ? '-' : String(r.res), r.icon,
-  ]);
-  const hdr = ['AD', 'BUDGET', 'SPENT', 'RESULT'];
-  // ความกว้างเดียวกันทุกกล่อง — กล่องของทุกบัญชีเรียงตรงกัน
-  const all = groups.flatMap(cellsOf);
-  const w = hdr.map((h, i) => Math.max(h.length, ...all.map((c) => c[i].length)));
-  const line = (c) => [c[0].padEnd(w[0]), ...c.slice(1, 4).map((x, i) => x.padStart(w[i + 1])), ...(c[4] ? [c[4]] : [])].join('  ');
+  const warn = [
+    ...(failed.length ? [`⚠️ ดึงไม่ได้: ${esc(failed.join(', '))} — ยอดรวมยังไม่ครบ`] : []),
+    ...(cooling ? [SPEND_COOLING_NOTE] : []),
+  ];
+  if (!groups.length) return [`${title}\n\n${warn.join('\n') || 'ไม่มีบัญชีโฆษณาที่ใช้งานได้'}`];
 
-  // บัญชีที่มีแคมเปญเก่าค้างเป็นร้อย แตกกล่องละ 60 แถว — กล่องเดียวยาวเกินลิมิตข้อความ = Telegram ปฏิเสธทั้งก้อน
-  const blocks = groups.flatMap((g) => {
-    const head = `<b>${esc(g.name)}</b> — ${g.note || `ใช้ไป ${money(g.spend, g.cur)}`}`;
-    const ls = cellsOf(g).map(line);
-    const out = [];
-    for (let i = 0; i < ls.length; i += 60) out.push(`${head}${i ? ' (ต่อ)' : ''}\n<pre>${esc([line(hdr), ...ls.slice(i, i + 60)].join('\n'))}</pre>`);
-    return out.length ? out : [head];
-  });
-  const used = Object.keys(TG_CHECK_ICONS).filter((ic) => all.some((c) => c[4] === ic));
+  // การ์ดเดียวต่อโปรไฟล์ (ผู้ใช้สั่ง): บรรทัดบัญชี = ชื่อ + ยอดใช้วันนี้ตรงคอลัมน์ "ใช้ไป" • แถวแอดย่อหน้าใต้บัญชี
+  // บัญชีสกุลอื่นติดรหัสสกุลท้ายชื่อ (ตัวเลขในแถวเป็นสกุลของบัญชีนั้น) • ชื่อยาวตัดทิ้ง ห้ามดันตารางเกินจอมือถือ
+  const cut = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+  const cells = groups.map((g) => [
+    [cut(g.cur === 'THB' ? g.name : `${g.name} ${g.cur}`, 16), '', fmt(g.spend, g.cur), '', ''],
+    ...g.rows.map((r) => [`  ${cut(r.name, 10)}`, r.b ? fmt(r.b, g.cur) : '-', fmt(r.spend, g.cur), r.res == null ? '-' : String(r.res), r.icon]),
+  ]);
+  const flat = cells.flat();
+  const w = [0, 1, 2, 3].map((i) => Math.max(0, ...flat.map((c) => c[i].length)));
+  const line = (c) => [c[0].padEnd(w[0]), ...c.slice(1, 4).map((x, i) => x.padStart(w[i + 1])), ...(c[4] ? [c[4]] : [])].join('  ').trimEnd();
+
+  const used = Object.keys(TG_CHECK_ICONS).filter((ic) => flat.some((c) => c[4] === ic));
   const footer = [
     `💰 ใช้วันนี้รวม ${esc(sum(spent))}`,
     `📊 งบรวม ${esc(sum(budget))}/วัน · ยิงอยู่ ${running}${review ? ` · รอตรวจ ${review}` : ''} แคมเปญ`,
     used.map((ic) => `${ic} ${TG_CHECK_ICONS[ic]}`).join('  '),
-    ...(failed ? [`⚠️ ดึงไม่ได้ ${failed} รายการ — ยอดรวมยังไม่ครบ`] : []),
-    ...(cooling ? [SPEND_COOLING_NOTE] : []),
+    ...warn,
   ].filter(Boolean).join('\n');
 
-  // รวมกล่องเป็นข้อความละไม่เกิน ~3000 ตัว (ลิมิต 4096) ตัดที่รอยต่อกล่องเท่านั้น
-  const msgs = [title];
-  for (const b of blocks) {
-    if (msgs[msgs.length - 1].length + b.length > 3000) msgs.push(b);
-    else msgs[msgs.length - 1] += `\n\n${b}`;
+  // ปกติทั้งโปรไฟล์จบในการ์ดเดียว • ยาวเกินลิมิตข้อความ (บัญชีมีแคมเปญเก่าค้างเป็นร้อย) ค่อยแบ่งการ์ด
+  // แต่ละการ์ดปิด </pre> ในตัว — ตัดกลางกล่องแล้ว Telegram ปฏิเสธทั้งก้อน
+  const cards = [[]];
+  for (const cs of cells) {
+    cs.forEach((c, i) => {
+      const l = line(c);
+      if (cards[cards.length - 1].join('\n').length + l.length > 3000) cards.push([]);
+      const card = cards[cards.length - 1];
+      if (i === 0 && card.length) card.push('');   // บรรทัดว่างคั่นบัญชี
+      card.push(l);
+    });
   }
-  msgs[msgs.length - 1] += `\n\n${footer}`;
-  return msgs;
+  return cards.map((c, i) => [
+    ...(i ? [] : [title, '']),
+    TG_CHECK_COLS,
+    `<pre>${esc(c.join('\n'))}</pre>`,
+    ...(i === cards.length - 1 ? ['', footer] : []),
+  ].join('\n'));
 }
 
 // ---------- ข้อมูลครบชุดสำหรับ AI — ต่อบัญชี ต่อแคมเปญ พร้อม id ที่ใช้สั่งงานได้ ----------
