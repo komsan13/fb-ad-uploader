@@ -534,8 +534,11 @@ function loadPage() {
   };
   const ctx = {
     console, document, fetch, URL, URLSearchParams, JSON, Math, Date, Promise, Set, Map, Object, Array, String, Number,
-    window: { addEventListener() {}, scrollTo() {}, open: () => null, matchMedia: () => ({ matches: false, addEventListener() {} }) },
-    location: { hash: '', replace() {}, reload() {}, pathname: '/', search: '', origin: 'http://x' },
+    // window.fetch + XMLHttpRequest ต้องมี — หน้าเว็บห่อทั้งสองตอนโหลดสคริปต์เพื่อแนบ x-fbws-page (hub.js)
+    // fetch ที่หน้าเรียกตรงๆ ยังเป็นตัวของเทส (window ที่นี่ไม่ใช่ globalThis) จึงไม่ต้องรอตัวห่อ
+    window: { addEventListener() {}, scrollTo() {}, open: () => null, matchMedia: () => ({ matches: false, addEventListener() {} }), fetch },
+    XMLHttpRequest: class { open() {} send() {} setRequestHeader() {} addEventListener() {} },
+    location: { hash: '', replace() {}, reload() {}, pathname: '/', search: '', origin: 'http://x', href: 'http://x/' },
     history: { pushState() {}, replaceState() {} },
     sessionStorage: { getItem: () => null, setItem() {}, clear() {} },
     localStorage: { getItem: () => null, setItem() {}, removeItem() {} },

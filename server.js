@@ -22,6 +22,23 @@ app.set('etag', false);
 app.use(express.json());
 // API ต้องได้ข้อมูลสดเสมอ — ห้าม browser/proxy cache
 app.use('/api', (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+// กันเว็บอื่นแอบสั่งงานแทนผู้ใช้ (CSRF) — เบราว์เซอร์แนบรหัส basic auth ที่จำไว้ไปกับฟอร์มที่เว็บอื่นส่งเข้ามาได้
+// วัดจริง: ฟอร์ม text/plain จากเว็บอื่นยิง /api/ai-key แล้ว key หาย (express.json ไม่อ่าน body → ค่าว่างทับของเดิม)
+// และ multipart เข้า /api/launch ได้ = สร้างแคมเปญใช้เงินจริงได้ • เบราว์เซอร์ทุกตัวแนบ Origin/Sec-Fetch-Site ตอน POST ข้ามเว็บ
+// ส่วนขยาย Chrome (origin chrome-extension://) ยิง /api/am-limits ได้ตามเดิม • ไม่มีทั้งสอง header (curl/เทส) = ไม่ใช่เบราว์เซอร์ ผ่าน
+const SELF_ORIGIN = (() => { try { return new URL(PUBLIC_URL).origin; } catch { return ''; } })();
+app.use('/api', (req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+  const origin = String(req.get('origin') || '');
+  if (origin.startsWith('chrome-extension://')) return next();
+  const site = String(req.get('sec-fetch-site') || '');
+  let sameHost = false;
+  try { sameHost = !!origin && (new URL(origin).host === req.get('host') || origin === SELF_ORIGIN); } catch { /* origin เพี้ยน = ไม่ใช่เว็บเรา */ }
+  if (site === 'cross-site' || site === 'same-site' || (origin && !sameHost)) {   // origin "null" (iframe sandbox) = ไม่ผ่านด้วย
+    return res.status(403).json({ error: 'คำสั่งนี้มาจากเว็บอื่น — ไม่ทำให้ (กันเว็บอื่นแอบสั่งงานแทนคุณ)' });
+  }
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public')));
 // defParamCharset utf8 = ชื่อไฟล์ภาษาไทยไม่เพี้ยน (ค่าตั้งต้นของ multer อ่านเป็น latin1)
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 512 * 1024 * 1024 }, defParamCharset: 'utf8' });
