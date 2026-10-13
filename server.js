@@ -1872,9 +1872,11 @@ app.get('/api/campaign-detail', async (req, res) => {
   const token = prof.accessToken;
   const datePreset = pickDatePreset(req.query.date);
   try {
-    // ขอ account_currency มาด้วย เพื่อแปลงงบจากหน่วยย่อยได้ถูกกับทุกสกุล
-    const camp = await viewStep('อ่านแคมเปญ', () => fb(id, { fields: 'name,objective,account_id,daily_budget,account{currency}' }, 'GET', token));
-    const cf = curFactor((camp.account || {}).currency);
+    // สกุลเงินต้องอ่านจากบัญชีโฆษณา — แคมเปญไม่มีช่อง account (วัดจริง 13 ต.ค. 2026: ขอ account{currency} ได้
+    // "(#100) Tried accessing nonexisting field (account)" หน้าต่างรายละเอียดเปิดไม่ได้เลยตั้งแต่ f00ce4d 19 ก.ค.)
+    const camp = await viewStep('อ่านแคมเปญ', () => fb(id, { fields: 'name,objective,account_id,daily_budget' }, 'GET', token));
+    const acctInfo = await viewStep('อ่านสกุลเงินของบัญชี', () => fb(`act_${camp.account_id}`, { fields: 'currency' }, 'GET', token));
+    const cf = curFactor(acctInfo.currency);
     const adsets = await viewStep('ดึงชุดโฆษณา', () => fbAll(`${id}/adsets`, { fields: 'name,status,effective_status,daily_budget,promoted_object', limit: 100 }, token));
     const ads = await viewStep('ดึงโฆษณา', () => fbAll(`${id}/ads`, { fields: 'name,status,effective_status,adset_id,creative{thumbnail_url}', limit: 200 }, token));
     // เหมือนหน้ารายการ: insights พลาดต้องบอก ไม่ใช่โชว์ใช้จ่าย 0 ทุกแถว

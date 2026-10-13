@@ -91,6 +91,11 @@ function makeFakeFb(world) {
 
         // อ่าน node ตรงๆ ด้วย id (แคมเปญ/แอด)
         const node = (world.campaigns || []).concat(world.ads || []).find((x) => x.id === path);
+        // FB จริง: แคมเปญไม่มีช่อง account — ขอ account{...} ได้ #100 (วัดจริง 13 ต.ค. 2026) ตัวปลอมเคยตอบทุกช่อง
+        // หน้าต่างรายละเอียดแคมเปญเลยพังบนของจริงอยู่ 3 เดือนโดยเทสผ่านหมด
+        if (node && (world.campaigns || []).includes(node) && /(^|,)account\{/.test(params.fields || '')) {
+          return fail('(#100) Tried accessing nonexisting field (account)', 100);
+        }
         if (node) return send(node);
         return fail(`Object with ID '${path}' does not exist`, 803);
       }

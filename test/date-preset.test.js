@@ -16,7 +16,8 @@ async function boot(t) {
     // campaign-detail อ่านแคมเปญตาม id ตรงๆ — FB ปลอมไม่มีเส้นนี้ ตอบให้เองตรงนี้
     route: (m, path) => {
       if (m !== 'GET') return null;
-      if (path === CAMP) return { name: 'แคมเปญเทส', objective: 'OUTCOME_SALES', account: { currency: 'THB' } };
+      // แคมเปญจริงไม่มีช่อง account — มีแค่ account_id (สกุลเงินอ่านจาก act_ ซึ่ง FB ปลอมตอบให้)
+      if (path === CAMP) return { name: 'แคมเปญเทส', objective: 'OUTCOME_SALES', account_id: ACCT };
       if (path.startsWith(CAMP + '/')) return { data: [] };
       return null;
     },
