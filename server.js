@@ -1978,7 +1978,7 @@ function adSwapBlock(cfg, s, acctId, ad) {
   const ap = cfg.autopilot || {};
   const managed = !!ap.enabled && !((cfg.hidden || {}).accounts || {})[acctId];
   if (!AP_COUNTS_AS_LIVE.has(ad.effective_status) && (managed || (s.handled || {})[ad.id])) {
-    return 'แอดนี้ไม่ได้ยิงอยู่ autopilot จึงเติมแคมเปญแทนไปแล้ว — แก้ตัวนี้ให้กลับมายิงจะซ้อนงบอีกแคมเปญ/วัน';
+    return 'แอดนี้ไม่ได้ยิงอยู่ — บัญชีนี้ autopilot ดูแล มันเติมแคมเปญแทนเอง (ถ้ายังไม่เติม = ชนเพดานเติมรายวัน รอรอบถัดไป) ชุบตัวนี้กลับมาเสี่ยงซ้อนงบ และโดนปฏิเสธซ้ำแบบที่เกราะกันแบนไม่นับ';
   }
   return null;
 }
