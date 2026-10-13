@@ -3351,6 +3351,7 @@ async function renderCampaignDetail() {
   // ปิดแล้วเปิดแคมเปญอื่นระหว่างรอ = ผลนี้เป็นของแคมเปญเก่า — เดิมวาดทับ modal ของแคมเปญใหม่
   // ผู้ใช้เห็นชุดโฆษณาของอีกแคมเปญ แล้วสวิตช์ในนั้นไปเปิด/ปิดของที่ไม่ได้ตั้งใจ
   if (seq !== detailSeq) return;
+  detailCtx.d = d;   // ปุ่ม "แก้ไขแอด" อ่านชื่อ/สถานะ/งบของแอดจากชุดที่วาดอยู่จริง
   const num = (n) => Number(n || 0).toLocaleString();
   const money = (n) => (cur === 'THB' || !cur ? '฿' : cur + ' ') + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const resTxt = (r) => r != null ? `${num(r)}${d.resultLabel ? `<div class="res-label">${d.resultLabel}</div>` : ''}` : '<span style="color:var(--muted)">—</span>';
@@ -3375,6 +3376,11 @@ async function renderCampaignDetail() {
       <td>${resTxt(a.results)}</td>
       <td class="num-cell">${money(a.spend)}</td>
       <td class="num-cell">${num(a.impressions)}</td>
+      <td>${adSwapBusy.has(a.id)
+        ? '<button class="btn-light btn-sm" style="white-space:nowrap" disabled>กำลังเปลี่ยนคลิป...</button>'
+        : adIsOff(a) ? ''   // ผู้ใช้กำหนด: ไม่รวมแอดที่ปิดอยู่ (เซิร์ฟเวอร์กันซ้ำอีกชั้น)
+        : a.swapBlock ? `<span class="res-label" style="white-space:nowrap;cursor:help" title="${esc(a.swapBlock)}">แก้ไม่ได้ ⓘ</span>`
+        : `<button class="btn-light btn-sm" style="white-space:nowrap" data-swap="${esc(a.id)}" title="เปลี่ยนคลิปของแอดนี้ — แก้ระดับแอดอย่างเดียว ไม่แตะแคมเปญ/ชุดโฆษณา" onclick="editAdVideo(${jsStr(a.id)})">✎ แก้ไขแอด</button>`}</td>
     </tr>`).join('');
   const dateTxt = { today: 'วันนี้', yesterday: 'เมื่อวาน', last_7d: '7 วันล่าสุด', last_30d: '30 วันล่าสุด', last_90d: '90 วันล่าสุด', maximum: 'ทั้งหมด' }[d.datePreset] || d.datePreset;
   body.innerHTML = `
@@ -3386,8 +3392,8 @@ async function renderCampaignDetail() {
     </table></div>
     <h2 style="margin-bottom:10px">โฆษณา <span class="h-desc">— ${d.ads.length} ตัว</span></h2>
     <div class="tbl-wrap"><table>
-      <thead><tr><th>เปิด/ปิด</th><th></th><th>โฆษณา</th><th>สถานะ</th><th>ผลลัพธ์</th><th class="num-cell">ใช้จ่าย</th><th class="num-cell">อิมเพรสชัน</th></tr></thead>
-      <tbody>${adRows || '<tr><td colspan="7" class="tbl-msg">ไม่มีโฆษณาในแคมเปญนี้</td></tr>'}</tbody>
+      <thead><tr><th>เปิด/ปิด</th><th></th><th>โฆษณา</th><th>สถานะ</th><th>ผลลัพธ์</th><th class="num-cell">ใช้จ่าย</th><th class="num-cell">อิมเพรสชัน</th><th></th></tr></thead>
+      <tbody>${adRows || '<tr><td colspan="8" class="tbl-msg">ไม่มีโฆษณาในแคมเปญนี้</td></tr>'}</tbody>
     </table></div>`;
 }
 async function copyAdset(id, btn) {
@@ -3430,6 +3436,48 @@ async function toggleDetailObj(id, cur, el) {
   // สำเร็จ = เลขที่แคชไว้ไม่จริงแล้ว • พัง = ไม่รู้ว่าคำขอไปถึง FB หรือยัง แคชก็เชื่อไม่ได้เหมือนกัน
   bustCaches({ dash: 1, camp: 1 });
   renderCampaignDetail();
+}
+
+// ---------- แก้ไขแอด: เปลี่ยนคลิปที่ระดับแอดอย่างเดียว ----------
+// ไม่แตะแคมเปญ/ชุดโฆษณา — ใน Ads Manager ถ้าชุดโฆษณามีปัญหา กดเผยแพร่การแก้ไขไม่ผ่านทั้งก้อน
+const adSwapBusy = new Set();   // อัป+รอประมวลผลเป็นนาที — ตารางถูกวาดใหม่ระหว่างนั้น ปุ่มต้องยังล็อกอยู่
+// "ปิดอยู่" = ตัวที่ป้ายสถานะขึ้น "หยุด": ปิดตัวแอดเอง หรือแคมเปญ/ชุดโฆษณาที่ครอบมันปิด
+const adIsOff = (a) => a.status !== 'ACTIVE' || ['CAMPAIGN_PAUSED', 'ADSET_PAUSED'].includes(a.effective_status);
+function editAdVideo(adId) {
+  const d = detailCtx && detailCtx.d;
+  const ad = d && d.ads.find(x => x.id === adId);
+  if (!ad) return;
+  const pid = detailCtx.pid, cur = detailCtx.cur;
+  // งบอยู่ได้ทั้งระดับชุดโฆษณาหรือระดับแคมเปญ (แคมเปญของ autopilot ตั้งที่แคมเปญ)
+  const as = d.adsets.find(s => s.id === ad.adsetId) || {};
+  const budget = as.dailyBudget ? { lv: 'ชุดโฆษณา', n: as.dailyBudget } : d.dailyBudget ? { lv: 'แคมเปญ', n: d.dailyBudget } : null;
+  openLibPick(null, (item) => swapAdVideo(pid, cur, ad, budget, item));
+}
+async function swapAdVideo(pid, cur, ad, budget, item) {
+  const money = (n) => (cur === 'THB' || !cur ? '฿' : cur + ' ') + Number(n).toLocaleString();
+  const live = `\n\n⚠ แอดนี้เปิดอยู่ — ผ่านรีวิวแล้วยิงต่อทันทีด้วยงบเดิม${budget ? ` (${budget.lv} ${money(budget.n)}/วัน)` : ''}`;
+  if (!confirm(`เปลี่ยนคลิปของแอด "${ad.name}"\nเป็น "${item.name}" ?\n\n`
+    + '• แก้เฉพาะระดับแอด ไม่แตะแคมเปญ/ชุดโฆษณา\n'
+    + '• ข้อความ ลิงก์ ปุ่ม คงเดิม (ภาพปกเปลี่ยนตามคลิปใหม่)\n'
+    + '• แอดจะเข้ารีวิวของ Meta ใหม่' + live)) return;
+  adSwapBusy.add(ad.id);
+  const btn = document.querySelector(`#detailBody [data-swap="${CSS.escape(ad.id)}"]`);
+  if (btn) { btn.disabled = true; btn.textContent = 'กำลังเปลี่ยนคลิป...'; }
+  toast(`กำลังอัปคลิปขึ้น FB ให้ "${ad.name}" แล้วรอประมวลผล — อาจใช้เวลาหลายนาที`);
+  try {
+    await apiJson('/api/ad-swap-video', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile: pid, adId: ad.id, mediaId: item.id }),
+    });
+    toast(`✓ เปลี่ยนคลิปของ "${ad.name}" แล้ว — แอดเข้ารีวิวใหม่`, 'ok');
+  } catch (e) {
+    toast(`เปลี่ยนคลิปของ "${ad.name}" ไม่สำเร็จ: ${e.message}`, 'err');
+  } finally {
+    adSwapBusy.delete(ad.id);
+  }
+  // พังกลางทางก็ไม่รู้ว่า FB รับไปแล้วหรือยัง — โหลดของจริงมาให้ดูเสมอ
+  bustCaches({ dash: 1, camp: 1 });
+  if (document.getElementById('detailModal').style.display !== 'none') renderCampaignDetail();
 }
 
 async function deleteCampaign(id, name, pid) {
@@ -3535,6 +3583,7 @@ function filesPicked(files) {
 // ---------- คลังวิดีโอ ----------
 let libItems = [];
 let libPickTarget = null;   // การ์ดที่จะเอาวิดีโอไปใส่ (null = เลือกแล้วสร้างการ์ดใหม่)
+let libPickOnPick = null;   // มีค่า = เลือกแล้วส่งให้ฟังก์ชันนี้แทน (ปุ่ม "แก้ไขแอด" ในรายละเอียดแคมเปญ)
 
 const libDz = document.getElementById('libDropzone');
 libDz.addEventListener('dragover', (e) => { e.preventDefault(); libDz.classList.add('over'); });
@@ -4864,10 +4913,11 @@ async function deleteCaption(id) {
 }
 
 // ---------- เลือกวิดีโอจากคลังมาใช้ขึ้นแอด ----------
-async function openLibPick(card) {
+async function openLibPick(card, onPick) {
   libPickTarget = card || null;
-  document.getElementById('libPickTitle').textContent = card
-    ? 'เลือกวิดีโอใส่การ์ดนี้'
+  libPickOnPick = onPick || null;
+  document.getElementById('libPickTitle').textContent = onPick ? 'เลือกคลิปใหม่ให้แอดนี้'
+    : card ? 'เลือกวิดีโอใส่การ์ดนี้'
     : 'เลือกวิดีโอจากคลัง — คลิก 1 ตัว = เพิ่ม 1 แอด';
   document.getElementById('libPickModal').style.display = 'flex';
   const grid = document.getElementById('libPickGrid');
@@ -4887,10 +4937,12 @@ async function openLibPick(card) {
 function closeLibPick() {
   document.getElementById('libPickModal').style.display = 'none';
   libPickTarget = null;
+  libPickOnPick = null;
 }
 function pickFromLib(id) {
   const item = libItems.find(x => x.id === id);
   if (!item) return;
+  if (libPickOnPick) { const fn = libPickOnPick; closeLibPick(); return fn(item); }
   if (libPickTarget) { applyLibToCard(libPickTarget, item); closeLibPick(); }
   else applyLibToCard(addAd(), item);   // เลือกต่อได้เรื่อยๆ ไม่ปิด modal
 }

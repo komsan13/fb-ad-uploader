@@ -1873,7 +1873,7 @@ app.get('/api/campaign-detail', async (req, res) => {
   const datePreset = pickDatePreset(req.query.date);
   try {
     // ขอ account_currency มาด้วย เพื่อแปลงงบจากหน่วยย่อยได้ถูกกับทุกสกุล
-    const camp = await viewStep('อ่านแคมเปญ', () => fb(id, { fields: 'name,objective,account{currency}' }, 'GET', token));
+    const camp = await viewStep('อ่านแคมเปญ', () => fb(id, { fields: 'name,objective,account_id,daily_budget,account{currency}' }, 'GET', token));
     const cf = curFactor((camp.account || {}).currency);
     const adsets = await viewStep('ดึงชุดโฆษณา', () => fbAll(`${id}/adsets`, { fields: 'name,status,effective_status,daily_budget,promoted_object', limit: 100 }, token));
     const ads = await viewStep('ดึงโฆษณา', () => fbAll(`${id}/ads`, { fields: 'name,status,effective_status,adset_id,creative{thumbnail_url}', limit: 200 }, token));
@@ -1886,11 +1886,13 @@ app.get('/api/campaign-detail', async (req, res) => {
     const ra = resultSpec(camp.objective, campEvent);
     const insByAd = Object.fromEntries(ins.map((r) => [r.ad_id, r]));
     const resultOf = (r) => pickResult(ra, r && r.actions);
+    const ap = loadAp();   // ปุ่มแก้ไขแอด: บอกตั้งแต่ในตารางว่าตัวไหนแก้ไม่ได้ (กติกาเดียวกับตอนยิงจริง)
     const adRows = ads.map((a) => {
       const r = insByAd[a.id] || {};
       return {
         id: a.id, name: a.name, adsetId: a.adset_id,
         status: a.status, effective_status: a.effective_status,
+        swapBlock: adSwapBlock(cfg, ap, String(camp.account_id || ''), a),
         thumb: (a.creative && a.creative.thumbnail_url) || null,
         spend: Number(r.spend) || 0, impressions: Number(r.impressions) || 0,
         results: resultOf(r),
@@ -1907,7 +1909,10 @@ app.get('/api/campaign-detail', async (req, res) => {
         nAds: own.length,
       };
     });
-    res.json({ name: camp.name, objective: camp.objective, resultLabel: ra ? ra.label : null, adsets: asRows, ads: adRows, datePreset });
+    res.json({
+      name: camp.name, objective: camp.objective, resultLabel: ra ? ra.label : null, adsets: asRows, ads: adRows, datePreset,
+      dailyBudget: camp.daily_budget ? Number(camp.daily_budget) / cf : null,   // งบระดับแคมเปญ (แคมเปญของ autopilot ตั้งที่นี่)
+    });
   } catch (e) {
     viewFail(res, e);
   }
@@ -1942,6 +1947,78 @@ app.post('/api/campaign-delete', async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ error: e.message });
+  }
+});
+
+// แก้ไขแอด: เปลี่ยนเฉพาะคลิปของแอดเดิม — ระดับแอดอย่างเดียว ไม่แตะแคมเปญ/ชุดโฆษณา
+// แก้ใน Ads Manager แล้วชุดโฆษณามีปัญหา = กดเผยแพร่ไม่ผ่านทั้งก้อน ทางนี้ยิงแค่ POST <ad_id> {creative}
+// (เอกสาร Meta ads-webhooks/effective-status: "Disapproved: fix the creative and resubmit" ใช้รูปนี้)
+// ไม่ส่ง status = เปิด/ปิดคงเดิม แอดที่หยุดไว้ไม่ถูกเปิดยิงเงินเอง • ข้อความ/ลิงก์/ปุ่มคงเดิม
+const adSwapBusy = new Set();   // อัปคลิป+รอประมวลผลเป็นนาที — กดซ้ำระหว่างนั้นต้องไม่ได้ครีเอทีฟสองชุดแย่งกัน
+const AD_OFF_EFFECTIVE = ['CAMPAIGN_PAUSED', 'ADSET_PAUSED'];   // ตัวแอดเปิดอยู่ แต่ตัวที่ครอบมันปิด
+// แก้แอดนี้ได้ไหม — คืนเหตุผลที่ห้าม หรือ null (ใช้ทั้งตอนวาดตารางและก่อนยิงจริง)
+function adSwapBlock(cfg, s, acctId, ad) {
+  // ผู้ใช้กำหนด: ไม่รวมแอดที่ปิดอยู่ (ตัวแอดเอง หรือแคมเปญ/ชุดโฆษณาที่ครอบมันถูกปิด)
+  if (ad.status !== 'ACTIVE' || AD_OFF_EFFECTIVE.includes(ad.effective_status)) {
+    return 'แอดนี้ปิดอยู่ — ปุ่มแก้ไขแอดใช้กับแอดที่เปิดอยู่เท่านั้น';
+  }
+  // เกราะของ autopilot (CLAUDE.md): บัญชีที่โดนหยุดเพราะโดนปฏิเสธถี่/หมวดเดิมซ้ำ ห้ามเปลี่ยนคลิปยิงรีวิวซ้ำ
+  if ((s.frozen || {})[acctId] || (s.noRotate || {})[acctId]) {
+    return 'autopilot หยุดบัญชีนี้ไว้ (โดนปฏิเสธถี่/หมวดเดิมซ้ำ) — ส่งแอดเข้ารีวิวซ้ำตอนนี้เสี่ยงโดนแบน ปลดล็อกในหน้าระบบอัตโนมัติก่อน';
+  }
+  // ผู้ใช้เลือก (13 ต.ค. 2026): ห้ามชุบแอดที่ autopilot เติมตัวแทนไปแล้ว — ผ่านรีวิวเมื่อไหร่ = ยิงซ้อน +งบเต็มอีกแคมเปญ/วัน
+  // โดยไม่มีอะไรปิดส่วนเกิน • apRefill เติมแทน "ทุกแอดที่ไม่ได้ยิงอยู่" ในบัญชีที่ไม่ได้ซ่อน ไม่ว่าจะจด handled ไว้หรือไม่
+  // (ไม่มี AI key / ชนเพดานแก้รายวัน / WITH_ISSUES ไม่ถูกจดเลย — รีวิวรอบยืนยันพิสูจน์แล้ว) จึงตัดสินตามเกณฑ์เดียวกับ refill
+  // handled ยังใช้กับบัญชีที่เลิกให้ autopilot ดูแลแล้ว — ตัวแทนที่มันเคยเติม/ขึ้นแก้ไว้ยังยิงอยู่
+  // แอดที่ยิง/รอรีวิวอยู่นับเป็นช่องอยู่แล้ว เปลี่ยนคลิปแล้วยังนับเท่าเดิม ไม่ซ้อนงบ
+  // ไม่ดู minAds: แม้ไม่เติมแอด autopilot ก็ยังนับการโดนปฏิเสธไว้หยุดบัญชี — นับต่อแอด id ครั้งเดียว
+  // เปลี่ยนคลิปแอดตายซ้ำๆ = โดนปฏิเสธซ้ำที่เกราะมองไม่เห็นเลย (รีวิวรอบยืนยันพิสูจน์แล้ว: 4 ครั้ง นับได้ 1)
+  const ap = cfg.autopilot || {};
+  const managed = !!ap.enabled && !((cfg.hidden || {}).accounts || {})[acctId];
+  if (!AP_COUNTS_AS_LIVE.has(ad.effective_status) && (managed || (s.handled || {})[ad.id])) {
+    return 'แอดนี้ไม่ได้ยิงอยู่ autopilot จึงเติมแคมเปญแทนไปแล้ว — แก้ตัวนี้ให้กลับมายิงจะซ้อนงบอีกแคมเปญ/วัน';
+  }
+  return null;
+}
+app.post('/api/ad-swap-video', async (req, res) => {
+  const cfg = loadConfig();
+  const prof = getProfile(cfg, req.body.profile);
+  if (!prof || !prof.accessToken) return res.status(400).json({ error: 'ไม่พบบัญชี หรือยังไม่ได้เชื่อมต่อ' });
+  const adId = bodyStr(req.body.adId);
+  if (!/^\d+$/.test(adId)) return res.status(400).json({ error: 'ad id ไม่ถูกต้อง' });
+  const mediaId = bodyStr(req.body.mediaId);
+  if (!loadLib().some((x) => x.id === mediaId)) return res.status(400).json({ error: 'ไม่พบคลิปนี้ในคลัง (อาจถูกลบไปแล้ว)' });
+  // อัปคลิป + เช็คสถานะซ้ำเป็นร้อยครั้ง ระหว่าง Meta สั่งพัก = ยืดเวลาพักของทั้งระบบ
+  { const cool = viewCoolErr(); if (cool) return res.status(503).json({ error: cool.message, cooling: true }); }
+  if (adSwapBusy.has(adId)) return res.status(409).json({ error: 'แอดนี้กำลังเปลี่ยนคลิปอยู่ รอให้เสร็จก่อน' });
+  adSwapBusy.add(adId);
+  try {
+    const token = prof.accessToken;
+    const ad = await fb(adId, { fields: 'name,account_id,status,effective_status,creative{object_story_spec}' }, 'GET', token);
+    const acctId = String(ad.account_id);
+    const block = adSwapBlock(cfg, loadAp(), acctId, { id: adId, status: ad.status, effective_status: ad.effective_status });
+    if (block) throw new Error(block);
+    const creativeId = await newVideoCreative(`act_${acctId}`, token, ad.creative || {},
+      `${ad.name} - Creative`.slice(0, 100), mediaId);
+    // อัปคลิปกินเวลาเป็นนาที ระหว่างนั้น autopilot อาจตัดสินแอดนี้ (ขึ้นตัวแก้/เติมแทน) หรือมีคนปิดแอด — เช็คซ้ำก่อนยิงจริง
+    const now = await fb(adId, { fields: 'status,effective_status' }, 'GET', token);
+    const block2 = adSwapBlock(loadConfig(), loadAp(), acctId, { id: adId, status: now.status, effective_status: now.effective_status });
+    if (block2) throw new Error(`${block2} (เปลี่ยนไประหว่างอัปคลิป — ยังไม่ได้แก้แอด)`);
+    await fb(adId, { creative: { creative_id: creativeId } }, 'POST', token);
+    markVideoUsed(mediaId, acctId);
+    // แอดที่ autopilot ผูกไว้กับคลิปในคลัง (ให้คะแนนคลิปจากผลรีวิว) ต้องชี้ไปคลิปใหม่ — ไม่งั้นผลรีวิวรอบนี้
+    // ไปลง/ถอนคะแนนของคลิปเก่า • ล้าง adScore ให้ผลใหม่นับเป็นของคลิปใหม่ ไม่ไปหักคะแนนเก่าออกจากมัน
+    const s = loadAp();
+    if ((s.creative || {})[adId]) {
+      s.creative[adId] = { ...s.creative[adId], v: mediaId, ts: Date.now() };
+      if (s.adScore) delete s.adScore[adId];
+      saveAp(s);
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  } finally {
+    adSwapBusy.delete(adId);
   }
 });
 
@@ -3296,12 +3373,11 @@ async function apResubmit(acct, token, origCreative, adsetId, adName, newMessage
   return ad.id;
 }
 
-// สร้างแอดใหม่ในชุดโฆษณาเดิม เปลี่ยน "คลิป" ข้อความคงเดิม (ใช้เมื่อ AI ชี้ว่าปัญหาอยู่ที่ตัววิดีโอ)
-// ไม่สร้าง adset ใหม่ — เป้าหมาย/งบ/พิกเซลของเดิมผ่านมาแล้ว เปลี่ยนแค่ตัวที่ถูกตัดสินว่าผิด
-// guard(ชื่อแอดใหม่) เหมือน apResubmit — ทางนี้อัปคลิป+รอประมวลผลเป็นนาที คนกดหยุดระหว่างนั้นได้ (รีวิวรอบยืนยันพิสูจน์แล้ว)
-async function apRelaunchNewVideo(acct, token, origCreative, adsetId, adName, mediaId, guard) {
+// ครีเอทีฟใหม่จากของเดิม เปลี่ยนแค่ "คลิป" (ข้อความ/ลิงก์/ปุ่มคงเดิม) → คืน id ของครีเอทีฟ
+// ใช้ทั้งการสับคลิปของ autopilot (ขึ้นแอดใหม่) และปุ่ม "แก้ไขแอด" (เปลี่ยนในแอดเดิม)
+async function newVideoCreative(acct, token, origCreative, name, mediaId) {
   const spec = JSON.parse(JSON.stringify(origCreative.object_story_spec || {}));
-  if (!spec.video_data) throw new Error('ครีเอทีฟนี้ไม่ใช่วิดีโอ สับคลิปให้ไม่ได้');
+  if (!spec.video_data) throw new Error('ครีเอทีฟนี้ไม่ใช่วิดีโอ เปลี่ยนคลิปให้ไม่ได้');
   const m = resolveMedia(mediaId);
   if (!m) throw new Error('ไฟล์วิดีโอหายจากคลัง');
   const file = { buffer: fs.readFileSync(m.path), mimetype: m.mimetype, originalname: m.originalname };
@@ -3312,15 +3388,21 @@ async function apRelaunchNewVideo(acct, token, origCreative, adsetId, adName, me
   // ภาพปกของคลิปเดิมต้องไม่ติดมากับคลิปใหม่ — ได้ปกไม่ตรงคลิปคือเหตุโดนปฏิเสธซ้ำอีกข้อ
   if (thumb) spec.video_data.image_url = thumb; else delete spec.video_data.image_url;
   delete spec.video_data.image_hash;
-  const creative = await fb(`${acct}/adcreatives`, {
-    name: `${adName} (สับคลิป) - Creative`, object_story_spec: spec,
-  }, 'POST', token);
+  const creative = await fb(`${acct}/adcreatives`, { name, object_story_spec: spec }, 'POST', token);
+  return creative.id;
+}
+
+// สร้างแอดใหม่ในชุดโฆษณาเดิม เปลี่ยน "คลิป" ข้อความคงเดิม (ใช้เมื่อ AI ชี้ว่าปัญหาอยู่ที่ตัววิดีโอ)
+// ไม่สร้าง adset ใหม่ — เป้าหมาย/งบ/พิกเซลของเดิมผ่านมาแล้ว เปลี่ยนแค่ตัวที่ถูกตัดสินว่าผิด
+// guard(ชื่อแอดใหม่) เหมือน apResubmit — ทางนี้อัปคลิป+รอประมวลผลเป็นนาที คนกดหยุดระหว่างนั้นได้ (รีวิวรอบยืนยันพิสูจน์แล้ว)
+async function apRelaunchNewVideo(acct, token, origCreative, adsetId, adName, mediaId, guard) {
+  const creativeId = await newVideoCreative(acct, token, origCreative, `${adName} (สับคลิป) - Creative`, mediaId);
   const name = `${adName} (สับคลิป)`.slice(0, 100);
   if (guard) guard(name);
   const ad = await fb(`${acct}/ads`, {
     name,
     adset_id: adsetId,
-    creative: { creative_id: creative.id },
+    creative: { creative_id: creativeId },
     status: 'ACTIVE',
   }, 'POST', token);
   return ad.id;
